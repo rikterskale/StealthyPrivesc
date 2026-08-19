@@ -1,0 +1,596 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Documentation and workflow checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Validate Markdown files and local links
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import sys
+          from urllib.parse import unquote, urlparse
+
+          root = Path.cwd()
+          markdown = sorted(root.rglob("*.md"))
+          assert markdown, "No Markdown documentation found"
+          failures = []
+          link_pattern = re.compile(r"!?\[[^]]*\]\(([^)]+)\)")
+
+          for path in markdown:
+              if not path.read_text(encoding="utf-8").strip():
+                  failures.append(f"{path}: empty Markdown file")
+              for raw_target in link_pattern.findall(path.read_text(encoding="utf-8")):
+                  target = raw_target.strip().split()[0].strip("<>")
+                  parsed = urlparse(target)
+                  if parsed.scheme or target.startswith("#"):
+                      continue
+                  local = unquote(parsed.path)
+                  if not local:
+                      continue
+                  candidate = (path.parent / local).resolve()
+                  try:
+                      candidate.relative_to(root.resolve())
+                  except ValueError:
+                      failures.append(f"{path}: link escapes repository: {target}")
+                      continue
+                  if not candidate.exists():
+                      failures.append(f"{path}: missing local link target: {target}")
+
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          print(f"Validated {len(markdown)} Markdown files")
+
+      - name: Enforce strict document contract
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import sys
+
+          root = Path.cwd()
+          failures = []
+          markdown = sorted(root.rglob('*.md'))
+
+          required_sections = {
+              Path('docs/design.md'): [
+                  '# Next-Gen Stealthy Privilege Escalation Tool',
+                  '## Overview',
+                  '## Goals & Non-Goals',
+                  '## Key Decisions',
+                  '## Proposed Design',
+                  '## Security & Privacy Considerations',
+                  '## Risks',
+                  '## PR Plan',
+              ],
+              Path('docs/capabilities.md'): [
+                  '# StealthyPrivesc Capabilities',
+                  '## Capability status',
+                  '## Initial MVP capabilities',
+                  '## Planned command surface',
+                  '## Artifact workflow',
+                  '## Security, privacy, and operational controls',
+                  '## Explicitly out of scope for v1',
+              ],
+              Path('docs/first-user-journey.md'): [
+                  '# First-User Journey',
+                  '## Goals',
+                  '## Entry points',
+                  '## Journey stages',
+                  '## Non-interactive contract',
+                  '## CI contract',
+                  '## Safety boundary',
+              ],
+          }
+
+          for path in markdown:
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except UnicodeDecodeError as exc:
+                  failures.append(f'{path}: not valid UTF-8 ({exc})')
+                  continue
+              if not text.strip():
+                  failures.append(f'{path}: document is empty')
+                  continue
+              if not re.search(r'^#\s+\S+', text, re.MULTILINE):
+                  failures.append(f'{path}: missing top-level Markdown heading')
+              if text.count('```') % 2:
+                  failures.append(f'{path}: unbalanced fenced code block')
+              if '\t' in text:
+                  failures.append(f'{path}: tab characters are not allowed in Markdown')
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  trailing = line[len(line.rstrip(' \t')):]
+                  if trailing and trailing != '  ':
+                      failures.append(f'{path}:{line_number}: trailing whitespace found')
+
+          for path, sections in required_sections.items():
+              if not path.exists():
+                  failures.append(f'{path}: required document is missing')
+                  continue
+              text = path.read_text(encoding='utf-8')
+              for section in sections:
+                  if section not in text:
+                      failures.append(f'{path}: required section missing: {section}')
+
+          capabilities = root / 'docs' / 'capabilities.md'
+          if capabilities.exists():
+              capabilities_text = capabilities.read_text(encoding='utf-8')
+              if 'The repository is currently greenfield' not in capabilities_text:
+                  failures.append('docs/capabilities.md: must state implementation status')
+              if '[`docs/design.md`](design.md)' not in capabilities_text:
+                  failures.append('docs/capabilities.md: must link to the source design')
+              if '[`docs/first-user-journey.md`](first-user-journey.md)' not in capabilities_text:
+                  failures.append('docs/capabilities.md: must link to the first-user journey contract')
+
+          if failures:
+              print(*failures, sep='\n')
+              sys.exit(1)
+          print(f'Strict document contract passed for {len(markdown)} Markdown files')
+
+      - name: Enforce pinned GitHub Actions
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import sys
+
+          pattern = re.compile(r"^\s*uses:\s*[^@]+@([^\s#]+)")
+          refs = []
+          for path in Path(".github/workflows").glob("*.yml"):
+              for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                  match = pattern.match(line)
+                  if match:
+                      refs.append((path, line_number, match.group(1)))
+          invalid = [item for item in refs if not re.fullmatch(r"[0-9a-f]{40}", item[2])]
+          if invalid:
+              print("Unpinned actions:", *invalid, sep="\n")
+              sys.exit(1)
+          assert refs, "No GitHub Actions found"
+          print(f"Validated {len(refs)} pinned actions")
+
+  go:
+    name: Go core checks (${{ matrix.os }})
+    if: ${{ hashFiles('go.mod') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run tests with race detection on Linux
+        if: runner.os == 'Linux'
+        run: go test -race -coverpkg=./... -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Enforce 100 percent Go coverage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $NF}' | tr -d '%')
+          test -n "$total"
+          python -c "import sys; total=float('$total'); assert total == 100.0, f'Go coverage is {total:.2f}%, required: 100.00%'"
+          echo "Go coverage: ${total}%"
+
+      - name: Run tests on Windows
+        if: runner.os == 'Windows'
+        run: go test ./...
+
+      - name: Upload Go coverage
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: go-coverage
+          path: coverage.out
+          if-no-files-found: ignore
+          retention-days: 14
+
+  agents:
+    name: Agent syntax and fixture checks
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: unix
+          - os: windows-latest
+            shell: windows
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Check Bash agent syntax
+        if: matrix.shell == 'unix'
+        shell: bash
+        run: |
+          if compgen -G 'agents/unix/**/*.sh' > /dev/null || compgen -G 'agents/unix/*.sh' > /dev/null; then
+            find agents/unix -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+            if command -v shellcheck >/dev/null 2>&1; then
+              find agents/unix -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
+            fi
+          else
+            echo 'No Unix agent scripts yet; syntax checks skipped.'
+          fi
+
+      - name: Check PowerShell agent syntax
+        if: matrix.shell == 'windows'
+        shell: pwsh
+        run: |
+          $scripts = @(Get-ChildItem -Path agents\windows -Filter *.ps1 -Recurse -ErrorAction SilentlyContinue)
+          if ($scripts.Count -eq 0) {
+            Write-Host 'No Windows agent scripts yet; syntax checks skipped.'
+            exit 0
+          }
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $script.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }
+
+      - name: Run agent fixture tests when present
+        shell: bash
+        run: |
+          if [ -d tests/agents ]; then
+            echo 'Agent fixture directory found; project-specific fixture runner will run here.'
+            if [ -f tests/agents/run-fixtures.sh ]; then
+              bash tests/agents/run-fixtures.sh
+            fi
+          else
+            echo 'No agent fixtures yet; fixture checks skipped.'
+          fi
+
+  schemas:
+    name: Schema checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Validate JSON syntax
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+
+          files = sorted(Path(".").rglob("*.json"))
+          for path in files:
+              json.loads(path.read_text(encoding="utf-8"))
+          print(f"Validated {len(files)} JSON files")
+
+      - name: Validate JSON Schemas when present
+        shell: bash
+        run: |
+          if [ -d schemas ]; then
+            python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import json
+
+          schema_files = sorted(Path('schemas').glob('*.schema.json'))
+          if not schema_files:
+              print('No JSON Schema files yet; schema validation skipped.')
+          elif importlib.util.find_spec('jsonschema') is None:
+              raise SystemExit('JSON Schema files exist but jsonschema is not installed')
+          else:
+              import jsonschema
+              for path in schema_files:
+                  schema = json.loads(path.read_text(encoding='utf-8'))
+                  jsonschema.Draft202012Validator.check_schema(schema)
+              print(f'Validated {len(schema_files)} JSON Schemas')
+          PY
+          else
+            echo 'No schemas directory yet; schema validation skipped.'
+          fi
+
+  security:
+    name: Security and supply-chain checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Scan for common accidentally committed secrets
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import sys
+
+          patterns = {
+              'private key': re.compile(r'-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----'),
+              'AWS access key': re.compile(r'\bAKIA[0-9A-Z]{16}\b'),
+              'GitHub token': re.compile(r'\bgh[pousr]_[A-Za-z0-9_]{20,}\b'),
+          }
+          excluded_parts = {'.git', '.github', '.venv', 'node_modules'}
+          findings = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or any(part in excluded_parts for part in path.parts):
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, OSError):
+                  continue
+              for label, pattern in patterns.items():
+                  if pattern.search(text):
+                      findings.append(f'{path}: possible {label}')
+          if findings:
+              print(*findings, sep='\n')
+              sys.exit(1)
+          print('No common secret patterns found')
+
+      - name: Check for risky executable payload files
+        shell: python
+        run: |
+          from pathlib import Path
+          import sys
+
+          blocked = {'.exe', '.dll', '.so', '.dylib', '.bin'}
+          generated = {'.git', '.github'}
+          findings = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or any(part in generated for part in path.parts):
+                  continue
+              if path.suffix.lower() in blocked:
+                  findings.append(str(path))
+          if findings:
+              print('Unexpected executable payload files:', *findings, sep='\n')
+              sys.exit(1)
+          print('No executable payload files found')
+
+  document_accuracy:
+    name: Strict document accuracy
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build documented CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/privesc-bin"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc.exe" ./core/cmd/privesc
+          else
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc" ./core/cmd/privesc
+          fi
+
+      - name: Verify documented commands and cross-document claims
+        shell: python
+        env:
+          PRIVESC_CLI: ${{ runner.temp }}/privesc-bin/privesc${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          from pathlib import Path
+          import os
+          import re
+          import subprocess
+          import sys
+
+          root = Path.cwd()
+          design = (root / 'docs' / 'design.md').read_text(encoding='utf-8')
+          capabilities = (root / 'docs' / 'capabilities.md').read_text(encoding='utf-8')
+          failures = []
+
+          command_pattern = re.compile(r'^\|\s*`(privesc [^`]+)`\s*\|', re.MULTILINE)
+          documented_commands = command_pattern.findall(capabilities)
+          if not documented_commands:
+              failures.append('No documented CLI commands found in capabilities.md')
+
+          for command in documented_commands:
+              if command not in design:
+                  failures.append(f'{command}: documented in capabilities.md but absent from design.md')
+
+              args = command.split()[1:] + ['--help']
+              try:
+                  result = subprocess.run(
+                      [os.environ['PRIVESC_CLI'], *args],
+                      cwd=root,
+                      capture_output=True,
+                      text=True,
+                      timeout=30,
+                  )
+              except (OSError, subprocess.TimeoutExpired) as exc:
+                  failures.append(f'{command}: could not execute help contract: {exc}')
+                  continue
+              if result.returncode != 0:
+                  failures.append(
+                      f'{command}: --help exited {result.returncode}: '
+                      f'{(result.stderr or result.stdout).strip()}'
+                  )
+
+          for artifact in sorted(set(re.findall(r'\b(?:facts|graph|paths|plan|report)\.v1\.json\b', capabilities))):
+              if artifact not in design:
+                  failures.append(f'{artifact}: documented in capabilities.md but absent from design.md')
+
+          if 'The repository is currently greenfield' in capabilities:
+              failures.append('capabilities.md still claims the repository is design-only after CLI implementation exists')
+
+          if failures:
+              print(*failures, sep='\n')
+              sys.exit(1)
+          print(f'Validated {len(documented_commands)} documented CLI command contracts')
+          print('Validated cross-document command and artifact consistency')
+
+  user_readiness:
+    name: Strict user readiness (${{ matrix.os }})
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the user-facing CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/privesc-bin"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc.exe" ./core/cmd/privesc
+          else
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc" ./core/cmd/privesc
+          fi
+
+      - name: Exercise strict safe CLI contract
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cli="$RUNNER_TEMP/privesc-bin/privesc.exe"
+          else
+            cli="$RUNNER_TEMP/privesc-bin/privesc"
+          fi
+          work="$RUNNER_TEMP/privesc-user-workspace"
+          mkdir -p "$work"
+          cd "$work"
+
+          "$cli" --help > help.txt
+          "$cli" auth check --help > auth-help.txt
+          "$cli" recon collect --help > recon-help.txt
+          "$cli" graph build --help > graph-help.txt
+          "$cli" graph rank --help > rank-help.txt
+          "$cli" report render --help > report-help.txt
+          "$cli" plan export --help > plan-export-help.txt
+          "$cli" run --help > run-help.txt
+          "$cli" guide --help > guide-help.txt
+
+          grep -qi 'authorized' help.txt
+          grep -q 'facts.v1' recon-help.txt
+          grep -q 'paths.v1' rank-help.txt
+          grep -q 'report' report-help.txt
+          grep -q 'plan.v1' plan-export-help.txt
+          grep -qi 'fixture' guide-help.txt
+
+          "$cli" guide --non-interactive --fixture --out-dir "$work/fixture-out"
+          test -f "$work/fixture-out/facts.v1.json"
+          test -f "$work/fixture-out/graph.v1.json"
+          test -f "$work/fixture-out/paths.v1.json"
+          test -f "$work/fixture-out/report.v1.json"
+          test -f "$work/fixture-out/report.md"
+          test -f "$work/fixture-out/audit.jsonl"
+
+          printf '{}' > invalid-auth.json
+          "$cli" auth check --auth-file invalid-auth.json || status=$?
+          test "${status:-2}" -eq 2
+
+          echo 'Strict user readiness contract passed.'
+
+  production-readiness:
+    name: CI readiness gate
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs: [docs, go, agents, schemas, security, user_readiness, document_accuracy]
+    timeout-minutes: 5
+    steps:
+      - name: Enforce required CI gates
+        env:
+          DOCS_RESULT: ${{ needs.docs.result }}
+          GO_RESULT: ${{ needs.go.result }}
+          AGENTS_RESULT: ${{ needs.agents.result }}
+          SCHEMAS_RESULT: ${{ needs.schemas.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          USER_READINESS_RESULT: ${{ needs.user_readiness.result }}
+          DOCUMENT_ACCURACY_RESULT: ${{ needs.document_accuracy.result }}
+        shell: bash
+        run: |
+          failed=()
+          {
+            printf '## CI readiness\n\n'
+            printf '| Gate | Result |\n| --- | --- |\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for gate in DOCS GO AGENTS SCHEMAS SECURITY USER_READINESS DOCUMENT_ACCURACY; do
+            variable="${gate}_RESULT"
+            result="${!variable}"
+            printf '| %s | %s |\n' "$gate" "$result" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              failed+=("$gate=$result")
+            fi
+          done
+          if (( ${#failed[@]} )); then
+            printf 'CI gates failed: %s\n' "${failed[*]}"
+            exit 1
+          fi
+          echo 'All CI gates passed.'

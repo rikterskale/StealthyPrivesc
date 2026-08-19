@@ -1004,7 +1004,13 @@ Not a grab-bag of bypasses. A **Stealth Policy** object influences:
 
 ### UX
 
+The user-facing onboarding entry point is the safe, non-interactive-capable first-user journey. `privesc guide` checks installation and authorization prerequisites, offers a fixture-backed preview, walks through generated artifacts, and provides troubleshooting guidance. It never performs privilege-affecting execution; plan application remains a separate, explicitly gated command.
+
 ```text
+# Guided first-user journey (safe preview; no privilege-affecting execution)
+privesc guide
+privesc guide --non-interactive --fixture
+
 # Standalone agents (require auth; write artifacts)
 .\privesc-tool.ps1 -Auto -AuthFile .\auth.json -OutDir .\privesc-out
 .\privesc-tool.ps1 -Interactive -AuthFile .\auth.json
@@ -1070,7 +1076,7 @@ auth:
 | Config | YAML | Operator-friendly |
 | CI | GitHub Actions | Schema + unit + fixtures; e2e **not** on default PR CI |
 
-**Packaging (proposal; Open Question 5):** 
+**Packaging (proposal; Open Question 5):**
 
 - `privesc` core binary releases per OS/arch
 - Agents shipped as separate scripts/modules inside release tarball (default; see A5)
@@ -1092,6 +1098,7 @@ Greenfield—no prior public API. Initial CLI surface:
 | `privesc plan apply` | Apply plan: auth → `facts_sha256` → live `host_id` bind → Validate → gated Execute; exit `6` on host mismatch |
 | `privesc run` | End-to-end recon→graph→report (+ optional plan export); never remote Execute |
 | `privesc report render` | Emit report artifacts |
+| `privesc guide` | Guided first-user setup and safe fixture-backed preview; never privilege-affecting Execute |
 
 **Exit codes:** `0` success, `2` auth failure, `3` validation failure, `4` partial collection, `5` mode/config mismatch, `6` topology deny (Execute from operator-host), `10` apply bridge unavailable / plugin not enabled, `11+` reserved for plugin categories.
 
