@@ -373,6 +373,85 @@ CI is planned to validate the user journey across clean installation, release ar
 
 The design treats audit JSONL as tamper-evident operational history only if an external trusted sink or stronger storage control is added later; local append mode alone does not guarantee integrity.
 
+## CI and delivery-quality capabilities
+
+The repository CI workflow is planned to provide these engineering and user-friction checks:
+
+### Source and test quality
+
+- Go formatting enforcement
+- Go vet checks
+- Linux race-detected tests
+- Windows test execution
+- Exact 100% Go coverage gate
+- Coverage artifact upload
+- Conditional activation as the Go implementation lands
+
+### Documentation quality and accuracy
+
+- Markdown encoding and non-empty-file checks
+- Required top-level headings
+- Balanced fenced code blocks
+- Tab and accidental trailing-whitespace checks
+- Local documentation-link validation
+- Required-section checks for design, capabilities, and first-user journey documents
+- Cross-document command consistency
+- Cross-document artifact-name consistency
+- Verification that documented CLI commands expose working `--help` paths
+- Executable safe documentation examples
+
+### Installation and release quality
+
+- Clean source-build installation on Ubuntu and Windows
+- Release archive creation and extraction
+- ZIP and tarball packaging checks
+- SHA-256 checksum generation and verification
+- Runtime checks from an extracted archive rather than the repository checkout
+- Version and help-command smoke tests
+- Checks that shipped documentation is available with the release
+
+### End-to-end user workflow quality
+
+- Fixture-backed first-user journey
+- Non-interactive safe preview
+- Expected artifact creation
+- JSON artifact parsing
+- Report schema-version checks
+- Facts → graph → paths → report artifact flow
+- Audit-log presence checks
+- Artifact round-trip tests
+- Schema compatibility tests
+
+### Failure and troubleshooting quality
+
+- Missing authorization-file contract
+- Missing facts-file contract
+- Expected non-zero exit codes
+- Actionable error-message checks
+- No traceback leakage in normal user errors
+- No false-success result after a failed operation
+- Planned coverage for expired authorization, invalid JSON, mode mismatch, host mismatch, read-only output directories, unsupported platforms, timeouts, and interrupted collection
+
+### Cross-platform agent quality
+
+- Bash syntax validation
+- Optional ShellCheck validation
+- PowerShell parser validation
+- Windows and Linux agent matrix coverage
+- Agent fixture-test hook
+- Platform-specific user workflow checks
+
+### Security and workflow integrity
+
+- Common secret-pattern scanning
+- Unexpected executable-payload detection
+- Pinned GitHub Action enforcement
+- Least-privilege workflow permissions
+- Concurrency cancellation for superseded runs
+- Aggregate readiness gate requiring all active checks to pass
+
+Checks that depend on the Go CLI or first-user fixtures remain skipped during the design-only stage and activate automatically once the corresponding implementation contracts exist.
+
 ## Phased capability roadmap
 
 ### Phase 1: foundation
@@ -426,6 +505,143 @@ The design treats audit JSONL as tamper-evident operational history only if an e
 - Packaging, release checksums, and optional signing
 - Interactive UX polish
 - Optional HTML reporting
+
+## Future enhancements
+
+The following capabilities come from the extended exploitation-path and guided-runtime vision. They are future enhancements, not current functionality or v1 commitments. Any implementation must remain behind authorization, mode, feature-flag, risk, host-binding, and review gates.
+
+### First-class exploitation paths
+
+Future `ExploitationPath` objects may extend the current ranked `AttackPath` model with:
+
+- Explicit sequenced steps
+- Per-step rationale and expected outcome
+- Platform-specific PowerShell and Bash/sh representations
+- Expected success signals
+- Expected failure signals
+- Noise, duration, detection, and OPSEC estimates
+- A validation ladder such as confirm → evidence → proof
+- Technique-specific troubleshooting branches
+- Alternative eligible edges when a step cannot proceed
+- Remaining-path and remaining-budget state
+
+These objects would remain knowledge-driven and serializable. They must not embed malware, credential-dumping recipes, bypass code, or unrestricted payload-generation instructions.
+
+### Playbook generation and export
+
+Future playbook generation may produce:
+
+- Self-contained JSON playbooks
+- Human-readable Markdown playbooks
+- Optional pure PowerShell export
+- Optional pure Bash/sh export
+- Versioned playbook metadata
+- Facts, paths, plugin-registry, and configuration digests
+- Ordered validation and operator-confirmation steps
+- Expected evidence and failure handling for each step
+
+Pure-shell exports would be operator guidance or explicitly gated runners. They would not bypass the authorization, host-binding, confirmation, or engagement-risk controls.
+
+### Enriched technique knowledge base
+
+The future technique metadata layer may add:
+
+- Platform-specific command representation metadata
+- Preconditions and environmental constraints
+- Success and failure signal definitions
+- OPSEC notes
+- Remediation cards
+- Alternative technique relationships
+- Coverage-gap explanations
+- Windows service, token, autorun, DLL, and related technique classes
+- Linux SUID, capabilities, writable systemd, container, and related technique classes
+- GTFOBins-aware reference metadata without embedding weaponized recipes
+
+In the current Go architecture, this information belongs in versioned plugin metadata and knowledge contracts rather than a Python-specific `core/knowledge.py` implementation.
+
+### Interactive guided runtime
+
+Future TUI or wizard capabilities may:
+
+- Load a selected ranked path
+- Show the current step, rationale, risk, and expected result
+- Offer a copy-command view
+- Offer an explicitly authorized platform-shell invocation
+- Record operator success, failure, skip, or abort decisions
+- Surface matching troubleshooting branches
+- Suggest alternative eligible edges
+- Re-score remaining path options after confirmed state changes
+- Reuse timeline and review dispositions for auditability
+
+The guided runtime must default to preview and confirmation. It is not an unattended execution engine.
+
+### Troubleshooting decision trees
+
+Future troubleshooting knowledge may be keyed by technique and environmental constraint, including:
+
+- `noexec` mounts
+- AppArmor or SELinux denials
+- UAC and token-integrity constraints
+- Protected-process restrictions
+- Container-runtime limitations
+- Missing interpreters or shell utilities
+- Permission and filesystem constraints
+- Collector coverage gaps
+
+Troubleshooting output should explain why a check or step was skipped, what evidence is missing, and which safe validation or alternative analysis step is appropriate. It must not recommend bypassing authorization or disabling defensive controls as a generic remedy.
+
+### Zero-Python target operation
+
+Future target-side capabilities may formalize the zero-Python architecture:
+
+- Self-contained PowerShell collector for Windows
+- Self-contained POSIX/Bash collector for Linux
+- No external Python dependency on target hosts
+- Strict JSON output compatible with the shared facts contract
+- Coverage metadata so quiet output is not mistaken for complete coverage
+- Dry-run and plan-preview support
+- Noise and OPSEC hints
+- Explicitly authorized staged collection where permitted
+- Optional in-memory or operator-selected non-persistent operation
+- Offline shell-only preview of a pre-generated playbook
+
+The operator-side Go core remains responsible for graph construction, ranking, report generation, and policy enforcement. Target collectors must not silently turn into remote execution channels.
+
+### Dual-shell native support
+
+Future path steps may provide native representations for:
+
+- Windows PowerShell
+- Linux Bash/sh
+
+Future active validation may allow a complete path to be evaluated as a sequence of authorized, validated shell steps under the configured noise budget, jitter, parent-process, and confirmation policies. Active validation remains distinct from passive collection and must be disabled by default in engagement mode when risk is high.
+
+### Offline pure-shell playbook runner
+
+Future releases may provide a limited PowerShell or Bash menu-driven runner for a pre-generated playbook when the target has no Python or Go runtime. It would provide:
+
+- Step display
+- Explicit confirmation
+- Success/failure recording
+- Local artifact and audit output
+- No graph re-ranking on the target
+- No dynamic payload generation
+- No bypass of host-binding or authorization policy
+
+The operator-host analyzer remains the source of path ranking and playbook generation.
+
+### Visualization and multi-host extensions
+
+Future visualization capabilities may include:
+
+- TUI attack-path browser
+- Browser dashboard parity
+- Interactive graph exploration
+- Campaign graph views
+- Multi-host path projections when authorized history is available
+- Cross-host findings and coverage timelines
+
+Domain, lateral-movement, and multi-host execution remain outside v1. Any future multi-host view must preserve the current reserved-status and authorization boundaries.
 
 ## Explicitly out of scope for v1
 
