@@ -484,6 +484,299 @@ jobs:
           print(f'Validated {len(documented_commands)} documented CLI command contracts')
           print('Validated cross-document command and artifact consistency')
 
+  release_install:
+    name: Clean release-archive installation (${{ matrix.os }})
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and package release archive
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          import os
+          import shutil
+          import subprocess
+          import tarfile
+          import zipfile
+
+          root = Path.cwd()
+          staging = root / 'release-staging'
+          dist = root / 'release-dist'
+          staging.mkdir()
+          dist.mkdir()
+          binary = staging / ('privesc.exe' if os.name == 'nt' else 'privesc')
+          subprocess.run(['go', 'build', '-trimpath', '-o', str(binary), './core/cmd/privesc'], check=True)
+          shutil.copytree(root / 'docs', staging / 'docs')
+          archive_root = f"privesc-{os.environ['RUNNER_OS'].lower()}"
+          tar_path = dist / f'{archive_root}.tar.gz'
+          zip_path = dist / f'{archive_root}.zip'
+          with tarfile.open(tar_path, 'w:gz') as archive:
+              archive.add(staging, arcname=archive_root)
+          with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+              for path in staging.rglob('*'):
+                  if path.is_file():
+                      archive.write(path, Path(archive_root) / path.relative_to(staging))
+          checksums = []
+          for path in sorted(dist.iterdir()):
+              checksums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
+          (dist / 'SHA256SUMS').write_text('\n'.join(checksums) + '\n', encoding='utf-8')
+
+      - name: Extract archive and test clean-user installation
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          import os
+          import subprocess
+          import tarfile
+          import tempfile
+          import zipfile
+
+          dist = Path('release-dist')
+          for line in (dist / 'SHA256SUMS').read_text(encoding='utf-8').splitlines():
+              digest, name = line.split('  ', 1)
+              assert hashlib.sha256((dist / name).read_bytes()).hexdigest() == digest, name
+
+          with tempfile.TemporaryDirectory(prefix='privesc-clean-install-') as temp:
+              temp_path = Path(temp)
+              archive = sorted(dist.glob('*.tar.gz'))[0]
+              with tarfile.open(archive) as handle:
+                  handle.extractall(temp_path)
+              binary = next(temp_path.rglob('privesc.exe' if os.name == 'nt' else 'privesc'))
+              for args in (('--version',), ('--help',), ('guide', '--help')):
+                  result = subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=30)
+                  assert result.returncode == 0, (args, result.stdout, result.stderr)
+          print('Checksum, archive extraction, and clean-install contract passed')
+
+  fixture_workflow:
+    name: End-to-end fixture workflow
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' && hashFiles('tests/fixtures/first-user/**') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/privesc-bin"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc.exe" ./core/cmd/privesc
+          else
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc" ./core/cmd/privesc
+          fi
+
+      - name: Run fixture journey and validate artifact round trip
+        shell: python
+        env:
+          PRIVESC_CLI: ${{ runner.temp }}/privesc-bin/privesc${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          from pathlib import Path
+          import json
+          import os
+          import subprocess
+          import tempfile
+
+          with tempfile.TemporaryDirectory(prefix='privesc-fixture-') as temp:
+              out = Path(temp) / 'out'
+              result = subprocess.run(
+                  [os.environ['PRIVESC_CLI'], 'guide', '--non-interactive', '--fixture', '--out-dir', str(out)],
+                  capture_output=True,
+                  text=True,
+                  timeout=60,
+              )
+              assert result.returncode == 0, (result.stdout, result.stderr)
+              expected = ['facts.v1.json', 'graph.v1.json', 'paths.v1.json', 'report.v1.json', 'report.md', 'audit.jsonl']
+              for name in expected:
+                  path = out / name
+                  assert path.exists(), name
+                  if path.suffix == '.json':
+                      json.loads(path.read_text(encoding='utf-8'))
+              report = json.loads((out / 'report.v1.json').read_text(encoding='utf-8'))
+              assert report.get('schema_version') == '1.0.0', report
+              assert (out / 'facts.v1.json').read_bytes()
+          print('Fixture workflow and artifact round trip passed')
+
+  failure_contract:
+    name: Failure and troubleshooting contracts
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' && hashFiles('tests/fixtures/first-user/**') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/privesc-bin"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc.exe" ./core/cmd/privesc
+          else
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc" ./core/cmd/privesc
+          fi
+
+      - name: Verify actionable failures never report success
+        shell: python
+        env:
+          PRIVESC_CLI: ${{ runner.temp }}/privesc-bin/privesc${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          from pathlib import Path
+          import os
+          import subprocess
+          import tempfile
+
+          cases = [
+              ('missing authorization', ['auth', 'check', '--auth-file', 'does-not-exist.json'], 2, 'auth'),
+              ('missing facts', ['graph', 'build', '--facts', 'does-not-exist.json'], 3, 'facts'),
+          ]
+          with tempfile.TemporaryDirectory(prefix='privesc-failures-') as temp:
+              for label, args, expected_code, expected_text in cases:
+                  result = subprocess.run(
+                      [os.environ['PRIVESC_CLI'], *args],
+                      cwd=temp,
+                      capture_output=True,
+                      text=True,
+                      timeout=30,
+                  )
+                  combined = f'{result.stdout}\n{result.stderr}'.lower()
+                  assert result.returncode == expected_code, (label, result.returncode, combined)
+                  assert expected_text in combined, (label, combined)
+                  assert 'traceback' not in combined
+          print('Failure codes, actionable messages, and no-traceback contract passed')
+
+  docs_examples:
+    name: Executable documentation examples
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/privesc-bin"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc.exe" ./core/cmd/privesc
+          else
+            go build -trimpath -o "$RUNNER_TEMP/privesc-bin/privesc" ./core/cmd/privesc
+          fi
+
+      - name: Execute safe documented examples
+        shell: python
+        env:
+          PRIVESC_CLI: ${{ runner.temp }}/privesc-bin/privesc${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          from pathlib import Path
+          import os
+          import subprocess
+          import tempfile
+
+          examples = [
+              ('main help', ['--help']),
+              ('guide help', ['guide', '--help']),
+              ('auth help', ['auth', 'check', '--help']),
+              ('recon help', ['recon', 'collect', '--help']),
+              ('graph help', ['graph', 'build', '--help']),
+              ('ranking help', ['graph', 'rank', '--help']),
+              ('report help', ['report', 'render', '--help']),
+              ('plan help', ['plan', 'export', '--help']),
+          ]
+          for label, args in examples:
+              result = subprocess.run([os.environ['PRIVESC_CLI'], *args], capture_output=True, text=True, timeout=30)
+              assert result.returncode == 0, (label, result.stdout, result.stderr)
+          print(f'Executed {len(examples)} safe documented examples')
+
+  artifact_contract:
+    name: Artifact and schema compatibility
+    if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' && hashFiles('tests/fixtures/first-user/**') != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run artifact and compatibility tests
+        run: go test ./... -run 'Schema|Artifact|Compatibility|RoundTrip'
+
+      - name: Validate fixture JSON artifacts and schema versions
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+
+          fixtures = sorted(Path('tests/fixtures/first-user').rglob('*.json'))
+          assert fixtures, 'No first-user JSON fixtures found'
+          for path in fixtures:
+              value = json.loads(path.read_text(encoding='utf-8'))
+              if path.name.endswith('.v1.json'):
+                  assert value.get('schema_version') == '1.0.0', path
+          print(f'Validated {len(fixtures)} fixture JSON files')
+
   user_readiness:
     name: Strict user readiness (${{ matrix.os }})
     if: ${{ hashFiles('go.mod') != '' && hashFiles('core/cmd/privesc/**/*.go') != '' }}
@@ -562,7 +855,7 @@ jobs:
     name: CI readiness gate
     runs-on: ubuntu-latest
     if: ${{ always() }}
-    needs: [docs, go, agents, schemas, security, user_readiness, document_accuracy]
+    needs: [docs, go, agents, schemas, security, user_readiness, document_accuracy, release_install, fixture_workflow, failure_contract, docs_examples, artifact_contract]
     timeout-minutes: 5
     steps:
       - name: Enforce required CI gates
@@ -574,6 +867,11 @@ jobs:
           SECURITY_RESULT: ${{ needs.security.result }}
           USER_READINESS_RESULT: ${{ needs.user_readiness.result }}
           DOCUMENT_ACCURACY_RESULT: ${{ needs.document_accuracy.result }}
+          RELEASE_INSTALL_RESULT: ${{ needs.release_install.result }}
+          FIXTURE_WORKFLOW_RESULT: ${{ needs.fixture_workflow.result }}
+          FAILURE_CONTRACT_RESULT: ${{ needs.failure_contract.result }}
+          DOCS_EXAMPLES_RESULT: ${{ needs.docs_examples.result }}
+          ARTIFACT_CONTRACT_RESULT: ${{ needs.artifact_contract.result }}
         shell: bash
         run: |
           failed=()
@@ -581,7 +879,7 @@ jobs:
             printf '## CI readiness\n\n'
             printf '| Gate | Result |\n| --- | --- |\n'
           } >> "$GITHUB_STEP_SUMMARY"
-          for gate in DOCS GO AGENTS SCHEMAS SECURITY USER_READINESS DOCUMENT_ACCURACY; do
+          for gate in DOCS GO AGENTS SCHEMAS SECURITY USER_READINESS DOCUMENT_ACCURACY RELEASE_INSTALL FIXTURE_WORKFLOW FAILURE_CONTRACT DOCS_EXAMPLES ARTIFACT_CONTRACT; do
             variable="${gate}_RESULT"
             result="${!variable}"
             printf '| %s | %s |\n' "$gate" "$result" >> "$GITHUB_STEP_SUMMARY"

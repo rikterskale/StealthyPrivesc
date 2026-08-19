@@ -369,6 +369,8 @@ Planned controls include:
 - No guarantee of EDR evasion
 - Signed releases and checksums as future supply-chain controls
 
+CI is planned to validate the user journey across clean installation, release archives, safe fixture workflows, documented commands, failure messages, shell-agent compatibility, artifact round trips, and schema compatibility.
+
 The design treats audit JSONL as tamper-evident operational history only if an external trusted sink or stronger storage control is added later; local append mode alone does not guarantee integrity.
 
 ## Phased capability roadmap

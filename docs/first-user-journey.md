@@ -160,6 +160,8 @@ When the implementation exists, CI must exercise the guide on Ubuntu and Windows
 - Missing or invalid authorization produces an actionable failure.
 - A read-only output directory produces a useful error.
 
+The broader CI user-friction contract also covers clean release-archive installation, executable safe documentation examples, invalid-input troubleshooting, cross-platform agent syntax, artifact round trips, and schema compatibility fixtures.
+
 ## Safety boundary
 
 The first-user journey is an onboarding and preview capability. It is not an execution wizard. Any future transition from preview to an on-target plan application must be a separate, explicit command with its own authorization, host-binding, risk, and confirmation gates.
