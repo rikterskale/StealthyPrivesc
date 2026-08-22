@@ -1,5 +1,13 @@
 use std::process::Command;
 
+fn smoke_plugin() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows.uac"
+    } else {
+        "linux.kernel_cve"
+    }
+}
+
 fn stealthy() -> Command {
     Command::new(env!("CARGO_BIN_EXE_stealthy"))
 }
@@ -77,7 +85,7 @@ fn sarif_output_is_valid_sarif_21() {
             "sarif",
             "scan",
             "--plugins",
-            "linux.kernel_cve",
+            smoke_plugin(),
         ])
         .output()
         .unwrap();
@@ -97,7 +105,7 @@ fn json_report_contains_identity_and_assessment_metadata() {
             "json",
             "enum",
             "--plugins",
-            "linux.kernel_cve",
+            smoke_plugin(),
         ])
         .output()
         .unwrap();
@@ -125,7 +133,7 @@ fn diff_command_compares_offline_json_reports() {
                 "json",
                 "enum",
                 "--plugins",
-                "linux.kernel_cve",
+                smoke_plugin(),
             ])
             .output()
             .unwrap();

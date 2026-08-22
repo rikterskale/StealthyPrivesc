@@ -8,7 +8,7 @@ For installation details, use [Installation](installation.md). For command
 choices and evidence handling, use the [User Guide](user-guide.md). For remote
 deployment, use the [Operator Runbook](operator-runbook.md).
 
-## Experience goals
+## Goals
 
 The first-user path must be:
 
@@ -21,6 +21,20 @@ The first-user path must be:
 
 The path does not enable `--auto-exploit`, run kernel exploits, create
 persistence, or silently send findings over the network.
+
+## Entry points
+
+- [Installation](installation.md) — install a release or build from source
+- [User Guide](user-guide.md) — follow the guided operator workflow
+- [Operator Runbook](operator-runbook.md) — deploy to a remote Linux or Windows host
+- `stealthy guide` — print the in-product first-run guide
+- `scripts/` — approved script fallbacks when the binary cannot run
+
+## Journey stages
+
+The journey is: select the binary, run safe local checks, confirm
+authorization, list OS-valid plugins, complete a visible memory-only baseline,
+choose any approved follow-up, and finish with evidence/cleanup handling.
 
 ## Prerequisites
 
@@ -35,7 +49,7 @@ Before starting, the operator has:
 If any of these is missing, stop at that point and resolve it. The tool's
 authorization flag is an acknowledgment, not a replacement for the ROE.
 
-## Stage 0 — select the binary
+### Stage 0 — select the binary
 
 Choose one block and keep the variable for the rest of the session.
 
@@ -68,7 +82,7 @@ Confirm that the path resolves before continuing. If it does not, return to
 [Installation](installation.md); do not guess a path or download an
 unreviewed executable.
 
-## Stage 1 — safe local checks
+### Stage 1 — safe local checks
 
 These commands do not require authorization and do not enumerate a host.
 
@@ -94,7 +108,7 @@ Checkpoint: `doctor` should report a supported OS, one or more compiled
 plugins, a usable working directory, and `Ready for an authorized scan.`.
 Nothing should have been written to disk by these checks.
 
-## Stage 2 — authorization pause
+### Stage 2 — authorization pause
 
 Pause and confirm all of the following:
 
@@ -122,7 +136,7 @@ Checkpoint: the output lists plugin IDs for the current OS. Record the list if
 the run must be reproducible. If the command exits `2`, authorization was not
 acknowledged; no host enumeration should have occurred.
 
-## Stage 3 — first useful scan
+### Stage 3 — first useful scan
 
 Run the default human report. This is intentionally not quiet: quiet human
 output is suppressed, which can make a successful first run look blank.
@@ -150,7 +164,7 @@ The first scan is enumerate-only and memory-only. The operator should see:
 Checkpoint: a blank or empty finding list is not automatically a clean result.
 Confirm the expected plugins ran and that material coverage errors are absent.
 
-## Stage 4 — choose a guided follow-up
+### Stage 4 — choose a guided follow-up
 
 After reviewing the first scan, choose exactly one next step:
 
@@ -166,7 +180,7 @@ On Windows PowerShell, replace the executable prefix with `& $Stealthy` and
 use PowerShell's backtick for multiline commands. Unknown plugin IDs fail
 clearly; copy them exactly from the listing.
 
-## Stage 5 — deliberately export evidence
+### Stage 5 — deliberately export evidence
 
 Do not export during the first scan unless the evidence policy requires it.
 When it does, prefer sealed output:
@@ -190,7 +204,7 @@ If plaintext JSON is explicitly approved:
 Treat `findings.json` as sensitive. `--format json` controls console output;
 it does not encrypt a file.
 
-## Stage 6 — finish and hand off
+### Stage 6 — finish and hand off
 
 The first-user journey is complete when the operator has:
 
@@ -204,6 +218,19 @@ The first-user journey is complete when the operator has:
 
 For remote targets, continue with the deployment and cleanup checklists in the
 [Operator Runbook](operator-runbook.md).
+
+## CI contract
+
+CI should validate the same first-user contract across supported platforms:
+
+- Validate Markdown structure, required headings, local links, and pinned
+  workflow actions.
+- Run Rust format, clippy, tests, release builds, and CLI smoke checks on Linux.
+- Run the Rust tests and release build on Windows using Windows-valid plugin
+  IDs for host-dependent CLI fixtures.
+- Check Linux/Python and Windows PowerShell fallback syntax.
+- Run security/supply-chain checks and fail the final readiness gate if any
+  required gate fails.
 
 ## Non-interactive contract
 
