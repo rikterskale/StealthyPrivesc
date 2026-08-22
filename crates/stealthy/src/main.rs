@@ -153,7 +153,7 @@ fn print_report(path: &std::path::Path, key_hex: &str, format: ReportFormat) -> 
     let report = EncryptedStore::open_sealed_report(&sealed, key_hex)?;
     let findings = report.findings.iter().collect::<Vec<_>>();
     match format {
-        ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+        ReportFormat::Json => println!("{}", output::render_json(&report, &findings)?),
         ReportFormat::Sarif => println!("{}", output::render_sarif(&report, &findings)),
         ReportFormat::Markdown | ReportFormat::Human => {
             print!(

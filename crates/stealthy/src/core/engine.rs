@@ -182,6 +182,10 @@ impl Engine {
 
             match plugin.run(&mut ctx) {
                 Ok(findings) => {
+                    let findings = findings
+                        .into_iter()
+                        .map(with_operator_next_step)
+                        .collect::<Vec<_>>();
                     let n = findings.len();
                     let max = findings
                         .iter()
@@ -312,6 +316,14 @@ fn assess_finding(finding_index: usize, finding: &Finding) -> FindingAssessment 
         applicability: applicability.into(),
         evidence_quality: evidence_quality.into(),
     }
+}
+
+fn with_operator_next_step(mut finding: Finding) -> Finding {
+    if finding.needs_next_step() {
+        finding.recommendation =
+            "Validate this observation against the target and ROE before taking action; preserve evidence and document the stop condition.".into();
+    }
+    finding
 }
 
 fn store_into_parts(store: &EncryptedStore) -> (Vec<crate::core::types::Finding>, Vec<String>) {

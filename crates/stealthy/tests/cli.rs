@@ -120,6 +120,62 @@ fn json_report_contains_identity_and_assessment_metadata() {
 }
 
 #[test]
+fn human_findings_label_the_operator_next_step() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--no-color",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("What's next:"),
+        "missing next-step label in:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Command:"),
+        "missing next-step command in:\n{stdout}"
+    );
+}
+
+#[test]
+fn json_findings_have_next_step_guidance() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    for finding in value["findings"].as_array().unwrap() {
+        if finding["kind"] != "recommendation" {
+            assert!(
+                !finding["recommendation"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty(),
+                "positive finding has no next step: {finding}"
+            );
+        }
+        assert!(finding["what_next"].is_string());
+        assert!(finding["next_command"].is_string());
+    }
+}
+
+#[test]
 fn diff_command_compares_offline_json_reports() {
     let dir = tempfile::tempdir().unwrap();
     let baseline_path = dir.path().join("baseline.json");

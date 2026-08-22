@@ -48,7 +48,7 @@ pub fn emit(
         ReportFormat::Json => {
             let mut view = report.clone();
             view.findings = filtered.iter().map(|f| (*f).clone()).collect();
-            println!("{}", serde_json::to_string_pretty(&view)?);
+            println!("{}", render_json(&view, &filtered)?);
         }
         ReportFormat::Markdown => {
             print!("{}", render_markdown(report, &filtered, total));
@@ -140,6 +140,24 @@ pub fn emit(
 
     let _ = (shown, total);
     Ok(EmitResult { max_severity })
+}
+
+/// Render a JSON report with derived operator guidance fields.
+///
+/// `recommendation` remains unchanged for compatibility. The derived fields
+/// make the human-facing contract available to automation as well.
+pub fn render_json(report: &RunReport, findings: &[&Finding]) -> Result<String> {
+    let mut view = serde_json::to_value(report)?;
+    if let Some(serialized_findings) = view
+        .get_mut("findings")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for (serialized, finding) in serialized_findings.iter_mut().zip(findings) {
+            serialized["what_next"] = serde_json::json!(finding.what_next());
+            serialized["next_command"] = serde_json::json!(finding.next_command());
+        }
+    }
+    Ok(serde_json::to_string_pretty(&view)?)
 }
 
 fn filter_findings(findings: &[Finding], min: Severity) -> Vec<&Finding> {
@@ -281,7 +299,13 @@ fn print_finding(idx: usize, f: &Finding) {
         term::bold(&f.title)
     );
     println!("       {}", f.detail);
-    println!("       {} {}", term::green("→"), f.recommendation);
+    println!(
+        "       {} {} {}",
+        term::green("→"),
+        term::bold("What's next:"),
+        f.what_next()
+    );
+    println!("       {} {}", term::dim("Command:"), f.next_command());
     let mut tags = Vec::new();
     if f.noisy {
         tags.push(term::warn("noisy"));
@@ -340,7 +364,8 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         out.push_str(&format!(
             "### {}. [{}] {} (`{}`)\n\n\
              {}\n\n\
-             **Recommendation:** {}\n\n\
+             **What's next:** {}\n\n\
+             **Command:** `{}`\n\n\
              - kind: `{:?}`\n\
              - noisy: {}\n\
              - leaves_artifacts: {}\n\n",
@@ -349,7 +374,8 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
             f.title,
             f.plugin,
             f.detail,
-            f.recommendation,
+            f.what_next(),
+            f.next_command(),
             f.kind,
             f.noisy,
             f.leaves_artifacts
@@ -397,7 +423,9 @@ pub fn render_sarif(report: &RunReport, findings: &[&Finding]) -> String {
                 "properties": {
                     "severity": finding.severity.as_str(),
                     "kind": format!("{:?}", finding.kind).to_ascii_lowercase(),
-                    "recommendation": finding.recommendation,
+                    "recommendation": finding.what_next(),
+                    "what_next": finding.what_next(),
+                    "next_command": finding.next_command(),
                     "noisy": finding.noisy,
                     "leaves_artifacts": finding.leaves_artifacts,
                 }
@@ -446,7 +474,8 @@ fn write_file(
     restrict_file_permissions(&f)?;
 
     if plaintext {
-        let json = serde_json::to_vec_pretty(report)?;
+        let findings = report.findings.iter().collect::<Vec<_>>();
+        let json = render_json(report, &findings)?.into_bytes();
         f.write_all(&json)?;
     } else {
         let sealed = store.seal_report(report)?;

@@ -120,7 +120,7 @@ you explicitly choose an output mode or redirect console output yourself.
 Expected result:
 
 - A host, user, OS, architecture, and mode summary
-- Findings sorted by severity with recommendations
+- Findings sorted by severity with an explicit **What's next** action and a concrete read-only command for every finding
 - Notes and plugin coverage
 - A statement that the findings remain in memory
 
@@ -172,7 +172,8 @@ Windows PowerShell:
 ```
 
 Keep the file access-controlled and validate it before sharing. The JSON
-contains identity, host, plugin coverage, findings, and recommendations.
+contains identity, host, plugin coverage, findings, the `recommendation` field,
+and derived `what_next` / `next_command` fields for automation.
 
 ### Encrypted sealed evidence
 
