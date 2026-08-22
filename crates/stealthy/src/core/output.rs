@@ -436,11 +436,11 @@ fn write_file(
     Ok(())
 }
 
-fn restrict_file_permissions(file: &std::fs::File) -> Result<()> {
+fn restrict_file_permissions(_file: &std::fs::File) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        _file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
 }

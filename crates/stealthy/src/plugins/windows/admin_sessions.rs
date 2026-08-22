@@ -127,7 +127,7 @@ fn local_admins() -> Result<Vec<String>> {
         let mut buf: *mut u8 = ptr::null_mut();
         let mut entries = 0u32;
         let mut total = 0u32;
-        let mut resume = 0u32;
+        let mut resume = 0usize;
         let status = NetLocalGroupGetMembers(
             ptr::null(),
             group.as_ptr(),

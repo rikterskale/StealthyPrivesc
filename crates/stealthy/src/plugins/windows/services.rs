@@ -171,7 +171,7 @@ mod tests {
 fn list_service_image_paths() -> Result<Vec<(String, String)>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ,
+        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
     };
 
     let mut out = Vec::new();

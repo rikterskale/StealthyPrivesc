@@ -115,7 +115,7 @@ impl Plugin for CredentialsPlugin {
 fn autologon_hint() -> Result<Option<String>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ,
+        RegCloseKey, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
     };
     unsafe {
         let sub = to_wide(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon");
