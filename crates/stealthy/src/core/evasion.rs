@@ -24,5 +24,5 @@ pub fn evasion_notes() -> Vec<String> {
     vec![
         "Prefer /proc and direct file reads over spawning ps/ss/id where possible.".into(),
         "Avoid cmd.exe /c and powershell.exe child processes for simple identity queries.".into(),
-        ]
+    ]
 }
