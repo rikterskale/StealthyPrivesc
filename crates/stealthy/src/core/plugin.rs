@@ -11,6 +11,7 @@ pub struct PluginContext<'a> {
     #[allow(dead_code)]
     pub auto_exploit: bool,
     /// When true, plugins should skip known-audited helpers (e.g. `sudo -l`).
+    #[allow(dead_code)]
     pub prefer_quiet: bool,
     pub allow_techniques: &'a TechniqueAllowlist,
     #[allow(dead_code)]

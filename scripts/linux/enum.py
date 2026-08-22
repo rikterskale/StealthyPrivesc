@@ -109,7 +109,11 @@ def sudoers() -> None:
     paths = [Path("/etc/sudoers")]
     d = Path("/etc/sudoers.d")
     if d.is_dir():
-        paths.extend(sorted(d.iterdir()))
+        try:
+            paths.extend(sorted(d.iterdir()))
+        except OSError:
+            # A locked-down target may expose the directory but deny listing it.
+            pass
     for p in paths:
         try:
             text = p.read_text(errors="replace")

@@ -304,7 +304,7 @@ jobs:
                   report.write_text(result.stdout, encoding="utf-8")
                   json_reports.append(report)
                   parsed = json.loads(result.stdout)
-                  assert parsed["schema_version"] == "1"
+                  assert parsed["schema_version"] == "2"
                   assert isinstance(parsed["run_id"], str) and parsed["run_id"]
                   assert isinstance(parsed["started_at_unix"], int)
                   assert parsed["authorized_use_ack"] is True
@@ -366,7 +366,7 @@ jobs:
                   "report", str(sealed_verbose), "--key-hex", key,
                   "--format", "json"
               ).stdout)
-              assert reopened["schema_version"] == "1"
+              assert reopened["schema_version"] == "2"
               assert reopened["findings"]
               reopened_sarif = json.loads(run(
                   "report", str(sealed_verbose), "--key-hex", key,
@@ -390,7 +390,7 @@ jobs:
                   "--plaintext-file", "--output-path", str(plaintext),
                   "enum", "--plugins", "linux.kernel_cve"
               )
-              assert json.loads(plaintext.read_text(encoding="utf-8"))["schema_version"] == "1"
+              assert json.loads(plaintext.read_text(encoding="utf-8"))["schema_version"] == "2"
               if os.name == "posix":
                   assert stat.S_IMODE(plaintext.stat().st_mode) == 0o600
 

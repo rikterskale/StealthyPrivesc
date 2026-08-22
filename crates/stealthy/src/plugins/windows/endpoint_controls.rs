@@ -450,6 +450,7 @@ fn read_u32(_hive: Hive, _subkey: &str, _value: &str) -> Result<Option<u32>> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn read_string(hive: Hive, subkey: &str, value: &str) -> Result<Option<String>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
