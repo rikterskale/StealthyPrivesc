@@ -1,0 +1,16 @@
+# StealthyPrivesc automated dispatcher manifest.
+# Example of the context carried by a staged primary run. The generated
+# manifest binds to the current host automatically. This records inherited
+# authorization; it does not grant permission or override host policy.
+
+manifest_version=1
+authorization_ack=true
+allow_fallback=true
+roe_ref=INHERITED_PRIMARY_RUN
+execution_mode=enumerate-only
+target_hostname=AUTO
+target_username=
+drop_dir=
+primary_binary=stealthy
+linux_fallbacks=python,bash
+windows_fallbacks=powershell

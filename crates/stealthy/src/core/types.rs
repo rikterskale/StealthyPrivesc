@@ -270,6 +270,15 @@ pub struct RunReport {
     pub version: String,
     pub authorized_use_ack: bool,
     pub mode: String,
+    /// Execution path used to collect this report (`binary` or a named fallback).
+    #[serde(default)]
+    pub execution_path: String,
+    /// Primary executable launch outcome (`not_applicable`, `ok`, or `blocked`).
+    #[serde(default)]
+    pub primary_launch: String,
+    /// ROE/reference carried by an approved dispatcher manifest, when present.
+    #[serde(default)]
+    pub roe_ref: String,
     /// Engagement / OPSEC profile used for this run.
     #[serde(default)]
     pub profile: String,

@@ -130,6 +130,15 @@ stealthy one-liners --os linux --transport ssh
 ```
 
 Operator-workstation delivery helpers (no host enumeration; no auth gate).
+`stage` also emits `scripts/run.sh` or `scripts/run.ps1` and a
+`stealthy-run.conf` dispatcher manifest carrying the inherited primary-run
+authorization context. Run the dispatcher as the target entrypoint; it binds
+to the current host, stages the bundle, tries the primary executable, and
+selects only the manifest-approved fallback after a launch failure.
+
+The dispatcher does not approve or bypass AppLocker, WDAC, SmartScreen,
+AppArmor, SELinux, or `noexec`. If the selected interpreter is not already
+allowed, the run stops.
 
 ## `report`
 

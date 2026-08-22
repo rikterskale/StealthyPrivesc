@@ -6,6 +6,16 @@ Quiet-leaning enumeration using direct file reads. No exploitation.
 
 from __future__ import annotations
 
+# This file is named enum.py for operator familiarity. Remove its directory
+# from import resolution when executed directly so it cannot shadow Python's
+# standard-library enum module.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+
+_script_dir = _bootstrap_os.path.dirname(_bootstrap_os.path.realpath(__file__))
+if _bootstrap_sys.path and _bootstrap_sys.path[0] == _script_dir:
+    _bootstrap_sys.path.pop(0)
+
 import hashlib
 import json
 import os
@@ -393,9 +403,18 @@ def emit_json() -> None:
         "triage_decisions": [],
         "plugins_run": PLUGINS_RUN,
         "coverage": [
-            {"id": pid, "status": "ok", "findings": 0, "error": None, "duration_ms": 0}
+            {
+                "id": pid,
+                "status": "ok",
+                "findings": sum(1 for finding in FINDINGS if finding["plugin"] == pid),
+                "error": None,
+                "duration_ms": 0,
+            }
             for pid in PLUGINS_RUN
         ],
+        "execution_path": os.environ.get("STEALTHY_EXECUTION_PATH", "script"),
+        "primary_launch": os.environ.get("STEALTHY_PRIMARY_LAUNCH", "not_applicable"),
+        "roe_ref": os.environ.get("STEALTHY_MANIFEST_ROE_REF", ""),
         "notes": [
             "Script fallback coverage is reduced versus the Rust binary.",
             "Use `stealthy ingest` to normalize and enrich this report.",
@@ -408,23 +427,44 @@ def main(argv: list[str] | None = None) -> int:
     global JSON_MODE
     args = list(sys.argv[1:] if argv is None else argv)
     JSON_MODE = "--json" in args
+    if JSON_MODE:
+        # JSON mode is a machine contract: suppress the human transcript while
+        # the same read-only checks execute and collect their structured subset.
+        import contextlib
+        import io
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            identity()
+            sudoers()
+            suid_shallow()
+            groups()
+            containers()
+            polkit()
+            mounts()
+            endpoint_controls()
+            ssh_keys()
+            credentials()
+            kernel()
+        PLUGINS_RUN.extend(
+            plugin
+            for plugin in [
+                "linux.containers",
+                "linux.mounts",
+                "linux.polkit",
+                "linux.endpoint_controls",
+                "linux.ssh_keys",
+                "linux.credentials",
+                "linux.kernel_cve",
+            ]
+            if plugin not in PLUGINS_RUN
+        )
+        emit_json()
+        return 0
     banner()
     identity()
     sudoers()
     suid_shallow()
     groups()
-    if JSON_MODE:
-        # Reduced script JSON coverage; remaining checks stay human-oriented for now.
-        PLUGINS_RUN.extend(
-            [
-                "linux.containers",
-                "linux.mounts",
-                "linux.ssh_keys",
-                "linux.credentials",
-            ]
-        )
-        emit_json()
-        return 0
     containers()
     polkit()
     mounts()

@@ -91,6 +91,10 @@ cargo build -p stealthy --release
 ./target/release/stealthy stage --os linux --out ./drop \
   --binary ./target/release/stealthy
 
+# Run the staged bundle through the policy-bound dispatcher
+# (the staged manifest carries the primary-run authorization context)
+bash ./drop/scripts/run.sh --profile balanced enum
+
 # Markdown / JSON / SARIF console formats
 ./target/release/stealthy --authorized --format markdown enum > report.md
 ./target/release/stealthy --authorized --format json -q enum
@@ -120,6 +124,26 @@ cargo build -p stealthy --release
 ```
 
 ### Script-only fallbacks
+
+Use the staged dispatcher as the normal entrypoint. It verifies the approved
+manifest, stages the bundle, tries the primary executable, and automatically
+selects an approved script fallback only when the executable cannot launch.
+It injects the authorization acknowledgment required by the primary binary;
+the manifest carries the inherited ROE context and binds execution to the
+current host without granting permission or overriding host policy.
+
+```bash
+bash ./drop/scripts/run.sh --profile balanced enum
+```
+
+On Windows:
+
+```powershell
+& .\drop\scripts\run.ps1 --profile balanced enum
+```
+
+Use direct scripts only for troubleshooting or when the dispatcher itself is
+not an approved execution path.
 
 ```bash
 # Linux

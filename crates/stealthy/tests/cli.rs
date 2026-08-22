@@ -386,6 +386,11 @@ fn stage_and_verify_local_bundle() {
     );
     let staged = out.join("cache-update");
     assert!(staged.is_file());
+    let dispatcher = out.join("scripts/run.sh");
+    assert!(dispatcher.is_file());
+    let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+    assert!(manifest.contains("authorization_ack=true"));
+    assert!(manifest.contains("primary_binary=cache-update"));
     let sums = std::fs::read_to_string(out.join("SHA256SUMS")).unwrap();
     let expect = sums.split_whitespace().next().unwrap();
     let verify = stealthy()

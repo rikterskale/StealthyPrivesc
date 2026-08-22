@@ -570,7 +570,10 @@ fn print_guide() {
         "   {}",
         term::cyan("stealthy stage --os linux --out ./drop --binary ./target/release/stealthy")
     );
-    println!("   {}", term::cyan("stealthy cleanup --latest --secure-delete"));
+    println!(
+        "   {}",
+        term::cyan("stealthy cleanup --latest --secure-delete")
+    );
     println!();
     println!("{}", term::bold("8. Automation exit codes"));
     println!("   0  success");

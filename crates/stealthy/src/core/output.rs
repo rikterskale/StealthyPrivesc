@@ -377,6 +377,9 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **User:** `{}` (elevated={})\n\
          - **OS:** {} / {} ({})\n\
          - **Mode:** {}\n\
+         - **Execution path:** {}\n\
+         - **Primary launch:** {}\n\
+         - **ROE reference:** `{}`\n\
          - **Profile:** {}\n\
          - **Coverage mode:** {}\n\
          - **Plugins run:** {}\n\
@@ -392,6 +395,17 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         report.os.arch,
         report.os.version_hint,
         report.mode,
+        if report.execution_path.is_empty() {
+            "binary"
+        } else {
+            &report.execution_path
+        },
+        if report.primary_launch.is_empty() {
+            "not_applicable"
+        } else {
+            &report.primary_launch
+        },
+        report.roe_ref,
         if report.profile.is_empty() {
             "balanced"
         } else {

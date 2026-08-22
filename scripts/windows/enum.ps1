@@ -13,6 +13,9 @@ if ($Json) {
     version = "0.1.0"
     authorized_use_ack = $true
     mode = "enumerate-only"
+    execution_path = if ($env:STEALTHY_EXECUTION_PATH) { $env:STEALTHY_EXECUTION_PATH } else { "script" }
+    primary_launch = if ($env:STEALTHY_PRIMARY_LAUNCH) { $env:STEALTHY_PRIMARY_LAUNCH } else { "not_applicable" }
+    roe_ref = if ($env:STEALTHY_MANIFEST_ROE_REF) { $env:STEALTHY_MANIFEST_ROE_REF } else { "" }
     profile = "script"
     coverage_mode = "script"
     capability_delta = @("windows.dll_hijack", "windows.scheduled_tasks", "windows.endpoint_controls")

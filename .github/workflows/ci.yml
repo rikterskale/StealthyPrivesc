@@ -528,6 +528,10 @@ jobs:
           find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n scripts/install.sh
           python3 -m py_compile scripts/linux/enum.py
+          python3 scripts/linux/enum.py --json > /tmp/stealthy-script-report.json
+          python3 -c 'import json; r=json.load(open("/tmp/stealthy-script-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"; assert r["plugins_run"]'
+          bash scripts/linux/enum.sh --json > /tmp/stealthy-shell-report.json
+          python3 -c 'import json; r=json.load(open("/tmp/stealthy-shell-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"'
 
       - name: Check PowerShell agent syntax
         if: matrix.shell == 'windows'

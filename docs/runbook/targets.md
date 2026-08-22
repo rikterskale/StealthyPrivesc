@@ -23,8 +23,10 @@ and [run](../operator-runbook.md#3-run-on-a-linux-target).
    ```
 
 6. Inspect identity, mode, plugin coverage, and errors before narrowing scope.
-7. Use the documented script fallback if binary execution is blocked; record
-   reduced coverage rather than bypassing the control.
+7. Run the staged dispatcher. It reuses the approved manifest, stages the
+   bundle, tries the binary, and automatically selects the approved script
+   fallback if the binary cannot launch. Record reduced coverage rather than
+   bypassing the control.
 
 ## Windows
 
@@ -43,9 +45,9 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
    & $Stealthy --authorized enum
    ```
 
-5. If SmartScreen, AppLocker, WDAC, or another policy blocks the executable,
-   record the exact control (or run `windows.endpoint_controls` / script
-   fallback inventory) and prefer the approved script-only path. Use
+5. Run `scripts\run.ps1` from the staged bundle. If SmartScreen, AppLocker,
+   WDAC, or another policy blocks the executable, the dispatcher records the
+   launch failure and invokes the manifest-approved PowerShell fallback. Use
    `--allow-techniques endpoint-bypass` only when ROE explicitly permits
    scaffold tracking — this tool does not disable those controls.
 

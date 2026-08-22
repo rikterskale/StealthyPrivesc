@@ -87,6 +87,9 @@ mod tests {
             version: "0".into(),
             authorized_use_ack: true,
             mode: "enumerate-only".into(),
+            execution_path: "binary".into(),
+            primary_launch: "ok".into(),
+            roe_ref: String::new(),
             os: crate::core::types::OsInfo {
                 family: "unix".into(),
                 os: "linux".into(),
