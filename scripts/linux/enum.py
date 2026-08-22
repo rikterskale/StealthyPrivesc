@@ -270,7 +270,11 @@ def ssh_keys() -> None:
         roots.append(Path(home) / ".ssh")
     roots.append(Path("/root/.ssh"))
     for root in roots:
-        if not root.is_dir():
+        try:
+            is_dir = root.is_dir()
+        except OSError:
+            continue
+        if not is_dir:
             continue
         for name in ("id_rsa", "id_ed25519", "id_ecdsa", "authorized_keys"):
             p = root / name
