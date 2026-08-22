@@ -59,6 +59,7 @@ impl Engine {
         let os_info = os::detect();
         let ident = identity::current();
         let mut store = EncryptedStore::new();
+        store.push(crate::exploit::kernel_exploit_blocked());
 
         for note in evasion::evasion_notes() {
             store.note(note);

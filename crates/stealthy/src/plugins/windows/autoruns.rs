@@ -220,8 +220,10 @@ fn enum_run_values(hkcu: bool, subpath: &str) -> Vec<(String, String)> {
             }
             let n = String::from_utf16_lossy(&name[..name_len as usize]);
             let u16s: Vec<u16> = data[..data_len as usize]
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| u16::from_le_bytes(*c))
                 .take_while(|c| *c != 0)
                 .collect();
             let v = String::from_utf16_lossy(&u16s);

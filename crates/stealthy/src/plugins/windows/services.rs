@@ -151,22 +151,6 @@ fn is_unquoted_path(image: &str) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::is_unquoted_path;
-
-    #[test]
-    fn detects_unquoted_spaced_service_paths() {
-        assert!(is_unquoted_path(
-            r"C:\Program Files\Vendor\service.exe -k run"
-        ));
-        assert!(!is_unquoted_path(
-            r#""C:\Program Files\Vendor\service.exe" -k run"#
-        ));
-        assert!(!is_unquoted_path(r"C:\Windows\System32\service.exe"));
-    }
-}
-
 #[cfg(windows)]
 fn list_service_image_paths() -> Result<Vec<(String, String)>> {
     use std::ptr;
@@ -254,8 +238,10 @@ fn reg_query_string(
         }
         // REG_SZ / REG_EXPAND_SZ
         let u16s: Vec<u16> = buf
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .take_while(|c| *c != 0)
             .collect();
         Some(String::from_utf16_lossy(&u16s))
@@ -281,4 +267,20 @@ fn list_service_image_paths() -> Result<Vec<(String, String)>> {
 #[cfg(not(windows))]
 fn is_writable_for_user(_path: &str) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_unquoted_path;
+
+    #[test]
+    fn detects_unquoted_spaced_service_paths() {
+        assert!(is_unquoted_path(
+            r"C:\Program Files\Vendor\service.exe -k run"
+        ));
+        assert!(!is_unquoted_path(
+            r#""C:\Program Files\Vendor\service.exe" -k run"#
+        ));
+        assert!(!is_unquoted_path(r"C:\Windows\System32\service.exe"));
+    }
 }

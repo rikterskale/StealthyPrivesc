@@ -29,6 +29,21 @@ pub(super) fn executable_path(command: &str) -> Option<String> {
         .or_else(|| trimmed.split_whitespace().next().map(str::to_string))
 }
 
+pub fn plugins() -> Vec<&'static dyn Plugin> {
+    vec![
+        &privileges::PrivilegesPlugin,
+        &services::ServicesPlugin,
+        &scheduled_tasks::ScheduledTasksPlugin,
+        &always_install_elevated::AlwaysInstallElevatedPlugin,
+        &uac::UacPlugin,
+        &dll_hijack::DllHijackPlugin,
+        &credentials::CredentialsPlugin,
+        &admin_sessions::AdminSessionsPlugin,
+        &env_path::EnvPathPlugin,
+        &autoruns::AutorunsPlugin,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::executable_path;
@@ -44,19 +59,4 @@ mod tests {
             Some(r"C:\Program Files\Vendor\service.exe".into())
         );
     }
-}
-
-pub fn plugins() -> Vec<&'static dyn Plugin> {
-    vec![
-        &privileges::PrivilegesPlugin,
-        &services::ServicesPlugin,
-        &scheduled_tasks::ScheduledTasksPlugin,
-        &always_install_elevated::AlwaysInstallElevatedPlugin,
-        &uac::UacPlugin,
-        &dll_hijack::DllHijackPlugin,
-        &credentials::CredentialsPlugin,
-        &admin_sessions::AdminSessionsPlugin,
-        &env_path::EnvPathPlugin,
-        &autoruns::AutorunsPlugin,
-    ]
 }

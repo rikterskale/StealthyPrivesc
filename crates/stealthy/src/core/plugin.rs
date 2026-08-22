@@ -5,8 +5,11 @@ use crate::core::types::Finding;
 
 /// Runtime context passed to each plugin.
 pub struct PluginContext<'a> {
+    #[allow(dead_code)]
     pub verbose: bool,
+    #[allow(dead_code)]
     pub auto_exploit: bool,
+    #[allow(dead_code)]
     pub store: &'a mut EncryptedStore,
 }
 

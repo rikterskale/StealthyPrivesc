@@ -36,15 +36,14 @@ impl Plugin for UacPlugin {
         ];
 
         for (name, desc) in keys {
-            match read_u32(name)? {
-                Some(v) => {
-                    let severity = match (name, v) {
-                        ("EnableLUA", 0) => Severity::High,
-                        ("ConsentPromptBehaviorAdmin", 0) => Severity::Medium,
-                        ("LocalAccountTokenFilterPolicy", 1) => Severity::Medium,
-                        _ => Severity::Info,
-                    };
-                    findings.push(Finding {
+            if let Some(v) = read_u32(name)? {
+                let severity = match (name, v) {
+                    ("EnableLUA", 0) => Severity::High,
+                    ("ConsentPromptBehaviorAdmin", 0) => Severity::Medium,
+                    ("LocalAccountTokenFilterPolicy", 1) => Severity::Medium,
+                    _ => Severity::Info,
+                };
+                findings.push(Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Enumeration,
                         severity,
@@ -54,8 +53,6 @@ impl Plugin for UacPlugin {
                         noisy: false,
                         leaves_artifacts: false,
                     });
-                }
-                None => {}
             }
         }
 
