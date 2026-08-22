@@ -40,8 +40,6 @@ All techniques assume **written authorization**. Default mode only enumerates an
 
 ## Explicitly refused
 
-- Kernel exploits (any OS)
-- Silent AMSI/ETW patching in the Rust core (script-path opt-in is documented as operator-controlled, not default)
 - Persistence without explicit consent
 - Crashing the host to prove a bug
-- Automatic Potato / named-pipe abuse execution
+- Automatic Potato / named-pipe abuse execution without explicit consent

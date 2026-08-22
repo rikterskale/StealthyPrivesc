@@ -24,13 +24,6 @@ are only available through the existing explicit `--auto-exploit` mode.
 - Integration coverage for identity metadata and assessment alignment.
 - Documentation and CI contract updates for the expanded coverage.
 
-## Safety boundary
-
-The implementation does not execute kernel exploits, replace service binaries,
-build or run MSI payloads, abuse named pipes, patch AMSI/ETW, create
-persistence, or exfiltrate credentials. Those actions remain operator-driven
-and outside the default enumeration contract.
-
 ## Phase 3
 
 - Stable run identifiers and Unix start timestamps for report provenance.

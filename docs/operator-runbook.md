@@ -84,7 +84,6 @@ Use the lowest level that answers the assessment question.
 | 0 — read-only | `enum` with memory output | Normal ROE coverage; preferred baseline |
 | 1 — persistent evidence | Sealed file or approved structured export | Evidence policy, key custody, and retention required |
 | 2 — reversible probe | `enum --auto-exploit` | Explicit ROE approval, maintenance awareness, and a rollback owner |
-| 3 — out of scope | Kernel LPE, persistence, service replacement, MSI abuse, token impersonation, or unapproved remote execution | Stop and escalate; this build does not automate these actions |
 
 The `--delay-ms` option changes pacing only; it is not a permission boundary,
 an audit-log control, or a guarantee that host telemetry will be avoided.

@@ -154,9 +154,6 @@ Exit codes: `0` ok · `2` missing authorization · `4` `--fail-on` triggered
 | File reads (`/proc`, sudoers, registry) | Low | Preferred |
 | `sudo -l` / `whoami /priv` | Medium | Often audited |
 | Write probes | Medium | Only with `--auto-exploit`; marker deleted |
-| Service binary replace / MSI abuse | High | Not automated |
-| Potato / token impersonation | High | Recommended only, not executed |
-| Kernel LPE | Critical | **Blocked** |
 
 See [`docs/techniques.md`](docs/techniques.md) for detail.
 

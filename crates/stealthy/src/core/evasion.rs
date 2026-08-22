@@ -23,8 +23,6 @@ pub fn low_and_slow(budget_ms: u64) {
 pub fn evasion_notes() -> Vec<String> {
     vec![
         "Prefer /proc and direct file reads over spawning ps/ss/id where possible.".into(),
-        "Default mode never patches AMSI/ETW; that remains an explicit operator choice in script paths.".into(),
         "Avoid cmd.exe /c and powershell.exe child processes for simple identity queries.".into(),
-        "Kernel exploits are disabled in this build.".into(),
-    ]
+        ]
 }

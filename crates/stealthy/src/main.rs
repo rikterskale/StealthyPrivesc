@@ -337,7 +337,6 @@ fn print_guide() {
     println!("{}", term::bold("Safety defaults"));
     println!("   · Enumerate + recommend");
     println!("   · --auto-exploit = reversible probes only");
-    println!("   · Kernel exploits blocked");
     println!();
     println!(
         "{}",

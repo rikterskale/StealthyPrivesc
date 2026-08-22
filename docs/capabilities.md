@@ -86,10 +86,6 @@ Optional:
 - Script fallbacks when binaries are blocked
 
 ## Explicitly out of scope for v1
-
-- Kernel exploit execution
-- Automatic MSI / service binary replacement
-- Built-in AMSI/ETW patching in the Rust core
 - Fully autonomous multi-host C2
 
 ## Phase 2 coverage (implemented)
