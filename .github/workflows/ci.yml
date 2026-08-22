@@ -194,13 +194,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy -p stealthy --all-targets -- -D warnings
+        run: cargo clippy --locked -p stealthy --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test -p stealthy
+        run: cargo test --locked -p stealthy
 
       - name: Release build
-        run: cargo build -p stealthy --release
+        run: cargo build --locked -p stealthy --release
 
       - name: CLI smoke
         run: |
@@ -212,6 +212,157 @@ jobs:
           "$bin" --authorized list-plugins
           "$bin" --authorized --no-color enum --plugins linux.kernel_cve --min-severity info | head -n 40
           "$bin" --authorized --format json -q enum --plugins linux.kernel_cve | python -c 'import json,sys; json.load(sys.stdin)'
+
+  ux:
+    name: Release CLI user-experience contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Build release binary
+        run: cargo build --locked -p stealthy --release
+
+      - name: Exercise end-to-end CLI UX contract
+        shell: python
+        run: |
+          import json
+          import os
+          import stat
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          binary = str(Path("target/release/stealthy"))
+
+          def run(*args, expected=0):
+              result = subprocess.run(
+                  [binary, *args], capture_output=True, text=True, timeout=30
+              )
+              if result.returncode != expected:
+                  raise AssertionError(
+                      f"{args}: expected exit {expected}, got {result.returncode}\n"
+                      f"stdout={result.stdout}\nstderr={result.stderr}"
+                  )
+              return result
+
+          for command, marker in (("guide", "operator guide"), ("disclaimer", "authorized")):
+              assert marker in run(command).stdout.lower()
+          assert "usage" in run("--help").stdout.lower()
+
+          unauthorized = run("enum", expected=2)
+          assert "authorization required" in unauthorized.stderr.lower()
+
+          doctor = json.loads(run("doctor", "--json").stdout)
+          assert doctor["schema_version"] == "1"
+          assert doctor["healthy"] is True
+          assert doctor["checks"]["plugins_available"] is True
+
+          listing = run("--authorized", "list-plugins", "--tsv").stdout.strip().splitlines()
+          assert listing and all(len(line.split("\t")) == 3 for line in listing)
+
+          unknown = run(
+              "--authorized", "--quiet", "enum", "--plugins", "not.a.real.plugin", expected=1
+          )
+          assert "unknown plugin id" in unknown.stderr.lower()
+          assert "list-plugins" in unknown.stderr
+
+          with tempfile.TemporaryDirectory() as temporary:
+              root = Path(temporary)
+              json_reports = []
+              for name in ("baseline.json", "current.json"):
+                  report = root / name
+                  result = run(
+                      "--authorized", "--quiet", "--format", "json", "enum",
+                      "--plugins", "linux.kernel_cve"
+                  )
+                  report.write_text(result.stdout, encoding="utf-8")
+                  json_reports.append(report)
+                  parsed = json.loads(result.stdout)
+                  assert parsed["schema_version"] == "1"
+                  assert parsed["identity"]["elevation_source"]
+                  assert len(parsed["assessments"]) == len(parsed["findings"])
+                  assert all(isinstance(item["duration_ms"], int) for item in parsed["coverage"])
+
+              diff = json.loads(run("diff", *(str(path) for path in json_reports)).stdout)
+              assert not diff["added"] and not diff["removed"] and not diff["changed"]
+
+              markdown = run(
+                  "--authorized", "--quiet", "--format", "markdown", "enum",
+                  "--plugins", "linux.kernel_cve"
+              ).stdout
+              assert markdown.startswith("# StealthyPrivesc report")
+              assert "Plugin coverage" in markdown
+
+              sarif = json.loads(run(
+                  "--authorized", "--quiet", "--format", "sarif", "enum",
+                  "--plugins", "linux.kernel_cve"
+              ).stdout)
+              assert sarif["version"] == "2.1.0"
+              assert sarif["runs"][0]["properties"]["run_id"]
+
+              sealed = root / "findings.seal"
+              run(
+                  "--authorized", "--quiet", "--output", "file",
+                  "--output-path", str(sealed), "enum", "--plugins", "linux.kernel_cve"
+              )
+              assert sealed.is_file() and sealed.stat().st_size > 0
+              if os.name == "posix":
+                  assert stat.S_IMODE(sealed.stat().st_mode) == 0o600
+
+          missing_path = run("--authorized", "--quiet", "--output", "file", expected=1)
+          assert "output=file requires --output-path" in missing_path.stderr
+          remote_url = run("--authorized", "--quiet", "--output", "remote", expected=1)
+          assert "requires --exfil-url" in remote_url.stderr
+          assert run(
+              "--authorized", "--quiet", "--fail-on", "info", "enum",
+              "--plugins", "linux.kernel_cve", expected=4
+          ).returncode == 4
+          print("Release CLI UX contract passed")
+
+  coverage:
+    name: Rust code coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Install cargo-llvm-cov
+        run: cargo install --locked cargo-llvm-cov --version 0.6.16
+
+      - name: Generate LCOV coverage report
+        run: cargo llvm-cov --locked --workspace --all-targets --lcov --output-path lcov.info
+
+      - name: Publish coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rust-lcov-${{ github.sha }}
+          path: lcov.info
+          if-no-files-found: error
+          retention-days: 14
 
   rust-windows:
     name: Rust Windows build and tests
@@ -233,16 +384,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Release build
-        run: cargo build --workspace --release
+        run: cargo build --locked --workspace --release
 
       - name: Native Windows ACL validation
-        run: cargo test --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
+        run: cargo test --locked --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
 
   agents:
     name: Agent syntax checks
@@ -350,7 +501,7 @@ jobs:
     name: CI readiness gate
     runs-on: ubuntu-latest
     if: ${{ always() }}
-    needs: [docs, rust, rust-windows, agents, security]
+    needs: [docs, rust, rust-windows, ux, coverage, agents, security]
     timeout-minutes: 5
     steps:
       - name: Enforce required CI gates
@@ -358,6 +509,8 @@ jobs:
           DOCS_RESULT: ${{ needs.docs.result }}
           RUST_RESULT: ${{ needs.rust.result }}
           RUST_WINDOWS_RESULT: ${{ needs['rust-windows'].result }}
+          UX_RESULT: ${{ needs.ux.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
           AGENTS_RESULT: ${{ needs.agents.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         shell: bash
@@ -367,7 +520,7 @@ jobs:
             printf '## CI readiness\n\n'
             printf '| Gate | Result |\n| --- | --- |\n'
           } >> "$GITHUB_STEP_SUMMARY"
-          for gate in DOCS RUST RUST_WINDOWS AGENTS SECURITY; do
+          for gate in DOCS RUST RUST_WINDOWS UX COVERAGE AGENTS SECURITY; do
             variable="${gate}_RESULT"
             result="${!variable}"
             printf '| %s | %s |\n' "$gate" "$result" >> "$GITHUB_STEP_SUMMARY"

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cli::{Cli, OutputMode};
@@ -88,6 +88,26 @@ impl Engine {
         }
 
         let registry = plugins::registry();
+        let available: Vec<&str> = registry
+            .iter()
+            .filter(|plugin| plugin.platforms().contains(&os_info.os.as_str()))
+            .map(|plugin| plugin.id())
+            .collect();
+        let mut unknown = Vec::new();
+        for requested in self.only.iter().chain(self.skip.iter()).flatten() {
+            if !available.contains(&requested.as_str()) {
+                unknown.push(requested.as_str());
+            }
+        }
+        unknown.sort_unstable();
+        unknown.dedup();
+        if !unknown.is_empty() {
+            bail!(
+                "unknown plugin ID(s) for {}: {}. Use `--authorized list-plugins` to inspect this build",
+                os_info.os,
+                unknown.join(", ")
+            );
+        }
         let selected = filter_plugins(
             &registry,
             self.only.as_deref(),

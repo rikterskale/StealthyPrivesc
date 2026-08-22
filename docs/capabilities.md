@@ -91,3 +91,4 @@ Optional:
 - Offline baseline comparison and finding drift detection
 - Markdown/SARIF provenance fields for evidence workflows
 - Backward-compatible report loading
+- Rust LCOV coverage artifact published by CI for every validated revision

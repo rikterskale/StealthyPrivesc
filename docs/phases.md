@@ -39,3 +39,4 @@ and outside the default enumeration contract.
 - Added, removed, and materially changed finding classification.
 - Provenance in Markdown and SARIF output for downstream evidence handling.
 - Backward-compatible deserialization for reports created before Phase 3.
+- CI-published Rust LCOV coverage for regression tracking.

@@ -146,3 +146,20 @@ fn diff_command_compares_offline_json_reports() {
     assert_eq!(value["removed"].as_array().unwrap().len(), 0);
     assert_eq!(value["changed"].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn unknown_plugin_ids_fail_with_actionable_error() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "enum",
+            "--plugins",
+            "not.a.real.plugin",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown plugin ID"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("list-plugins"));
+}
