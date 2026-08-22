@@ -3,6 +3,7 @@ use std::process::Command;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
+use crate::plugins::linux::util;
 
 pub struct SudoPlugin;
 
@@ -59,8 +60,12 @@ impl Plugin for SudoPlugin {
         }
 
         // Quiet path: inspect sudoers fragments we can read without executing sudo.
+        let username = std::env::var("USER")
+            .or_else(|_| std::env::var("LOGNAME"))
+            .unwrap_or_default();
+        let groups = util::current_group_names();
         for path in ["/etc/sudoers", "/etc/sudoers.d"] {
-            collect_readable_sudoers(path, &mut findings);
+            collect_readable_sudoers(path, &username, &groups, &mut findings);
         }
 
         // Noisy path: only when verbose or when quiet paths found nothing useful.
@@ -129,7 +134,12 @@ impl Plugin for SudoPlugin {
     }
 }
 
-fn collect_readable_sudoers(path: &str, findings: &mut Vec<Finding>) {
+fn collect_readable_sudoers(
+    path: &str,
+    username: &str,
+    groups: &[String],
+    findings: &mut Vec<Finding>,
+) {
     let meta = match std::fs::metadata(path) {
         Ok(m) => m,
         Err(_) => return,
@@ -137,7 +147,7 @@ fn collect_readable_sudoers(path: &str, findings: &mut Vec<Finding>) {
 
     if meta.is_file() {
         if let Ok(text) = std::fs::read_to_string(path) {
-            scan_sudoers_text(path, &text, findings);
+            scan_sudoers_text(path, &text, username, groups, findings);
         }
         return;
     }
@@ -148,7 +158,7 @@ fn collect_readable_sudoers(path: &str, findings: &mut Vec<Finding>) {
                 let p = entry.path();
                 if p.is_file() {
                     if let Ok(text) = std::fs::read_to_string(&p) {
-                        scan_sudoers_text(&p.to_string_lossy(), &text, findings);
+                        scan_sudoers_text(&p.to_string_lossy(), &text, username, groups, findings);
                     }
                 }
             }
@@ -156,10 +166,20 @@ fn collect_readable_sudoers(path: &str, findings: &mut Vec<Finding>) {
     }
 }
 
-fn scan_sudoers_text(path: &str, text: &str, findings: &mut Vec<Finding>) {
+fn scan_sudoers_text(
+    path: &str,
+    text: &str,
+    username: &str,
+    groups: &[String],
+    findings: &mut Vec<Finding>,
+) {
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let subject = trimmed.split_whitespace().next().unwrap_or("");
+        if subject.is_empty() || !rule_applies_to_identity(subject, username, groups) {
             continue;
         }
         if trimmed.contains("NOPASSWD") {
@@ -190,10 +210,44 @@ fn scan_sudoers_text(path: &str, text: &str, findings: &mut Vec<Finding>) {
     }
 }
 
+fn rule_applies_to_identity(subject: &str, username: &str, groups: &[String]) -> bool {
+    subject.split(',').map(str::trim).any(|token| {
+        token == "ALL"
+            || (!username.is_empty() && token == username)
+            || token
+                .strip_prefix('%')
+                .is_some_and(|group| groups.iter().any(|known| known == group))
+            || token
+                .strip_prefix('+')
+                .is_some_and(|group| groups.iter().any(|known| known == group))
+    })
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
         format!("{}…", &s[..max])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rule_applies_to_identity;
+
+    #[test]
+    fn matches_direct_user_and_group_rules() {
+        let groups = vec!["wheel".to_string(), "dev".to_string()];
+        assert!(rule_applies_to_identity("alice", "alice", &groups));
+        assert!(rule_applies_to_identity("%wheel", "alice", &groups));
+        assert!(rule_applies_to_identity("+dev", "alice", &groups));
+        assert!(rule_applies_to_identity("ALL", "alice", &groups));
+    }
+
+    #[test]
+    fn rejects_unrelated_subjects() {
+        let groups = vec!["wheel".to_string()];
+        assert!(!rule_applies_to_identity("bob", "alice", &groups));
+        assert!(!rule_applies_to_identity("%sudo", "alice", &groups));
     }
 }

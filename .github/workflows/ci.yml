@@ -241,6 +241,9 @@ jobs:
       - name: Release build
         run: cargo build --workspace --release
 
+      - name: Native Windows ACL validation
+        run: cargo test --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
+
   agents:
     name: Agent syntax checks
     runs-on: ${{ matrix.os }}

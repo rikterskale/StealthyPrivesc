@@ -42,7 +42,7 @@ pub enum FindingKind {
     ExploitAttempt,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
     pub plugin: String,
     pub kind: FindingKind,
@@ -64,6 +64,12 @@ pub struct IdentityInfo {
     pub gid: Option<u32>,
     pub groups: Vec<String>,
     pub is_elevated: bool,
+    /// How elevation was determined (for example, a Linux euid or Windows token query).
+    #[serde(default)]
+    pub elevation_source: String,
+    /// Additional token context when the platform exposes it.
+    #[serde(default)]
+    pub token_context: String,
     pub hostname: String,
 }
 
@@ -78,6 +84,10 @@ pub struct OsInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub schema_version: String,
+    #[serde(default)]
+    pub run_id: String,
+    #[serde(default)]
+    pub started_at_unix: u64,
     pub tool: String,
     pub version: String,
     pub authorized_use_ack: bool,
@@ -85,9 +95,20 @@ pub struct RunReport {
     pub os: OsInfo,
     pub identity: IdentityInfo,
     pub findings: Vec<Finding>,
+    /// Machine-readable assessment metadata aligned by finding index.
+    #[serde(default)]
+    pub assessments: Vec<FindingAssessment>,
     pub plugins_run: Vec<String>,
     pub coverage: Vec<PluginCoverage>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindingAssessment {
+    pub finding_index: usize,
+    pub confidence: String,
+    pub applicability: String,
+    pub evidence_quality: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,4 +117,6 @@ pub struct PluginCoverage {
     pub status: String,
     pub findings: usize,
     pub error: Option<String>,
+    #[serde(default)]
+    pub duration_ms: u128,
 }

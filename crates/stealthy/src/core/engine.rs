@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cli::{Cli, OutputMode};
 use crate::core::evasion::{self, low_and_slow};
@@ -8,7 +9,9 @@ use crate::core::output::{self, OutputOptions};
 use crate::core::plugin::{filter_plugins, PluginContext};
 use crate::core::store::EncryptedStore;
 use crate::core::term;
-use crate::core::types::{PluginCoverage, RunReport, Severity};
+use crate::core::types::{
+    Finding, FindingAssessment, FindingKind, PluginCoverage, RunReport, Severity,
+};
 use crate::plugins;
 
 pub struct Engine {
@@ -58,6 +61,13 @@ impl Engine {
     pub fn run(&mut self) -> Result<EngineOutcome> {
         let os_info = os::detect();
         let ident = identity::current();
+        let started_at_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
+        let mut run_entropy = [0u8; 12];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut run_entropy);
+        let run_id = hex::encode(run_entropy);
         let mut store = EncryptedStore::new();
         store.push(crate::exploit::kernel_exploit_blocked());
 
@@ -112,6 +122,7 @@ impl Engine {
         let total = selected.len();
 
         for (idx, plugin) in selected.iter().enumerate() {
+            let plugin_started = Instant::now();
             if !self.quiet {
                 eprintln!(
                     "{} [{:>2}/{}] {}",
@@ -162,6 +173,7 @@ impl Engine {
                         status: "ok".into(),
                         findings: n,
                         error: None,
+                        duration_ms: plugin_started.elapsed().as_millis(),
                     });
                 }
                 Err(e) => {
@@ -172,6 +184,7 @@ impl Engine {
                         status: "error".into(),
                         findings: 0,
                         error: Some(error.clone()),
+                        duration_ms: plugin_started.elapsed().as_millis(),
                     });
                     if !self.quiet {
                         eprintln!("    {} plugin failed: {error}", term::err("[!]"));
@@ -187,8 +200,15 @@ impl Engine {
         };
 
         let (findings, notes) = store_into_parts(&store);
+        let assessments = findings
+            .iter()
+            .enumerate()
+            .map(|(finding_index, finding)| assess_finding(finding_index, finding))
+            .collect();
         let report = RunReport {
             schema_version: "1".into(),
+            run_id,
+            started_at_unix,
             tool: "stealthy".into(),
             version: env!("CARGO_PKG_VERSION").into(),
             authorized_use_ack: true,
@@ -196,6 +216,7 @@ impl Engine {
             os: os_info,
             identity: ident,
             findings,
+            assessments,
             plugins_run,
             coverage,
             notes,
@@ -227,6 +248,28 @@ impl Engine {
         let _ = store;
         let _ = emitted.max_severity;
         Ok(EngineOutcome { fail_on_triggered })
+    }
+}
+
+fn assess_finding(finding_index: usize, finding: &Finding) -> FindingAssessment {
+    let (confidence, evidence_quality) = match finding.kind {
+        FindingKind::ExploitAttempt => ("high", "direct_probe"),
+        FindingKind::Misconfiguration | FindingKind::Credential => ("medium", "local_observation"),
+        FindingKind::Enumeration => ("medium", "local_observation"),
+        FindingKind::Recommendation => ("low", "heuristic"),
+    };
+    let applicability = if matches!(finding.kind, FindingKind::Recommendation) {
+        "requires_validation"
+    } else if finding.leaves_artifacts {
+        "potentially_actionable"
+    } else {
+        "current_context"
+    };
+    FindingAssessment {
+        finding_index,
+        confidence: confidence.into(),
+        applicability: applicability.into(),
+        evidence_quality: evidence_quality.into(),
     }
 }
 

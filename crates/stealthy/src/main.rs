@@ -28,6 +28,7 @@ fn main() -> Result<()> {
             | Some(Commands::Guide)
             | Some(Commands::Doctor { .. })
             | Some(Commands::Report { .. })
+            | Some(Commands::Diff { .. })
     );
 
     if needs_auth && !cli.i_understand_authorized_use_only {
@@ -56,6 +57,11 @@ fn main() -> Result<()> {
             key_hex,
             format,
         } => print_report(&input, &key_hex, format),
+        Commands::Diff {
+            baseline,
+            current,
+            format,
+        } => print_diff(&baseline, &current, format),
         Commands::ListPlugins { tsv } => {
             print_plugins(tsv);
             Ok(())
@@ -150,6 +156,43 @@ fn print_report(path: &std::path::Path, key_hex: &str, format: ReportFormat) -> 
                 output::render_markdown(&report, &findings, findings.len())
             );
         }
+    }
+    Ok(())
+}
+
+fn print_diff(
+    baseline_path: &std::path::Path,
+    current_path: &std::path::Path,
+    format: ReportFormat,
+) -> Result<()> {
+    let baseline: crate::core::types::RunReport =
+        serde_json::from_str(&std::fs::read_to_string(baseline_path)?)?;
+    let current: crate::core::types::RunReport =
+        serde_json::from_str(&std::fs::read_to_string(current_path)?)?;
+    let diff = crate::core::diff::compare(&baseline, &current);
+    match format {
+        ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&diff)?),
+        ReportFormat::Markdown | ReportFormat::Human => {
+            println!("# StealthyPrivesc report diff\n");
+            println!("- Baseline: {}", diff.baseline_run_id);
+            println!("- Current: {}\n", diff.current_run_id);
+            println!(
+                "| Added | Removed | Changed |\n| ---: | ---: | ---: |\n| {} | {} | {} |\n",
+                diff.added.len(),
+                diff.removed.len(),
+                diff.changed.len()
+            );
+            for finding in &diff.added {
+                println!("- Added: {} — {}", finding.title, finding.detail);
+            }
+            for finding in &diff.removed {
+                println!("- Removed: {} — {}", finding.title, finding.detail);
+            }
+            for finding in &diff.changed {
+                println!("- Changed: {}", finding.after.title);
+            }
+        }
+        ReportFormat::Sarif => anyhow::bail!("SARIF is not supported for report diffs"),
     }
     Ok(())
 }

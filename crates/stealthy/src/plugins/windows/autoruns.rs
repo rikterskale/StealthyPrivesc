@@ -129,7 +129,8 @@ fn extract_path_from_command(cmd: &str) -> Option<String> {
 }
 
 fn is_writable_file(path: &str) -> bool {
-    std::fs::OpenOptions::new().append(true).open(path).is_ok()
+    super::acl::is_writable_for_current_user(Path::new(path))
+        .unwrap_or_else(|| std::fs::OpenOptions::new().append(true).open(path).is_ok())
 }
 
 fn dir_writable(dir: &Path) -> bool {
@@ -169,6 +170,11 @@ fn run_key_values() -> Vec<(String, String)> {
         (
             "HKLM",
             r"Software\Microsoft\Windows\CurrentVersion\RunOnce",
+            false,
+        ),
+        (
+            "HKLM",
+            r"Software\Microsoft\Windows NT\CurrentVersion\Winlogon",
             false,
         ),
     ];

@@ -18,6 +18,8 @@ pub fn current() -> IdentityInfo {
             gid: None,
             groups: vec![],
             is_elevated: false,
+            elevation_source: "unsupported".into(),
+            token_context: "unknown".into(),
             hostname: hostname(),
         }
     }
@@ -52,6 +54,8 @@ fn linux_identity() -> IdentityInfo {
         gid: Some(gid),
         groups,
         is_elevated,
+        elevation_source: "linux_euid".into(),
+        token_context: format!("euid={uid} egid={}", linux_getegid()),
         hostname: hostname(),
     }
 }
@@ -141,6 +145,12 @@ fn windows_identity() -> IdentityInfo {
         gid: None,
         groups: vec![],
         is_elevated,
+        elevation_source: "windows_token_elevation".into(),
+        token_context: if is_elevated {
+            "token_is_elevated=true".into()
+        } else {
+            "token_is_elevated=false_or_unavailable".into()
+        },
         hostname: hostname(),
     }
 }

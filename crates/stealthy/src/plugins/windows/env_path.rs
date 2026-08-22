@@ -35,6 +35,11 @@ impl Plugin for EnvPathPlugin {
                 entries.push(("hkcu".into(), e.to_string()));
             }
         }
+        if let Some(hklm) = read_hklm_path() {
+            for e in hklm.split(';').filter(|s| !s.is_empty()) {
+                entries.push(("hklm".into(), e.to_string()));
+            }
+        }
 
         for (src, entry) in entries {
             let p = PathBuf::from(&entry);
@@ -104,7 +109,7 @@ impl Plugin for EnvPathPlugin {
                 kind: FindingKind::Enumeration,
                 severity: Severity::Info,
                 title: "No obvious PATH hijack candidates".into(),
-                detail: "Checked process PATH and HKCU Environment Path.".into(),
+                detail: "Checked process PATH and HKCU/HKLM Environment Path values.".into(),
                 recommendation: "Also review machine PATH under HKLM\\...\\Session Manager\\Environment."
                     .into(),
                 noisy: false,
@@ -173,7 +178,39 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+#[cfg(windows)]
+fn read_hklm_path() -> Option<String> {
+    let output = std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            "/v",
+            "Path",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find(|line| line.to_ascii_lowercase().contains("path"))
+        .and_then(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            fields
+                .iter()
+                .position(|field| field.starts_with("REG_"))
+                .and_then(|index| fields.get(index + 1..))
+                .map(|value| value.join(" "))
+        })
+}
+
 #[cfg(not(windows))]
 fn read_hkcu_path() -> Option<String> {
+    None
+}
+
+#[cfg(not(windows))]
+fn read_hklm_path() -> Option<String> {
     None
 }

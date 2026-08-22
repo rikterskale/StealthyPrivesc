@@ -22,15 +22,15 @@ impl Plugin for ServicesPlugin {
     fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        for (name, image_path) in list_service_image_paths()? {
+        for (name, image_path, account) in list_service_image_paths()? {
             if is_unquoted_path(&image_path) {
                 findings.push(Finding {
                     plugin: self.id().into(),
                     kind: FindingKind::Misconfiguration,
                     severity: Severity::High,
                     title: format!("Unquoted service path: {name}"),
-                    detail: image_path.clone(),
-                    recommendation: "Unquoted paths with spaces can allow binary planting in parent dirs if writable. Full service DACL enum is deferred — use accesschk under ROE.".into(),
+                    detail: format!("account={account} image_path={image_path}"),
+                    recommendation: "Unquoted paths with spaces can allow binary planting in parent dirs if writable. Verify the service account and directory ACLs under the approved scope.".into(),
                     noisy: false,
                     leaves_artifacts: false,
                 });
@@ -73,13 +73,15 @@ impl Plugin for ServicesPlugin {
             }
 
             if let Some(bin) = super::executable_path(&image_path) {
-                if is_writable_for_user(&bin) {
+                if super::acl::is_writable_for_current_user(std::path::Path::new(&bin))
+                    .unwrap_or_else(|| is_writable_for_user(&bin))
+                {
                     findings.push(Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Misconfiguration,
                         severity: Severity::Critical,
                         title: format!("Writable service binary: {name}"),
-                        detail: bin,
+                        detail: format!("account={account} binary={bin}"),
                         recommendation: "Replacing a service binary is high-impact and noisy — obtain approval before any write.".into(),
                         noisy: false,
                         leaves_artifacts: true,
@@ -152,7 +154,7 @@ fn is_unquoted_path(image: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn list_service_image_paths() -> Result<Vec<(String, String)>> {
+fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
@@ -188,7 +190,9 @@ fn list_service_image_paths() -> Result<Vec<(String, String)>> {
             let mut sk = ptr::null_mut();
             if RegOpenKeyExW(HKEY_LOCAL_MACHINE, path_key.as_ptr(), 0, KEY_READ, &mut sk) == 0 {
                 if let Some(val) = reg_query_string(sk, "ImagePath") {
-                    out.push((name, val));
+                    let account = reg_query_string(sk, "ObjectName")
+                        .unwrap_or_else(|| "(service account unavailable)".into());
+                    out.push((name, val, account));
                 }
                 RegCloseKey(sk);
             }
@@ -260,7 +264,7 @@ fn is_writable_for_user(path: &str) -> bool {
 }
 
 #[cfg(not(windows))]
-fn list_service_image_paths() -> Result<Vec<(String, String)>> {
+fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
     Ok(vec![])
 }
 

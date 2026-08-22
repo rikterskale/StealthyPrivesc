@@ -153,6 +153,8 @@ mod tests {
         let store = EncryptedStore::new();
         let report = RunReport {
             schema_version: "1".into(),
+            run_id: "test-run".into(),
+            started_at_unix: 0,
             tool: "stealthy".into(),
             version: "0.1.0".into(),
             authorized_use_ack: true,
@@ -169,15 +171,19 @@ mod tests {
                 gid: Some(1000),
                 groups: vec![],
                 is_elevated: false,
+                elevation_source: "test".into(),
+                token_context: "test".into(),
                 hostname: "host".into(),
             },
             findings: vec![],
+            assessments: vec![],
             plugins_run: vec![],
             coverage: vec![PluginCoverage {
                 id: "test".into(),
                 status: "ok".into(),
                 findings: 0,
                 error: None,
+                duration_ms: 0,
             }],
             notes: vec![],
         };

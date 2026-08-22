@@ -82,6 +82,9 @@ cargo build -p stealthy --release
 # Markdown / JSON / SARIF console formats
 ./target/release/stealthy --authorized --format markdown enum > report.md
 ./target/release/stealthy --authorized --format json -q enum
+
+# Compare two plaintext JSON reports offline
+./target/release/stealthy diff baseline.json current.json
 ./target/release/stealthy --authorized --format sarif -q scan > findings.sarif
 
 # Encrypted file + sidecar Markdown

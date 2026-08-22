@@ -1,3 +1,4 @@
+mod acl;
 mod admin_sessions;
 mod always_install_elevated;
 mod autoruns;

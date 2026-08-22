@@ -86,3 +86,63 @@ fn sarif_output_is_valid_sarif_21() {
     assert_eq!(value["version"], "2.1.0");
     assert!(value["runs"].is_array());
 }
+
+#[test]
+fn json_report_contains_identity_and_assessment_metadata() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--plugins",
+            "linux.kernel_cve",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["identity"]["elevation_source"].is_string());
+    assert!(value["assessments"].is_array());
+    assert_eq!(
+        value["assessments"].as_array().unwrap().len(),
+        value["findings"].as_array().unwrap().len()
+    );
+}
+
+#[test]
+fn diff_command_compares_offline_json_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let baseline_path = dir.path().join("baseline.json");
+    let current_path = dir.path().join("current.json");
+    for path in [&baseline_path, &current_path] {
+        let output = stealthy()
+            .args([
+                "--authorized",
+                "--quiet",
+                "--format",
+                "json",
+                "enum",
+                "--plugins",
+                "linux.kernel_cve",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        std::fs::write(path, output.stdout).unwrap();
+    }
+    let output = stealthy()
+        .args([
+            "diff",
+            baseline_path.to_str().unwrap(),
+            current_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["added"].as_array().unwrap().len(), 0);
+    assert_eq!(value["removed"].as_array().unwrap().len(), 0);
+    assert_eq!(value["changed"].as_array().unwrap().len(), 0);
+}

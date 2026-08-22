@@ -295,6 +295,8 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         "# StealthyPrivesc report\n\n\
          - **Version:** {}\n\
          - **Schema:** {}\n\
+         - **Run ID:** `{}`\n\
+         - **Started (Unix):** {}\n\
          - **Host:** `{}`\n\
          - **User:** `{}` (elevated={})\n\
          - **OS:** {} / {} ({})\n\
@@ -303,6 +305,8 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **Findings:** {} total, {} shown\n\n",
         report.version,
         report.schema_version,
+        report.run_id,
+        report.started_at_unix,
         report.identity.hostname,
         report.identity.username,
         report.identity.is_elevated,
@@ -351,13 +355,14 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         out.push('\n');
     }
     if !report.coverage.is_empty() {
-        out.push_str("## Plugin coverage\n\n| Plugin | Status | Findings | Error |\n| --- | --- | ---: | --- |\n");
+        out.push_str("## Plugin coverage\n\n| Plugin | Status | Findings | Duration (ms) | Error |\n| --- | --- | ---: | ---: | --- |\n");
         for coverage in &report.coverage {
             out.push_str(&format!(
-                "| `{}` | {} | {} | {} |\n",
+                "| `{}` | {} | {} | {} | {} |\n",
                 coverage.id,
                 coverage.status,
                 coverage.findings,
+                coverage.duration_ms,
                 coverage.error.as_deref().unwrap_or("").replace('|', "\\|")
             ));
         }
@@ -398,6 +403,11 @@ pub fn render_sarif(report: &RunReport, findings: &[&Finding]) -> String {
                 "version": report.version,
                 "informationUri": "https://github.com/rikterskale/StealthyPrivesc"
             }},
+            "properties": {
+                "run_id": report.run_id,
+                "started_at_unix": report.started_at_unix,
+                "coverage": report.coverage
+            },
             "results": results
         }]
     })

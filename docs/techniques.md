@@ -36,7 +36,7 @@ All techniques assume **written authorization**. Default mode only enumerates an
 | Local admins / sessions | `windows.admin_sessions` | Low | None | Recommend only |
 | PATH hijack candidates | `windows.env_path` | Low–Medium | Probe marker if auto | Reversible probe only |
 | Autoruns / Startup | `windows.autoruns` | Low–Medium | Probe marker if auto | Startup dir probe only |
-| Service DACLs (SDDL) | deferred | — | — | Use accesschk manually |
+| Service/task ACLs | `windows.services`, `windows.scheduled_tasks` | Low | None | Native read-only ACL check when available; no replacement |
 
 ## Explicitly refused
 

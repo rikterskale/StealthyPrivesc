@@ -99,6 +99,17 @@ pub enum Commands {
         format: ReportFormat,
     },
 
+    /// Compare two plaintext JSON reports offline.
+    Diff {
+        /// Baseline JSON report.
+        baseline: std::path::PathBuf,
+        /// Current JSON report.
+        current: std::path::PathBuf,
+        /// Output format for the comparison.
+        #[arg(long, value_enum, default_value_t = ReportFormat::Json)]
+        format: ReportFormat,
+    },
+
     /// List compiled-in plugin IDs for this build/OS.
     #[command(visible_alias = "plugins")]
     ListPlugins {
@@ -189,6 +200,7 @@ Examples:
   stealthy --authorized --format sarif -q scan > findings.sarif
   stealthy --authorized --output file --output-path /tmp/f.seal enum
   stealthy --authorized enum --fail-on critical
+  stealthy diff baseline.json current.json
   stealthy doctor
 
 Docs: README.md  ·  docs/operator-runbook.md  ·  docs/techniques.md

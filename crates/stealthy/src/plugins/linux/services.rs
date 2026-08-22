@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
+use crate::plugins::linux::util;
 
 pub struct ServicesPlugin;
 
@@ -24,6 +25,8 @@ impl Plugin for ServicesPlugin {
 
     fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
+        let euid = util::euid();
+        let gids = util::current_gids();
 
         let paths = [
             "/etc/nginx",
@@ -42,7 +45,7 @@ impl Plugin for ServicesPlugin {
             if !p.exists() {
                 continue;
             }
-            scan_writable(p, 2, &mut findings);
+            scan_writable(p, 2, euid, &gids, &mut findings);
         }
 
         // World-writable files under /etc (shallow) — high signal, keep capped.
@@ -85,7 +88,7 @@ impl Plugin for ServicesPlugin {
     }
 }
 
-fn scan_writable(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
+fn scan_writable(dir: &Path, depth: u32, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) {
     if depth == 0 {
         return;
     }
@@ -100,7 +103,7 @@ fn scan_writable(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
             Err(_) => continue,
         };
         let mode = meta.permissions().mode();
-        if mode & 0o002 != 0 {
+        if util::is_effectively_writable(&path, euid, gids).unwrap_or(false) {
             findings.push(Finding {
                 plugin: "linux.services".into(),
                 kind: FindingKind::Misconfiguration,
@@ -113,7 +116,7 @@ fn scan_writable(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
             });
         }
         if meta.is_dir() {
-            scan_writable(&path, depth - 1, findings);
+            scan_writable(&path, depth - 1, euid, gids, findings);
         }
     }
 }
