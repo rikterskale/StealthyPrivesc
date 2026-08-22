@@ -52,11 +52,9 @@ pub(super) fn is_writable_for_current_user(path: &Path) -> Option<bool> {
 fn native_access_check(path: &Path) -> Option<bool> {
     use std::ptr;
     use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, FALSE};
-    use windows_sys::Win32::Security::Authorization::{
-        AccessCheck, GetNamedSecurityInfoW, SE_FILE_OBJECT,
-    };
+    use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        DACL_SECURITY_INFORMATION, GENERIC_MAPPING, PSECURITY_DESCRIPTOR, TOKEN_QUERY,
+        AccessCheck, DACL_SECURITY_INFORMATION, GENERIC_MAPPING, PSECURITY_DESCRIPTOR, TOKEN_QUERY,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_ALL_ACCESS, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
