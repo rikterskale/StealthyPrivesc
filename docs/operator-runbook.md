@@ -6,6 +6,93 @@ Related docs: [`README.md`](../README.md) · [`build.md`](build.md) · [`techniq
 
 ---
 
+## How to use this runbook
+
+This document is intentionally written as an operator workflow rather than a
+catalog of commands. Read sections 0, 1, and the target-specific pre-flight
+before selecting a deployment method. Then follow the smallest path that meets
+the engagement need:
+
+1. Establish authorization, target identity, evidence handling, and stop
+   conditions.
+2. Build or obtain one reviewed artifact and record its provenance and hash.
+3. Stage it through an approved channel, verify the remote hash, and run a
+   non-enumerating health check.
+4. Run one enumerate-only baseline. Treat plugin coverage and errors as part of
+   the result, not as incidental console output.
+5. Narrow follow-up runs to the approved questions. Enable `--auto-exploit`
+   only after a separate decision to permit reversible write probes.
+6. Export, transfer, review, and retain evidence according to the engagement
+   policy. Capture the sealed-report key separately from the sealed file.
+7. Verify cleanup and record residual artifacts, telemetry, and limitations in
+   the closeout log.
+
+If a command in this document conflicts with the Rules of Engagement (ROE),
+the ROE wins. Do not silently substitute a noisier transport, a broader target
+set, or a more powerful execution context.
+
+### Operator worksheet
+
+Complete this small record before the first host. It can live in the approved
+engagement log; do not put credentials or report keys in an ordinary ticket.
+
+```text
+Engagement / case ID:       ______________________________
+ROE / authorization ref:    ______________________________
+Operator and UTC start:     ______________________________
+Target identifier(s):       ______________________________
+Approved account/context:   ______________________________
+Approved transport:         ______________________________
+Approved drop path:         ______________________________
+Execution mode:             enumerate-only / limited reversible probes
+Approved plugin scope:      all / _________________________
+Output policy:              memory / sealed file / approved remote
+Evidence classification:   ______________________________
+Retention / destruction:    ______________________________
+Stop contact / escalation:  ______________________________
+Cleanup owner and UTC end:  ______________________________
+```
+
+Record these values per host when a run is automated: hostname, address or
+asset ID, OS and architecture, effective identity, binary SHA-256, exact
+command line, selected/skipped plugins, output path, run ID, and cleanup
+status. The run report records some of this automatically, but the engagement
+log should also explain operator decisions and out-of-band transfers.
+
+### Operating risk levels
+
+Use the lowest level that answers the assessment question.
+
+| Level | Default action | Approval and handling |
+| --- | --- | --- |
+| 0 — read-only | `enum` with memory output | Normal ROE coverage; preferred baseline |
+| 1 — persistent evidence | Sealed file or approved structured export | Evidence policy, key custody, and retention required |
+| 2 — reversible probe | `enum --auto-exploit` | Explicit ROE approval, maintenance awareness, and a rollback owner |
+| 3 — out of scope | Kernel LPE, persistence, service replacement, MSI abuse, token impersonation, or unapproved remote execution | Stop and escalate; this build does not automate these actions |
+
+The `--delay-ms` option changes pacing only; it is not a permission boundary,
+an audit-log control, or a guarantee that host telemetry will be avoided.
+
+### Universal stop conditions
+
+Stop the run and contact the engagement owner if any of the following occurs:
+
+- The host, account, network path, or execution context is not the one named in
+  the ROE.
+- A requested action would write outside the approved drop/output path or
+  would require persistence, service creation, credential access beyond scope,
+  or an exploit not described in the ROE.
+- The target becomes unstable, an availability impact is suspected, or a
+  defensive control begins containment.
+- The binary hash, platform, or plugin set is not the expected one.
+- A report key is exposed to an unapproved person or channel.
+- A plugin error leaves coverage incomplete and the missing check matters to the
+  assessment conclusion.
+
+Do not clear shell history, event logs, EDR artifacts, or other telemetry to
+conceal activity. If cleanup or telemetry handling is explicitly authorized,
+record exactly what was done and why.
+
 ## 0. Pre-flight (do this every time)
 
 1. Confirm written Rules of Engagement (ROE) cover local privilege-escalation enumeration on the target host(s).
@@ -26,6 +113,84 @@ $env:STEALTHY_AUTHORIZED = "1"        # Windows PowerShell
 ```
 
 Without the gate, the binary exits with code `2`.
+
+### 0.1 Read-only target pre-flight
+
+Run only the checks appropriate to the approved access method. These commands
+are intended to establish identity and compatibility; they do not replace the
+authorization review.
+
+Linux:
+
+```bash
+set -eu
+printf 'host='; hostname
+printf 'user='; id -un
+printf 'uid='; id -u
+printf 'arch='; uname -m
+printf 'kernel='; uname -sr
+printf 'cwd='; pwd
+command -v sha256sum || true
+command -v file || true
+command -v bash || true
+```
+
+Windows PowerShell:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Write-Host "host=$env:COMPUTERNAME"
+Write-Host "user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
+Write-Host "arch=$env:PROCESSOR_ARCHITECTURE"
+Write-Host "os=$([Environment]::OSVersion.Version)"
+Get-ExecutionPolicy -List
+Get-Command Get-FileHash, powershell, cscript -ErrorAction SilentlyContinue |
+  Select-Object Name, Source
+```
+
+Record unexpected elevation. Running as root or SYSTEM can expose more local
+state than the assessment account normally sees and can change the meaning of
+findings. If the ROE names a standard-user perspective, stop and relaunch in
+that context.
+
+### 0.2 Decide what “success” means before execution
+
+Choose one primary outcome and one fallback before touching the host:
+
+| Assessment question | Primary run | Fallback / limitation to record |
+| --- | --- | --- |
+| Broad local exposure | All compiled plugins, enumerate-only | Script fallback with reduced coverage |
+| One suspected path | `--plugins` for the relevant IDs | Read-only manual verification |
+| Repeatability / drift | Same plugin set and output format as baseline | Compare only common coverage |
+| CI or fleet gate | `--quiet --format json --fail-on ...` | Preserve JSON and inspect coverage errors |
+| Host policy compatibility | `doctor`, `list-plugins`, then baseline | Stop if execution is blocked; do not bypass controls without approval |
+
+An empty finding list is not proof of a clean host. A valid conclusion requires
+the expected OS build, plugin coverage with no material errors, and a recorded
+identity and scope.
+
+### 0.3 Build provenance and evidence custody
+
+For every artifact, record the repository revision, build command, toolchain,
+target triple, artifact hash, and who approved its use. Keep the sealed-report
+key in a separate approved secret store or handoff channel. Do not put the key
+in the same directory, archive, terminal transcript, or ticket as the sealed
+report.
+
+Useful operator-side provenance commands:
+
+```bash
+git rev-parse HEAD
+rustc --version
+cargo --version
+sha256sum target/release/stealthy
+file target/release/stealthy
+```
+
+For a Windows artifact built on Linux, hash the `.exe` with `sha256sum` on the
+operator host and verify it again with `Get-FileHash` on the target. A matching
+hash proves transfer integrity; it does not prove that the binary is approved
+for the target or that the target is in scope.
 
 ---
 
@@ -81,7 +246,32 @@ dir .\target\release\stealthy.exe
 
 Artifact: `target\release\stealthy.exe`
 
-### 1.5 Package a minimal drop bundle
+### 1.5 Build verification before packaging
+
+Run the project checks on the reviewed source tree before distributing an
+artifact. These commands are operator-workstation checks; they do not touch a
+target host.
+
+```bash
+set -euo pipefail
+cargo fmt --all -- --check
+cargo test --locked --workspace
+cargo build --locked --workspace --release
+
+git rev-parse HEAD > build-commit.txt
+rustc --version > build-toolchain.txt
+sha256sum target/release/stealthy > stealthy-linux-x64.sha256
+file target/release/stealthy
+./target/release/stealthy --version
+./target/release/stealthy doctor --json
+```
+
+If a check fails, do not package the artifact as if it were verified. Keep the
+failure and remediation in the build log. If you intentionally ship an
+artifact built with a different command or toolchain, record that exception
+and obtain the required approval first.
+
+### 1.6 Package a minimal drop bundle
 
 Linux packaging:
 
@@ -531,10 +721,11 @@ STEALTHY_AUTHORIZED=1 "$BIN" --delay-ms 0 enum   # disable jitter
 
 ```bash
 OUT=/tmp/findings.seal
-STEALTHY_AUTHORIZED=1 "$BIN" \
+STEALTHY_AUTHORIZED=1 "$BIN" --verbose \
   --output file --output-path "$OUT" \
   enum
-# Binary prints the decrypt key to stderr — capture/store per ROE.
+# With --verbose and without -q, the decrypt key is printed to stderr.
+# Capture it into approved secret handling; do not store it beside $OUT.
 ls -la "$OUT"
 ```
 
@@ -580,17 +771,123 @@ bash /tmp/enum.sh | tee /tmp/enum-shell.txt
 python3 /tmp/enum.py | tee /tmp/enum-python.txt
 ```
 
-### 3.8 Linux cleanup
+### 3.8 Linux cleanup (run after evidence handling)
+
+Complete the evidence capture, validation, and review in sections 3.9–3.12
+before executing this cleanup block. It is shown here as the short, host-side
+removal recipe; cleanup is the final step, not a substitute for evidence
+verification.
 
 ```bash
 BIN=/tmp/.cache-update/stealthy
 rm -f "$BIN" /tmp/findings.seal /tmp/findings.json /tmp/enum.sh /tmp/enum.py
 rm -rf /tmp/stealthy-linux-x64 /tmp/stealthy-drop /tmp/.cache-update
-# Optional history note: clear only if ROE/opsec plan requires and policy allows
-# history -c; rm -f ~/.bash_history
+# Preserve shell history and host telemetry unless the ROE explicitly defines
+# a separate, auditable handling procedure.
 ```
 
 Best-effort overwrite helper is available in-source as `secure_delete_hint` for operators extending the toolkit; default CLI does not auto-wipe.
+
+### 3.9 Capture a clean baseline and validate it
+
+For an evidence-quality JSON baseline, keep machine output on stdout and
+diagnostics on a separately retained stderr file. Do not mix a terminal
+transcript into JSON.
+
+```bash
+BIN=/tmp/.cache-update/stealthy
+RUN_UTC=$(date -u +%Y%m%dT%H%M%SZ)
+REPORT="linux-${RUN_UTC}.json"
+STDERR="linux-${RUN_UTC}.stderr.txt"
+
+STEALTHY_AUTHORIZED=1 "$BIN" --quiet --no-color --format json \
+  --output memory enum > "$REPORT" 2> "$STDERR"
+
+# Optional structural checks; use whichever validator is approved.
+python3 -m json.tool "$REPORT" >/dev/null
+if command -v jq >/dev/null 2>&1; then
+  jq -e '.schema_version == "1" and (.run_id | length > 0)' "$REPORT" >/dev/null
+fi
+```
+
+If `jq` is unavailable, the Python check is still useful. Preserve the stderr
+file when it contains warnings or plugin errors. Never infer success from the
+process exit code alone: a normal exit can still contain errored plugin
+coverage, and `--fail-on` changes the meaning of exit `4`.
+
+To capture Markdown for human review, use a separate file and keep the command
+quiet so progress messages do not appear in the document:
+
+```bash
+STEALTHY_AUTHORIZED=1 "$BIN" --quiet --no-color --format markdown enum \
+  > "linux-${RUN_UTC}.md" 2> "linux-${RUN_UTC}.stderr.txt"
+```
+
+### 3.10 Evidence-safe sealed output
+
+Sealed output is encrypted with a fresh key for the run. The sealed file and
+the key are separate assets: possession of the file alone is not enough to
+decrypt it, and losing the key makes the report unrecoverable.
+
+```bash
+OUT=/approved/evidence/linux-host-a.seal
+STEALTHY_AUTHORIZED=1 "$BIN" --verbose \
+  --output file --output-path "$OUT" --also-markdown enum \
+  2> /approved/evidence/linux-host-a.run.stderr.txt
+```
+
+With `--verbose` and without `--quiet`, the binary prints the key to stderr.
+Move the key immediately into the approved secret store; do not leave it in a
+shell transcript or beside `$OUT`. Do not use `-q` for this first sealed run,
+because quiet mode suppresses the key message. Verify the file exists, record
+its hash, and confirm that the evidence log points to the key location without
+embedding the key itself:
+
+```bash
+ls -l "$OUT"
+sha256sum "$OUT"
+```
+
+The adjacent Markdown file is plaintext evidence and may contain sensitive
+paths, usernames, or credential-related findings. Apply the same access and
+retention controls as the sealed file.
+
+### 3.11 Baseline, focused run, and comparison workflow
+
+Use the same artifact, identity, output format, and plugin set for comparable
+runs. A practical sequence is:
+
+```bash
+# Baseline: broad read-only coverage.
+STEALTHY_AUTHORIZED=1 "$BIN" --quiet --format json enum > baseline.json
+
+# Focused follow-up: only after reviewing baseline.json.
+STEALTHY_AUTHORIZED=1 "$BIN" --quiet --format json \
+  enum --plugins linux.sudo,linux.services > focused.json
+
+# Offline comparison; no host access or authorization gate is required.
+"$BIN" diff baseline.json focused.json --format markdown > comparison.md
+```
+
+Do not compare a broad report with a filtered report and call removed findings
+remediated. A finding can disappear because the plugin was skipped, the
+severity filter changed, the account changed, or the host state changed. Check
+`plugins_run`, `coverage`, `identity`, `mode`, and the report timestamps before
+interpreting a diff.
+
+### 3.12 Linux run review checklist
+
+Before leaving the host, confirm:
+
+- The report identifies the expected hostname, user, UID, architecture, and
+  elevated/non-elevated state.
+- The expected Linux plugins ran, and no material plugin has `status=error`.
+- The mode is `enumerate-only` unless the approved probe decision says
+  otherwise.
+- Any finding tagged `noisy` or `artifacts` is called out in the engagement
+  log, including the observed change and cleanup result.
+- Output hashes, report run ID, and key custody are recorded off-host.
+- The approved drop path has been inspected before cleanup.
 
 ---
 
@@ -798,6 +1095,11 @@ Clipboard paste works for scripts (`enum.ps1` / `enum.js`) more reliably than la
 ### 4.6 PsExec-style remote create
 
 **Risk:** High-signal on modern EDR/AV. Creates a remote service (often `PSEXESVC`), may drop a helper binary under `ADMIN$` / `%SystemRoot%`, and generates conspicuous 7045/4697 service events. Use only when ROE explicitly allows remote service execution and quieter paths (SSH/WinRM/SMB copy + local run) are unavailable or insufficient.
+
+Never place a real password, token, or hash in a shell command, ticket, or
+transcript. The credentials below are placeholders only. Use an approved
+prompt, credential manager, or operator-side secret injection mechanism, and
+record the credential source—not the secret—in the engagement log.
 
 Prerequisites:
 
@@ -1102,7 +1404,9 @@ $env:STEALTHY_AUTHORIZED = '1'
 ```powershell
 $Bin = 'C:\Users\Public\Documents\cache-update\stealthy.exe'
 $env:STEALTHY_AUTHORIZED = '1'
-& $Bin --output file --output-path 'C:\Users\Public\Documents\cache-update\findings.seal' enum
+# Use --verbose without -q so the key is emitted to stderr for approved
+# secret handling; do not leave it in a target transcript.
+& $Bin --verbose --output file --output-path 'C:\Users\Public\Documents\cache-update\findings.seal' enum
 & $Bin --output file --output-path 'C:\Users\Public\Documents\cache-update\findings.json' --plaintext-file enum
 ```
 
@@ -1141,6 +1445,67 @@ del /f /q C:\Users\Public\Documents\cache-update\findings.*
 rmdir /s /q C:\Users\Public\Documents\cache-update
 ```
 
+### 5.7 Capture and validate a Windows baseline
+
+PowerShell progress and diagnostics can make redirected output hard to audit.
+Use quiet machine output for JSON and retain a separate transcript only when
+the evidence policy permits it.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$Bin = 'C:\Users\Public\Documents\cache-update\stealthy.exe'
+$Stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+$Json = "C:\Users\Public\Documents\cache-update\windows-$Stamp.json"
+$Err  = "C:\Users\Public\Documents\cache-update\windows-$Stamp.stderr.txt"
+$env:STEALTHY_AUTHORIZED = '1'
+
+& $Bin --quiet --no-color --format json --output memory enum `
+  1> $Json 2> $Err
+
+Get-Content -Raw $Json | ConvertFrom-Json | Out-Null
+Get-FileHash $Json -Algorithm SHA256
+```
+
+Keep the exit code from the process in the run log. If using `--fail-on`,
+exit `4` is a finding gate, not necessarily a tool failure. Inspect the JSON
+`coverage` entries and confirm that the expected Windows plugin set ran.
+
+### 5.8 Windows sealed output and key handling
+
+The same key-custody rule applies on Windows: capture the key from the
+non-quiet verbose run, place it in the approved secret store, and keep it out
+of the target drop directory and ordinary PowerShell history.
+
+```powershell
+$Bin = 'C:\Users\Public\Documents\cache-update\stealthy.exe'
+$Out = 'C:\Users\Public\Documents\cache-update\findings.seal'
+$env:STEALTHY_AUTHORIZED = '1'
+& $Bin --verbose --output file --output-path $Out --also-markdown enum `
+  2> 'C:\Users\Public\Documents\cache-update\run.stderr.txt'
+
+Get-Item $Out | Select-Object FullName, Length, LastWriteTime
+Get-FileHash $Out -Algorithm SHA256
+```
+
+If the key was printed into a transcript, treat that transcript as sensitive
+evidence and move it under the same access policy as the report. Do not assume
+that deleting the transcript from the target removes copies held by the
+terminal host, remoting client, or logging infrastructure.
+
+### 5.9 Windows run review checklist
+
+Before cleanup, confirm:
+
+- The report identifies the expected computer, account, architecture, and
+  token/elevation context.
+- The expected Windows plugins ran and material coverage errors are explained.
+- SmartScreen, AppLocker, WDAC, AMSI, or EDR blocks are recorded as
+  environmental limitations; do not bypass them outside the ROE.
+- Any service, task, registry, or file write is attributable to an approved
+  action and has a recorded rollback or cleanup result.
+- The sealed-file hash, report run ID, and key custody are recorded off-host.
+- The exact approved drop directory has been inspected before removal.
+
 ---
 
 ## 6. Common operator recipes
@@ -1151,11 +1516,15 @@ rmdir /s /q C:\Users\Public\Documents\cache-update
 set -euo pipefail
 TARGET='user@10.0.0.20'
 REMOTE='/tmp/.cache-update'
+RUN_UTC=$(date -u +%Y%m%dT%H%M%SZ)
 cargo build -p stealthy --release
 ssh "$TARGET" "mkdir -p $REMOTE"
 scp target/release/stealthy "$TARGET:$REMOTE/stealthy"
-ssh "$TARGET" "chmod +x $REMOTE/stealthy && STEALTHY_AUTHORIZED=1 $REMOTE/stealthy --output file --output-path $REMOTE/findings.seal -q enum"
+ssh "$TARGET" "chmod +x $REMOTE/stealthy && STEALTHY_AUTHORIZED=1 $REMOTE/stealthy --verbose --output file --output-path $REMOTE/findings.seal enum" \
+  2> "linux-${RUN_UTC}.run.stderr.txt"
 scp "$TARGET:$REMOTE/findings.seal" ./findings-$(date +%Y%m%d%H%M%S).seal
+# Move the key from the stderr file into the approved secret store before
+# sharing, archiving, or deleting that file.
 ssh "$TARGET" "rm -f $REMOTE/stealthy $REMOTE/findings.seal"
 ```
 
@@ -1165,12 +1534,16 @@ ssh "$TARGET" "rm -f $REMOTE/stealthy $REMOTE/findings.seal"
 set -euo pipefail
 TARGET='user@10.0.0.30'
 REMOTE='C:/Users/Public/Documents/cache-update'
+RUN_UTC=$(date -u +%Y%m%dT%H%M%SZ)
 rustup target add x86_64-pc-windows-gnu
 cargo build -p stealthy --release --target x86_64-pc-windows-gnu
 ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path 'C:\\Users\\Public\\Documents\\cache-update' | Out-Null\""
 scp target/x86_64-pc-windows-gnu/release/stealthy.exe "$TARGET:$REMOTE/stealthy.exe"
-ssh "$TARGET" 'set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal -q enum'
+ssh "$TARGET" 'set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --verbose --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal enum' \
+  2> "windows-${RUN_UTC}.run.stderr.txt"
 scp "$TARGET:$REMOTE/findings.seal" ./findings-win-$(date +%Y%m%d%H%M%S).seal
+# Move the key from the stderr file into the approved secret store before
+# sharing, archiving, or deleting that file.
 ssh "$TARGET" 'del /f /q C:\Users\Public\Documents\cache-update\stealthy.exe C:\Users\Public\Documents\cache-update\findings.seal'
 ```
 
@@ -1209,6 +1582,146 @@ Get-FileHash .\target\release\stealthy.exe -Algorithm SHA256
 ```
 
 ---
+
+### 6.6 Controlled multi-host execution
+
+Batch operation is useful only when the host list, concurrency, output naming,
+and cleanup ownership are explicit. Start sequentially; add concurrency only
+when the ROE, target capacity, and monitoring plan allow it.
+
+Create an approved host inventory with one connection target per line. Do not
+derive it from a broad network scan in this workflow.
+
+```text
+# approved-linux-hosts.txt
+user@10.0.0.21
+user@10.0.0.22
+```
+
+Then use a bounded, fail-visible loop. The explicit `case` check prevents an
+accidental empty or wildcard target from becoming a destructive SSH command.
+
+```bash
+set -euo pipefail
+BIN_LOCAL='target/release/stealthy'
+REMOTE='/tmp/.cache-update'
+EVIDENCE_DIR='./approved-evidence'
+mkdir -p "$EVIDENCE_DIR"
+
+while IFS= read -r TARGET; do
+  [[ -z "$TARGET" || "$TARGET" == \#* ]] && continue
+  case "$TARGET" in
+    *' '*|/*|'') echo "invalid target: $TARGET" >&2; exit 2 ;;
+  esac
+
+  SAFE=$(printf '%s' "$TARGET" | tr '@:/' '___')
+  echo "== $TARGET =="
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" \
+    "mkdir -p '$REMOTE' && command -v sha256sum >/dev/null"
+  scp "$BIN_LOCAL" "$TARGET:$REMOTE/stealthy"
+  ssh "$TARGET" "chmod 750 '$REMOTE/stealthy' && sha256sum '$REMOTE/stealthy'"
+  ssh "$TARGET" "STEALTHY_AUTHORIZED=1 '$REMOTE/stealthy' --quiet --format json enum" \
+    > "$EVIDENCE_DIR/$SAFE.json" \
+    2> "$EVIDENCE_DIR/$SAFE.stderr.txt"
+  sha256sum "$EVIDENCE_DIR/$SAFE.json"
+done < approved-linux-hosts.txt
+```
+
+For each host, verify the returned binary hash against the local artifact,
+validate JSON, inspect plugin coverage, and pull or seal evidence before
+cleanup. If one host fails, stop the batch unless the ROE explicitly defines
+an error-tolerant continuation rule. Do not reuse one host's report key for
+another host.
+
+### 6.7 Automation and CI contract
+
+Use machine-readable stdout and keep progress/diagnostics separate:
+
+```bash
+set -o pipefail
+STEALTHY_AUTHORIZED=1 stealthy --quiet --no-color --format json \
+  --output memory enum > findings.json 2> findings.stderr.txt
+status=$?
+
+case "$status" in
+  0) echo 'scan completed without the selected threshold' ;;
+  2) echo 'authorization acknowledgment missing' >&2 ;;
+  4) echo 'finding threshold reached; inspect findings.json' >&2 ;;
+  *) echo "operational failure: $status" >&2 ;;
+esac
+exit "$status"
+```
+
+Important semantics:
+
+- `--fail-on` evaluates the findings that remain after `--min-severity`; do
+  not use a severity filter that hides the condition your gate is intended to
+  enforce.
+- A successful process can still contain plugin coverage errors. Parse the
+  report and fail or escalate when a required plugin has `status: "error"`.
+- `--format json`, `markdown`, and `sarif` shape console output. They do not
+  make storage encrypted. Use `--output file` without `--plaintext-file` for a
+  sealed artifact.
+- `--quiet` makes human output silent, but machine formats still print to
+  stdout. This is why `--quiet --format json` is suitable for redirection.
+- Treat the report schema version as an input contract. If it changes, pin the
+  parser or update the integration rather than silently dropping fields.
+
+### 6.8 Decrypt and review sealed reports off-host
+
+Decrypt sealed evidence only on an approved operator workstation. The `report`
+subcommand reads the file and key locally; it does not enumerate the host and
+does not require the authorization gate.
+
+```bash
+OPERATOR_BIN=./target/release/stealthy
+SEALED=./approved-evidence/linux-host-a.seal
+
+# Supply KEY_HEX from the approved secret store; do not put a literal key in
+# shell history. The resulting JSON is plaintext sensitive evidence.
+"$OPERATOR_BIN" report "$SEALED" --key-hex "$KEY_HEX" --format json \
+  > ./approved-evidence/linux-host-a.json
+"$OPERATOR_BIN" report "$SEALED" --key-hex "$KEY_HEX" --format markdown \
+  > ./approved-evidence/linux-host-a.review.md
+```
+
+Validate that the decoded report's run ID, host, identity, mode, and plugin
+coverage match the engagement log. Hash the sealed source and decoded outputs,
+then store them under the approved evidence policy. Remove temporary plaintext
+copies when review is complete only if retention policy permits; deletion does
+not retract copies from backups, transcripts, or endpoint logging systems.
+
+### 6.9 Recovery after interruption or partial failure
+
+If the process is interrupted, treat the run as incomplete until checked:
+
+1. Record the UTC time, host, command, and observed interruption.
+2. Check whether a report was fully written and whether its hash can be read.
+3. Inspect the approved drop directory for partial binaries, scripts, sealed
+   files, plaintext reports, or temporary archives.
+4. Confirm no unexpected child process, service, scheduled task, or listener
+   remains from the approved workflow.
+5. Either resume with a new run ID or close the host as incomplete; do not
+   append new output to a partial report.
+
+Linux check:
+
+```bash
+ps -eo pid,ppid,user,args | grep -E '[s]tealthy|[e]num\\.(sh|py)' || true
+ls -la /tmp/.cache-update 2>/dev/null || true
+```
+
+Windows PowerShell check:
+
+```powershell
+Get-Process stealthy -ErrorAction SilentlyContinue |
+  Select-Object Id, ProcessName, StartTime, Path
+Get-ChildItem 'C:\Users\Public\Documents\cache-update' -Force `
+  -ErrorAction SilentlyContinue
+```
+
+Do not kill or remove unrelated processes or files merely because they share a
+name or directory. Resolve the exact artifact against the run log first.
 
 ## 7. Plugin cheat sheet
 
@@ -1263,7 +1776,63 @@ Remember: Linux builds do not contain Windows plugins and vice versa.
 
 ---
 
-## 9. Opsec defaults (recommended)
+## 9. Finding review and disposition
+
+Treat each finding as an observation that needs context, not as an automatic
+proof of exploitability. Severity describes potential impact; the report's
+`assessments` describe the tool's confidence, applicability, and evidence
+quality. Recommendations and heuristic findings require more validation than
+direct local observations.
+
+### 9.1 Review order
+
+Review in this order so high-impact results are not lost in a long report:
+
+1. Confirm the report identity, mode, timestamp, and plugin coverage.
+2. Check `critical` and `high` findings, then any finding involving readable
+   credentials, private keys, or root/SYSTEM-adjacent control paths.
+3. Read the `kind`, `noisy`, `leaves_artifacts`, and assessment fields before
+   choosing a follow-up.
+4. Re-run the smallest relevant plugin set in enumerate-only mode when a result
+   is surprising or the state may have changed.
+5. Obtain separate approval before any reversible probe. Do not convert a
+   recommendation into an exploit attempt merely because its severity is high.
+
+### 9.2 Finding disposition record
+
+For each material finding, add a short entry to the engagement log:
+
+```text
+Finding / plugin:           ______________________________
+Run ID and host:            ______________________________
+Severity / kind:            ______________________________
+Confidence / applicability: ______________________________
+Read-only evidence:         ______________________________
+Validation status:          open / confirmed / not reproduced / limited
+Impact and owner:           ______________________________
+Approved next action:       none / re-enumerate / reversible probe / escalate
+Artifacts or telemetry:     ______________________________
+Remediation reference:      ______________________________
+```
+
+When a finding is not reproduced, retain the original report and document the
+changed identity, plugin scope, permissions, host state, or tool version. Do
+not overwrite the original evidence with a later clean run.
+
+### 9.3 Reporting limitations
+
+Call out limitations explicitly in the deliverable:
+
+- A skipped plugin or plugin error reduces coverage.
+- Script-only fallbacks do not provide the same plugin set or report schema as
+  the Rust binary.
+- A filtered report shows only findings at or above the selected threshold.
+- Running as root/SYSTEM is not equivalent to a standard-user assessment.
+- A recommendation or kernel-version hint is not a kernel exploit result.
+- A sealed report protects confidentiality and integrity of the blob, but key
+  custody and plaintext exports remain operational responsibilities.
+
+## 10. Opsec defaults (recommended)
 
 1. Start with `-q enum` and memory output.
 2. Keep `--delay-ms` at default (`50`) or higher on monitored hosts.
@@ -1275,7 +1844,7 @@ Remember: Linux builds do not contain Windows plugins and vice versa.
 
 ---
 
-## 10. Safety boundary (non-negotiable)
+## 11. Safety boundary (non-negotiable)
 
 - Authorized assessments only
 - Default = enumeration + recommendations
