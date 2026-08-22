@@ -35,8 +35,8 @@ The authors and distributors assume **no liability** for misuse.
 ```text
 crates/stealthy/          Rust core (static-friendly release profile)
   src/core/               OS detect, identity, plugin runner, encrypted store, evasion helpers
-  src/plugins/linux/      Linux checks (15): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls
-  src/plugins/windows/    Windows checks (11): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls
+  src/plugins/linux/      Linux checks (16): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls, app-control assessment
+  src/plugins/windows/    Windows checks (12): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls, app-control assessment
   src/exploit/            Reversible probes + `--allow-techniques` scaffolding
 scripts/linux/            Bash + Python fallbacks (no custom binary; includes control checks)
 scripts/windows/          PowerShell + JScript + MSBuild host stubs (includes control checks)
@@ -169,6 +169,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--min-severity info\|low\|medium\|high\|critical` | Filter displayed findings |
 | `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
+| `--artifact PATH` | Read-only hash/provenance/trust prediction for an approved test artifact; never executes it |
 | `--output memory\|file\|remote` | Result destination (default `memory`) |
 | `--output-path PATH` | Destination for `--output file` |
 | `--plaintext-file` | Write JSON instead of sealed blob |
@@ -179,6 +180,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `report PATH --key-hex KEY` | Decode a sealed report (no host access) |
 | `disclaimer` | Print legal text (no auth) |
 | `list-plugins` / `plugins` | Table of compiled plugin IDs |
+| `controls` / `validate-controls` | Run disposable application-control validation cases |
 | `enum --auto-exploit` | Opt-in reversible probes |
 | `enum --allow-techniques a,b` | Opt-in high-impact families (scaffold) |
 | `enum --plugins a,b` | Enable listed plugins |

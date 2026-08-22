@@ -162,6 +162,9 @@ impl Finding {
             "linux.endpoint_controls" => {
                 "findmnt -o TARGET,OPTIONS; command -v aa-status >/dev/null && aa-status; command -v getenforce >/dev/null && getenforce"
             }
+            "linux.app_control" => {
+                "stealthy --authorized enum --plugins linux.app_control --artifact /approved/test/artifact"
+            }
             "windows.privileges" => "whoami /priv",
             "windows.services" => {
                 "Get-CimInstance Win32_Service | Select-Object Name,StartName,PathName,State"
@@ -186,6 +189,9 @@ impl Finding {
             }
             "windows.endpoint_controls" => {
                 "Get-AppLockerPolicy -Effective -ErrorAction SilentlyContinue; reg.exe query HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI\\Policy"
+            }
+            "windows.app_control" => {
+                "stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved\\test\\artifact.exe"
             }
             "allow_techniques" => {
                 return self
@@ -259,6 +265,209 @@ pub struct TriageDecision {
     pub action: String,
 }
 
+/// Read-only inventory of controls that can affect code execution.
+///
+/// These records deliberately describe observed state and expected evidence.
+/// They do not contain bypass instructions or execute the inspected artifact.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ControlAssessment {
+    pub platform: String,
+    #[serde(default)]
+    pub collection_mode: String,
+    #[serde(default)]
+    pub collected_at_unix: u64,
+    #[serde(default)]
+    pub artifact: Option<ArtifactAssessment>,
+    #[serde(default)]
+    pub policies: Vec<PolicyControl>,
+    #[serde(default)]
+    pub sensors: Vec<SensorInventory>,
+    #[serde(default)]
+    pub audit_sources: Vec<AuditSource>,
+    #[serde(default)]
+    pub telemetry_expectations: Vec<TelemetryExpectation>,
+    #[serde(default)]
+    pub live_telemetry_score: u8,
+    #[serde(default)]
+    pub live_telemetry_label: String,
+    /// 0-100 preflight expectation based on behavior classes, not a stealth score.
+    #[serde(default)]
+    pub detection_exposure: u8,
+    #[serde(default)]
+    pub detection_exposure_label: String,
+    #[serde(default)]
+    pub validation_cases: Vec<ValidationCase>,
+    #[serde(default)]
+    pub approved_deployment: Vec<DeploymentGuidance>,
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ValidationResult {
+    pub case_id: String,
+    pub status: String,
+    pub executed: bool,
+    pub fixture_root: String,
+    #[serde(default)]
+    pub observations: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub expected_telemetry: Vec<String>,
+    /// Measured coverage of the expected telemetry sources for this case.
+    #[serde(default)]
+    pub telemetry_score: u8,
+    #[serde(default)]
+    pub telemetry_label: String,
+    #[serde(default)]
+    pub observed_telemetry: Vec<String>,
+    #[serde(default)]
+    pub event_correlation: Vec<String>,
+    #[serde(default)]
+    pub stop_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ControlValidationReport {
+    pub schema_version: String,
+    pub tool: String,
+    pub platform: String,
+    pub started_at_unix: u64,
+    pub case_filter: String,
+    pub execute_requested: bool,
+    pub fixtures_cleaned: bool,
+    pub assessment: ControlAssessment,
+    pub results: Vec<ValidationResult>,
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PolicyControl {
+    pub name: String,
+    pub family: String,
+    pub state: String,
+    pub mode: String,
+    #[serde(default)]
+    pub rules: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    pub impact: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArtifactAssessment {
+    pub path: String,
+    pub kind: String,
+    #[serde(default)]
+    pub sha256: String,
+    #[serde(default)]
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub owner: String,
+    #[serde(default)]
+    pub package: String,
+    #[serde(default)]
+    pub signer: String,
+    #[serde(default)]
+    pub signature_status: String,
+    #[serde(default)]
+    pub integrity_status: String,
+    #[serde(default)]
+    pub mount_options: String,
+    #[serde(default)]
+    pub origin: String,
+    #[serde(default)]
+    pub publisher: String,
+    #[serde(default)]
+    pub product: String,
+    #[serde(default)]
+    pub file_version: String,
+    #[serde(default)]
+    pub original_filename: String,
+    #[serde(default)]
+    pub catalog_signature: String,
+    #[serde(default)]
+    pub timestamp: String,
+    #[serde(default)]
+    pub policy_rule: String,
+    #[serde(default)]
+    pub path_class: String,
+    #[serde(default)]
+    pub access_control: String,
+    #[serde(default)]
+    pub static_analysis: Vec<String>,
+    pub predicted_decision: String,
+    pub rationale: String,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SensorInventory {
+    pub product: String,
+    pub identity: String,
+    pub health: String,
+    pub protection_mode: String,
+    pub tamper_protection: String,
+    pub policy_version: String,
+    pub last_update: String,
+    pub management_scope: String,
+    pub special_group: String,
+    pub log_retrieval: String,
+    #[serde(default)]
+    pub prevention_rules: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuditSource {
+    pub source: String,
+    pub available: String,
+    pub correlation: String,
+    #[serde(default)]
+    pub recent_events: u32,
+    #[serde(default)]
+    pub recent_denials: u32,
+    #[serde(default)]
+    pub correlated_artifact_events: u32,
+    #[serde(default)]
+    pub last_event: String,
+    #[serde(default)]
+    pub snapshot_sha256: String,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TelemetryExpectation {
+    pub behavior: String,
+    pub expected_telemetry: String,
+    pub exposure: String,
+    pub read_only_validation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ValidationCase {
+    pub id: String,
+    pub platform: String,
+    pub objective: String,
+    pub setup: String,
+    pub expected_observation: String,
+    pub destructive: bool,
+    pub execute_artifact: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeploymentGuidance {
+    pub channel: String,
+    pub requirements: String,
+    pub verification: String,
+    pub stop_condition: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub schema_version: String,
@@ -288,6 +497,9 @@ pub struct RunReport {
     /// Plugin IDs missing relative to a full binary run (script mode).
     #[serde(default)]
     pub capability_delta: Vec<String>,
+    /// Structured, read-only policy and telemetry assessment.
+    #[serde(default)]
+    pub control_assessment: Option<ControlAssessment>,
     pub os: OsInfo,
     pub identity: IdentityInfo,
     pub findings: Vec<Finding>,

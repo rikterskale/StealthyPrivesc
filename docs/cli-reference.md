@@ -26,6 +26,7 @@ subcommand. Host-enumerating commands require `--authorized` or
 | `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
 | `--checkpoint PATH` | Write/update plaintext JSON checkpoint during the run | None |
 | `--ledger-dir PATH` | Artifact ledger directory | `.stealthy-artifacts` |
+| `--artifact PATH` | Read-only artifact hash/provenance/trust prediction; never executed | None |
 
 Severity levels, from least to greatest, are `info`, `low`, `medium`, `high`,
 and `critical`.
@@ -83,6 +84,8 @@ stealthy --authorized enum --skip ID1,ID2
 stealthy --authorized enum --triage --triage-out decisions.json
 stealthy --authorized enum --approve-file decisions.json
 stealthy --authorized --checkpoint /tmp/run.json enum
+stealthy --authorized enum --plugins linux.app_control --artifact /approved/test/artifact
+stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved\\test\\artifact.exe
 ```
 
 `scan` is a visible alias for `enum`. Options:
@@ -95,6 +98,81 @@ stealthy --authorized --checkpoint /tmp/run.json enum
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
+
+The application-control plugins expose policy discovery, package/signer/hash/path
+trust evidence, sensor/tamper state, audit sources, harmless validation cases,
+and named detection-exposure expectations. `--artifact` only reads metadata and
+hashes; it never runs, modifies, or attempts to authorize the supplied file.
+
+## `controls` / `validate-controls`
+
+```text
+stealthy --authorized controls --format json
+stealthy --authorized controls --case hash-drift
+stealthy --authorized controls --case interpreter-script --execute
+stealthy --authorized controls --signed-artifact C:\\approved\\signed.exe
+stealthy --authorized controls --baseline prior-report.json --case policy-drift
+stealthy --authorized controls --root C:\\temp\\stealthy-controls --keep-fixtures
+```
+
+The command creates disposable fixtures and records evidence for every
+platform-appropriate case in the control matrix. It does not modify host
+policy, trust databases, certificates, mounts, SUID bits, file capabilities, or
+kernel state. On Windows it may set and read back ACLs on its own generated
+administrator-controlled fixture directory; it never changes an existing host
+directory. By default it does not execute fixtures. `--execute` starts only
+generated benign probes, interpreter scripts, isolated MAC probes, or an
+isolated mount-namespace probe, and records before/after audit-source evidence
+and a measured per-case telemetry score. It never loads a supplied DLL/plugin
+or installs an MSI.
+
+Windows signer/scope cases require `--signed-artifact` from the organization’s
+normal signing workflow; the tool does not create certificates or change a
+certificate store. Linux package cases use package-manager verification tools
+and fapolicyd trust checks when installed. `--artifact` can supply an approved
+driver/module for signature and dry-run compatibility inspection; it is never
+loaded. `--baseline` accepts a previous full JSON report or control assessment
+and compares policy evidence, sensor prevention rules, audit-source
+availability, management, and exposure drift.
+
+## `live-controls` / `collect-controls`
+
+```text
+stealthy --authorized live-controls --format json
+stealthy --authorized --artifact /approved/test/artifact live-controls
+```
+
+Collects live host state without creating fixtures or running validation
+probes. It gathers effective policy exports and rule summaries, artifact
+format/signer/.NET/MSI/plugin indicators, native ACL classification, recent
+Windows/Linux audit data, managed-installer and EDR state, package and trust
+metadata, IMA/fs-verity evidence, MAC profiles and denials, mount and
+SUID/capability metadata, kernel driver/module state, namespace/container
+identity, and a deterministic live telemetry score.
+
+### Live capability tracking
+
+The live collector tracks each capability explicitly:
+
+| # | Capability | JSON evidence |
+| ---: | --- | --- |
+| 1 | AppLocker/WDAC policy parsing and publisher/product/version evaluation | `policies[].rules`, `artifact.policy_rule` |
+| 2 | DLL/MSI/.NET/plugin static analysis | `artifact.static_analysis`, `artifact.kind` |
+| 3 | ACL parsing and path classification | `artifact.access_control`, `artifact.path_class` |
+| 4 | Windows/Linux event collection and correlation | `audit_sources[].recent_events`, `recent_denials`, `correlated_artifact_events`, `snapshot_sha256` |
+| 5 | Managed-installer and provenance evidence | managed-installer policy rules, sensor prevention rules, artifact origin/signer fields |
+| 6 | Driver/module signature and HVCI/lockdown metadata | driver/module evidence, HVCI policy evidence, lockdown state |
+| 7 | RPM/DEB/package/fapolicyd trust | package policy, package trust evidence, fapolicyd rules/trust evidence |
+| 8 | IMA/fs-verity integrity evidence | `artifact.integrity_status` and artifact evidence |
+| 9 | SELinux/AppArmor profiles and denials | MAC policy notes and audit-source denial counts |
+| 10 | Mount/SUID/file-capability classification | mount summary, `artifact.mount_options`, owner/mode, capability evidence |
+| 11 | Host/container comparison inputs | namespace notes and `controls --baseline` drift output |
+| 12 | EDR/provider inventory | `sensors[]`, prevention rules, management scope, and log availability |
+| 13 | Deterministic telemetry scoring | `live_telemetry_score`, `live_telemetry_label`, and per-case telemetry fields |
+
+This matrix is the implementation checklist for the live collection path; the
+fixture `controls` command is separate and is used only for disposable
+validation probes.
 
 ## `resume`
 

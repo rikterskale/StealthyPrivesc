@@ -194,6 +194,7 @@ mod tests {
             profile: "balanced".into(),
             coverage_mode: "binary".into(),
             capability_delta: vec![],
+            control_assessment: None,
         };
         let sealed = store.seal_report(&report).unwrap();
         let reopened = EncryptedStore::open_sealed_report(&sealed, &store.key_hex()).unwrap();

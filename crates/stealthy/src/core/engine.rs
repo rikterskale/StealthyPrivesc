@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::cli::{Cli, CliOverrides, OutputMode, ReportFormat};
 use crate::core::artifacts::{self, ArtifactLedger};
 use crate::core::attack_path::{assign_path_ranks, build_attack_paths};
+use crate::core::controls;
 use crate::core::evasion::{self, low_and_slow};
 use crate::core::finalize::finalize_finding;
 use crate::core::identity;
@@ -19,7 +20,8 @@ use crate::core::store::EncryptedStore;
 use crate::core::term;
 use crate::core::triage;
 use crate::core::types::{
-    Finding, FindingAssessment, FindingKind, PluginCoverage, RunReport, Severity, TriageDecision,
+    ControlAssessment, Finding, FindingAssessment, FindingKind, PluginCoverage, RunReport,
+    Severity, TriageDecision,
 };
 use crate::exploit::TechniqueAllowlist;
 use crate::plugins;
@@ -43,6 +45,7 @@ pub struct Engine {
     triage: bool,
     triage_out: Option<PathBuf>,
     approve_file: Option<PathBuf>,
+    artifact: Option<PathBuf>,
 }
 
 pub struct EngineOutcome {
@@ -109,6 +112,7 @@ impl Engine {
             triage,
             triage_out,
             approve_file,
+            artifact: cli.artifact.clone(),
             output: OutputOptions {
                 mode: cli.output,
                 path: cli.output_path.clone(),
@@ -137,6 +141,7 @@ impl Engine {
 
         let os_info = os::detect();
         let ident = identity::current();
+        let control_assessment = controls::collect(&os_info.os, self.artifact.as_deref());
         let started_at_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs())
@@ -332,8 +337,12 @@ impl Engine {
             }
             low_and_slow(self.delay_ms);
 
-            let outcome =
-                self.run_one_plugin(plugin.id(), effective_auto_exploit, &approved_probe_ids);
+            let outcome = self.run_one_plugin(
+                plugin.id(),
+                effective_auto_exploit,
+                &approved_probe_ids,
+                &control_assessment,
+            );
 
             match outcome {
                 PluginOutcome::Ok(findings) => {
@@ -431,6 +440,7 @@ impl Engine {
                     coverage.clone(),
                     notes,
                     triage_decisions.clone(),
+                    Some(control_assessment.clone()),
                 );
                 if let Ok(body) = serde_json::to_string_pretty(&partial) {
                     let _ = std::fs::write(path, body);
@@ -501,6 +511,7 @@ impl Engine {
             profile: self.profile.as_str().into(),
             coverage_mode: "binary".into(),
             capability_delta: vec![],
+            control_assessment: Some(control_assessment),
             os: os_info,
             identity: ident,
             findings,
@@ -579,6 +590,7 @@ impl Engine {
         plugin_id: &str,
         auto_exploit: bool,
         approved_probe_ids: &[String],
+        control_assessment: &ControlAssessment,
     ) -> PluginOutcome {
         let timeout = self.plugin_timeout_ms;
         if timeout == 0 {
@@ -589,6 +601,8 @@ impl Engine {
                 self.prefer_quiet,
                 &self.allow_techniques,
                 approved_probe_ids,
+                self.artifact.clone(),
+                Some(control_assessment.clone()),
             ) {
                 Ok(f) => PluginOutcome::Ok(f),
                 Err(e) => PluginOutcome::Err(format!("{e:#}")),
@@ -600,10 +614,20 @@ impl Engine {
         let prefer_quiet = self.prefer_quiet;
         let allow = self.allow_techniques.clone();
         let approved = approved_probe_ids.to_vec();
+        let artifact = self.artifact.clone();
+        let control_assessment = control_assessment.clone();
         let id = plugin_id.to_string();
         std::thread::spawn(move || {
-            let result =
-                run_plugin_blocking(&id, verbose, auto_exploit, prefer_quiet, &allow, &approved);
+            let result = run_plugin_blocking(
+                &id,
+                verbose,
+                auto_exploit,
+                prefer_quiet,
+                &allow,
+                &approved,
+                artifact,
+                Some(control_assessment),
+            );
             let _ = tx.send(result);
         });
 
@@ -624,6 +648,7 @@ enum PluginOutcome {
     Timeout,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_plugin_blocking(
     plugin_id: &str,
     verbose: bool,
@@ -631,6 +656,8 @@ fn run_plugin_blocking(
     prefer_quiet: bool,
     allow_techniques: &TechniqueAllowlist,
     approved_probe_ids: &[String],
+    artifact_path: Option<PathBuf>,
+    control_assessment: Option<ControlAssessment>,
 ) -> Result<Vec<Finding>> {
     let registry = plugins::registry();
     let plugin = registry
@@ -645,6 +672,8 @@ fn run_plugin_blocking(
         allow_techniques,
         store: &mut local_store,
         approved_probe_ids,
+        artifact_path,
+        control_assessment,
     };
     plugin.run(&mut ctx)
 }
@@ -672,6 +701,7 @@ fn build_report(
     coverage: Vec<PluginCoverage>,
     notes: Vec<String>,
     triage_decisions: Vec<TriageDecision>,
+    control_assessment: Option<ControlAssessment>,
 ) -> RunReport {
     let attack_paths = build_attack_paths(&findings);
     assign_path_ranks(&mut findings, &attack_paths);
@@ -694,6 +724,7 @@ fn build_report(
         profile: profile.into(),
         coverage_mode: "binary".into(),
         capability_delta: vec![],
+        control_assessment,
         os: os_info,
         identity: ident,
         findings,

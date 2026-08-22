@@ -51,6 +51,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub ledger_dir: Option<std::path::PathBuf>,
 
+    /// Read-only artifact for hash, provenance, signer, mount, and trust prediction.
+    /// The artifact is never executed or modified.
+    #[arg(long, global = true)]
+    pub artifact: Option<std::path::PathBuf>,
+
     /// Console / file report shape.
     #[arg(long, global = true, value_enum, default_value_t = ReportFormat::Human)]
     pub format: ReportFormat,
@@ -113,6 +118,33 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run disposable, read-only application-control validation cases.
+    #[command(visible_alias = "validate-controls")]
+    Controls {
+        /// Run one case ID instead of the complete platform suite.
+        #[arg(long)]
+        case: Option<String>,
+        /// Preserve fixtures under this directory for operator review.
+        #[arg(long)]
+        root: Option<std::path::PathBuf>,
+        /// Optional organization-signed artifact for Windows signer/scope cases.
+        #[arg(long)]
+        signed_artifact: Option<std::path::PathBuf>,
+        /// Prior JSON report or control assessment for policy-drift comparison.
+        #[arg(long)]
+        baseline: Option<std::path::PathBuf>,
+        /// Start only the suite-generated benign probe with --help.
+        #[arg(long)]
+        execute: bool,
+        /// Keep automatically generated temporary fixtures instead of cleaning them.
+        #[arg(long)]
+        keep_fixtures: bool,
+    },
+
+    /// Collect live application-control, provenance, sensor, and audit state without fixtures.
+    #[command(visible_alias = "collect-controls")]
+    LiveControls,
 
     /// Decode an encrypted report using its operator-held hex key.
     Report {

@@ -1,7 +1,8 @@
 use anyhow::Result;
+use std::path::PathBuf;
 
 use crate::core::store::EncryptedStore;
-use crate::core::types::Finding;
+use crate::core::types::{ControlAssessment, Finding};
 use crate::exploit::TechniqueAllowlist;
 
 /// Runtime context passed to each plugin.
@@ -19,6 +20,12 @@ pub struct PluginContext<'a> {
     /// Finding IDs approved for reversible probes (empty = legacy blanket auto_exploit).
     #[allow(dead_code)]
     pub approved_probe_ids: &'a [String],
+    /// Optional artifact to assess. It is hashed/inspected, never executed.
+    #[allow(dead_code)]
+    pub artifact_path: Option<PathBuf>,
+    /// Shared read-only control inventory for plugins that emit assessment findings.
+    #[allow(dead_code)]
+    pub control_assessment: Option<ControlAssessment>,
 }
 
 /// Independent privilege-escalation check.

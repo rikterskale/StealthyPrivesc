@@ -1,6 +1,7 @@
 mod acl;
 mod admin_sessions;
 mod always_install_elevated;
+mod app_control;
 mod autoruns;
 mod credentials;
 mod dll_hijack;
@@ -33,6 +34,7 @@ pub(super) fn executable_path(command: &str) -> Option<String> {
 
 pub fn plugins() -> Vec<&'static dyn Plugin> {
     vec![
+        &app_control::AppControlPlugin,
         &privileges::PrivilegesPlugin,
         &services::ServicesPlugin,
         &scheduled_tasks::ScheduledTasksPlugin,

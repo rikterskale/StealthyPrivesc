@@ -13,6 +13,7 @@ use clap::Parser;
 
 use crate::cli::{Cli, CliOverrides, Commands, ReportFormat};
 use crate::core::artifacts;
+use crate::core::control_tests;
 use crate::core::delivery;
 use crate::core::engine::Engine;
 use crate::core::ingest;
@@ -71,6 +72,23 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::Doctor { json } => print_doctor(json),
+        Commands::Controls {
+            case,
+            root,
+            signed_artifact,
+            baseline,
+            execute,
+            keep_fixtures,
+        } => print_control_validation(
+            &cli,
+            case,
+            root,
+            signed_artifact,
+            baseline,
+            execute,
+            keep_fixtures,
+        ),
+        Commands::LiveControls => print_live_controls(&cli),
         Commands::Report {
             input,
             key_hex,
@@ -220,6 +238,131 @@ fn print_ingest(path: &std::path::Path, format: ReportFormat) -> Result<()> {
                 output::render_markdown(&report, &findings, findings.len())
             );
         }
+    }
+    Ok(())
+}
+
+fn print_control_validation(
+    cli: &Cli,
+    case: Option<String>,
+    root: Option<std::path::PathBuf>,
+    signed_artifact: Option<std::path::PathBuf>,
+    baseline: Option<std::path::PathBuf>,
+    execute: bool,
+    keep_fixtures: bool,
+) -> Result<()> {
+    let report = control_tests::run(&control_tests::Options {
+        platform: crate::core::os::detect().os,
+        case_filter: case,
+        root,
+        artifact: cli.artifact.clone(),
+        signed_artifact,
+        baseline,
+        execute,
+        keep_fixtures,
+    })?;
+    match cli.format {
+        ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+        ReportFormat::Markdown | ReportFormat::Human => print_control_validation_markdown(&report),
+        ReportFormat::Sarif => anyhow::bail!(
+            "SARIF is not supported for control validation reports; use --format json or markdown"
+        ),
+    }
+    Ok(())
+}
+
+fn print_control_validation_markdown(report: &crate::core::types::ControlValidationReport) {
+    println!("# StealthyPrivesc application-control validation\n");
+    println!("- Platform: `{}`", report.platform);
+    println!("- Cases: `{}`", report.case_filter);
+    println!("- Execute requested: `{}`", report.execute_requested);
+    println!(
+        "- Detection exposure: `{}` ({}/100)",
+        report.assessment.detection_exposure_label, report.assessment.detection_exposure
+    );
+    println!("\n## Results\n");
+    println!("| Case | Status | Executed | Telemetry | Observations |");
+    println!("| --- | --- | ---: | --- | --- |");
+    for result in &report.results {
+        println!(
+            "| `{}` | `{}` | {} | `{}` ({}/100) | {} |",
+            result.case_id,
+            result.status,
+            result.executed,
+            result.telemetry_label,
+            result.telemetry_score,
+            result.observations.join("<br>").replace('|', "\\|")
+        );
+    }
+    if !report.notes.is_empty() {
+        println!("\n## Notes\n");
+        for note in &report.notes {
+            println!("- {note}");
+        }
+    }
+}
+
+fn print_live_controls(cli: &Cli) -> Result<()> {
+    let platform = crate::core::os::detect().os;
+    let assessment = crate::core::controls::collect(&platform, cli.artifact.as_deref());
+    match cli.format {
+        ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&assessment)?),
+        ReportFormat::Markdown | ReportFormat::Human => {
+            println!("# StealthyPrivesc live control collection\n");
+            println!("- Platform: {}", assessment.platform);
+            println!("- Collection mode: {}", assessment.collection_mode);
+            println!(
+                "- Live telemetry: {} ({}/100)",
+                assessment.live_telemetry_label, assessment.live_telemetry_score
+            );
+            println!("\n## Policies\n");
+            println!("| Policy | State | Mode | Rules |\n| --- | --- | --- | --- |");
+            for policy in &assessment.policies {
+                println!(
+                    "| {} | {} | {} | {} |",
+                    policy.name,
+                    policy.state,
+                    policy.mode,
+                    policy.rules.join("<br>").replace('|', "\\|")
+                );
+            }
+            println!("\n## Sensors\n");
+            println!("| Product | Health | Protection | Tamper | Logs |\n| --- | --- | --- | --- | --- |");
+            for sensor in &assessment.sensors {
+                println!(
+                    "| {} | {} | {} | {} | {} |",
+                    sensor.product,
+                    sensor.health,
+                    sensor.protection_mode,
+                    sensor.tamper_protection,
+                    sensor.log_retrieval
+                );
+            }
+            println!("\n## Audit sources\n");
+            println!("| Source | Availability | Recent events | Denials | Artifact matches | Snapshot |\n| --- | --- | ---: | ---: | ---: | --- |");
+            for source in &assessment.audit_sources {
+                println!(
+                    "| {} | {} | {} | {} | {} | {} |",
+                    source.source,
+                    source.available,
+                    source.recent_events,
+                    source.recent_denials,
+                    source.correlated_artifact_events,
+                    source.snapshot_sha256
+                );
+            }
+            if let Some(artifact) = &assessment.artifact {
+                println!("\n## Artifact\n");
+                println!("- Path: {}", artifact.path);
+                println!("- Decision prediction: {}", artifact.predicted_decision);
+                println!("- Policy evidence: {}", artifact.policy_rule);
+                println!("- Access control: {}", artifact.access_control);
+                println!("- Static analysis: {}", artifact.static_analysis.join("; "));
+            }
+        }
+        ReportFormat::Sarif => anyhow::bail!(
+            "SARIF is not supported for live control collections; use --format json or markdown"
+        ),
     }
     Ok(())
 }

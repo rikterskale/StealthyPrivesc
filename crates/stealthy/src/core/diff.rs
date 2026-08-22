@@ -116,6 +116,7 @@ mod tests {
             profile: "balanced".into(),
             coverage_mode: "binary".into(),
             capability_delta: vec![],
+            control_assessment: None,
         }
     }
 

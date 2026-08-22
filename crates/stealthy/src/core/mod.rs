@@ -1,6 +1,8 @@
 pub mod artifacts;
 pub mod attack_path;
 pub mod catalog;
+pub mod control_tests;
+pub mod controls;
 pub mod delivery;
 pub mod diff;
 pub mod engine;

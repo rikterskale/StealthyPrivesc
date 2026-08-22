@@ -1,3 +1,4 @@
+mod app_control;
 mod containers;
 mod credentials;
 mod endpoint_controls;
@@ -19,6 +20,7 @@ use crate::core::plugin::Plugin;
 
 pub fn plugins() -> Vec<&'static dyn Plugin> {
     vec![
+        &app_control::AppControlPlugin,
         &sudo::SudoPlugin,
         &suid::SuidPlugin,
         &systemd_cron::SystemdCronPlugin,

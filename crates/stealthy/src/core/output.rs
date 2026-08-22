@@ -434,6 +434,47 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         }
         out.push('\n');
     }
+    if let Some(controls) = &report.control_assessment {
+        out.push_str("## Application-control and telemetry assessment\n\n");
+        out.push_str(&format!(
+            "- Platform: `{}`\n- Collection mode: `{}`\n- Policies observed: {}\n- Sensors inventoried: {}\n- Audit sources: {}\n- Validation cases: {}\n- Telemetry behavior classes: {}\n",
+            controls.platform,
+            controls.collection_mode,
+            controls.policies.len(),
+            controls.sensors.len(),
+            controls.audit_sources.len(),
+            controls.validation_cases.len(),
+            controls.telemetry_expectations.len()
+        ));
+        out.push_str(&format!(
+            "- Detection exposure: `{}` ({}/100 expected-telemetry score)\n",
+            controls.detection_exposure_label, controls.detection_exposure
+        ));
+        out.push_str(&format!(
+            "- Live telemetry: `{}` ({}/100; recent event collection)\n",
+            controls.live_telemetry_label, controls.live_telemetry_score
+        ));
+        if let Some(artifact) = &controls.artifact {
+            out.push_str(&format!(
+                "- Artifact: `{}` — predicted decision `{}`; sha256 `{}`; origin `{}`; signer `{}`; publisher `{}`; product `{}`; version `{}`; policy rule `{}`; path class `{}`; access control `{}`; static analysis `{}`\n",
+                artifact.path,
+                artifact.predicted_decision,
+                artifact.sha256,
+                artifact.origin,
+                artifact.signer,
+                artifact.publisher,
+                artifact.product,
+                artifact.file_version,
+                artifact.policy_rule,
+                artifact.path_class,
+                artifact.access_control,
+                artifact.static_analysis.join(" | ")
+            ));
+        }
+        out.push_str(
+            "- Detection exposure is an expected-telemetry label, not a stealth score.\n\n",
+        );
+    }
     out.push_str("## Severity summary\n\n");
     out.push_str("| Critical | High | Medium | Low | Info |\n| --- | --- | --- | --- | --- |\n");
     out.push_str(&format!(

@@ -267,6 +267,135 @@ fn endpoint_controls_plugin_is_registered() {
 }
 
 #[test]
+fn application_control_assessment_is_registered_and_structured() {
+    let output = stealthy()
+        .args(["--authorized", "list-plugins", "--tsv"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let expected = if cfg!(target_os = "windows") {
+        "windows.app_control"
+    } else {
+        "linux.app_control"
+    };
+    assert!(stdout.lines().any(|line| line.starts_with(expected)));
+}
+
+#[test]
+fn application_control_report_has_read_only_artifact_and_telemetry_data() {
+    let artifact = std::env::current_exe().unwrap();
+    let plugin = if cfg!(target_os = "windows") {
+        "windows.app_control"
+    } else {
+        "linux.app_control"
+    };
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--plugins",
+            plugin,
+            "--artifact",
+            artifact.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let assessment = &value["control_assessment"];
+    assert!(assessment["policies"].as_array().unwrap().len() >= 4);
+    assert!(
+        assessment["telemetry_expectations"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 7
+    );
+    assert!(assessment["detection_exposure"].as_u64().unwrap() > 0);
+    assert!(assessment["detection_exposure_label"].is_string());
+    assert!(assessment["validation_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|case| { case["destructive"] == false && case["execute_artifact"] == false }));
+    assert_eq!(assessment["artifact"]["sha256"].as_str().unwrap().len(), 64);
+    assert!(assessment["artifact"]["predicted_decision"].is_string());
+}
+
+#[test]
+fn controls_command_runs_fixture_validation_without_execution() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "controls",
+            "--case",
+            if cfg!(target_os = "windows") {
+                "hash-drift"
+            } else {
+                "integrity-drift"
+            },
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["execute_requested"], false);
+    assert_eq!(value["fixtures_cleaned"], true);
+    assert_eq!(value["results"].as_array().unwrap().len(), 1);
+    assert!(value["results"][0]["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|observation| observation.as_str().unwrap_or_default().contains("sha256")));
+    assert!(value["results"][0]["telemetry_label"]
+        .as_str()
+        .unwrap_or_default()
+        .starts_with("measured-"));
+}
+
+#[test]
+fn live_controls_collects_host_state_without_fixtures() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "live-controls",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["collection_mode"], "live-read-only");
+    assert!(value["policies"].as_array().is_some());
+    assert!(value["audit_sources"].as_array().is_some());
+    assert!(value["live_telemetry_label"]
+        .as_str()
+        .unwrap_or_default()
+        .starts_with("live-"));
+}
+
+#[test]
 fn allow_techniques_records_scaffold_findings() {
     let output = stealthy()
         .args([
