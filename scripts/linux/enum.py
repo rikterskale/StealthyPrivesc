@@ -231,7 +231,11 @@ def containers() -> None:
         if not sock.exists():
             continue
         found = True
-        print(f"socket {path} mode={oct(sock.stat().st_mode)}")
+        try:
+            mode = sock.stat().st_mode
+        except OSError:
+            continue
+        print(f"socket {path} mode={oct(mode)}")
         try:
             fd = os.open(sock, os.O_RDWR)
             os.close(fd)
@@ -251,7 +255,10 @@ def polkit() -> None:
             print(f"FINDING: writable polkit path {p}")
     pk = Path("/usr/bin/pkexec")
     if pk.exists():
-        print(f"pkexec mode={oct(pk.stat().st_mode)}")
+        try:
+            print(f"pkexec mode={oct(pk.stat().st_mode)}")
+        except OSError:
+            pass
     print()
 
 
@@ -268,7 +275,10 @@ def ssh_keys() -> None:
         for name in ("id_rsa", "id_ed25519", "id_ecdsa", "authorized_keys"):
             p = root / name
             if p.is_file() and os.access(p, os.R_OK):
-                mode = p.stat().st_mode & 0o777
+                try:
+                    mode = p.stat().st_mode & 0o777
+                except OSError:
+                    continue
                 print(f"readable {p} mode={oct(mode)}")
                 if name.startswith("id_") or name == "identity":
                     print(f"FINDING: readable private key {p}")
@@ -375,6 +385,10 @@ def kernel() -> None:
 
 
 def emit_json() -> None:
+    try:
+        version_hint = Path("/proc/version").read_text().splitlines()[0]
+    except (OSError, IndexError):
+        version_hint = "linux"
     report = {
         "schema_version": "2",
         "run_id": hashlib.sha256(str(time.time()).encode()).hexdigest()[:24],
@@ -396,9 +410,7 @@ def emit_json() -> None:
             "family": "unix",
             "os": "linux",
             "arch": os.uname().machine,
-            "version_hint": Path("/proc/version").read_text().splitlines()[0]
-            if Path("/proc/version").exists()
-            else "linux",
+            "version_hint": version_hint,
         },
         "identity": identity_dict(),
         "findings": FINDINGS,
