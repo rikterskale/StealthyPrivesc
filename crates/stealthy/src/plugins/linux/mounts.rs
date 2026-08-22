@@ -38,6 +38,7 @@ impl Plugin for MountsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: true,
+                ..Default::default()
             }),
             Err(_) => findings.push(Finding {
                 plugin: self.id().into(),
@@ -48,6 +49,7 @@ impl Plugin for MountsPlugin {
                 recommendation: "Continue with sudo/SUID/container checks.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             }),
         }
 
@@ -86,6 +88,7 @@ impl Plugin for MountsPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -111,6 +114,7 @@ impl Plugin for MountsPlugin {
                         "Informational — opt in with --allow-techniques kernel-exploit when ROE permits.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }

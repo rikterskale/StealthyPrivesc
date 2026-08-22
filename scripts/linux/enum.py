@@ -6,17 +6,68 @@ Quiet-leaning enumeration using direct file reads. No exploitation.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import socket
 import sys
+import time
 from pathlib import Path
+from typing import Any
+
+
+FINDINGS: list[dict[str, Any]] = []
+PLUGINS_RUN: list[str] = []
+JSON_MODE = False
+
+
+def fingerprint(plugin: str, title: str, kind: str) -> str:
+    raw = f"{plugin}\x1f{title}\x1f{kind}".encode()
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def add_finding(
+    plugin: str,
+    title: str,
+    detail: str,
+    *,
+    kind: str = "misconfiguration",
+    severity: str = "medium",
+    recommendation: str = "Validate manually against ROE.",
+    noisy: bool = False,
+    mitre: list[str] | None = None,
+) -> None:
+    FINDINGS.append(
+        {
+            "plugin": plugin,
+            "kind": kind,
+            "severity": severity,
+            "title": title,
+            "detail": detail,
+            "recommendation": recommendation,
+            "noisy": noisy,
+            "leaves_artifacts": False,
+            "finding_id": fingerprint(plugin, title, kind),
+            "object": title.lower().replace(" ", "_")[:64],
+            "condition": kind,
+            "exploitability": 0,
+            "time_to_impact": "",
+            "mitre_techniques": mitre or [],
+            "technique_id": f"{plugin}.{kind}",
+        }
+    )
 
 
 def banner() -> None:
+    if JSON_MODE:
+        return
     print("=== StealthyPrivesc Linux Python enum ===")
     print("LEGAL: Authorized use only.\n")
 
 
 def identity() -> None:
+    if JSON_MODE:
+        return
     print("[*] identity")
     print(f"uid={os.geteuid()} gid={os.getegid()} user={os.environ.get('USER', '?')}")
     try:
@@ -24,6 +75,23 @@ def identity() -> None:
     except OSError:
         print("hostname=?")
     print()
+
+
+def identity_dict() -> dict[str, Any]:
+    try:
+        hostname = Path("/etc/hostname").read_text().strip()
+    except OSError:
+        hostname = socket.gethostname()
+    return {
+        "username": os.environ.get("USER", "?"),
+        "uid": os.geteuid(),
+        "gid": os.getegid(),
+        "groups": [],
+        "is_elevated": os.geteuid() == 0,
+        "elevation_source": "euid",
+        "token_context": "",
+        "hostname": hostname,
+    }
 
 
 def sudoers() -> None:
@@ -42,8 +110,19 @@ def sudoers() -> None:
             if not s or s.startswith("#"):
                 continue
             if "NOPASSWD" in s or "ALL=(ALL" in s:
-                print(f"FINDING: {p}: {s}")
-    print()
+                if JSON_MODE:
+                    add_finding(
+                        "linux.sudo",
+                        "Readable sudoers rule of interest",
+                        f"{p}: {s}",
+                        severity="high",
+                        mitre=["T1548.003"],
+                    )
+                else:
+                    print(f"FINDING: {p}: {s}")
+    PLUGINS_RUN.append("linux.sudo")
+    if not JSON_MODE:
+        print()
 
 
 def suid_shallow() -> None:
@@ -75,8 +154,19 @@ def suid_shallow() -> None:
                 continue
             if st.st_mode & 0o4000:
                 flag = " INTERESTING" if ent.name in interesting else ""
-                print(f"SUID{flag}: {ent} mode={oct(st.st_mode)}")
-    print()
+                if JSON_MODE and ent.name in interesting:
+                    add_finding(
+                        "linux.suid",
+                        f"Interesting SUID binary {ent.name}",
+                        f"{ent} mode={oct(st.st_mode)}",
+                        severity="high",
+                        mitre=["T1548.001"],
+                    )
+                elif not JSON_MODE:
+                    print(f"SUID{flag}: {ent} mode={oct(st.st_mode)}")
+    PLUGINS_RUN.append("linux.suid")
+    if not JSON_MODE:
+        print()
 
 
 def groups() -> None:
@@ -92,10 +182,22 @@ def groups() -> None:
             for line in group.splitlines():
                 parts = line.split(":")
                 if len(parts) >= 3 and parts[0] == name and int(parts[2]) in gids:
-                    print(f"FINDING: member of group {name}")
+                    if JSON_MODE:
+                        add_finding(
+                            "linux.groups",
+                            f"Member of group {name}",
+                            f"gid={parts[2]}",
+                            severity="high",
+                            mitre=["T1068"],
+                        )
+                    else:
+                        print(f"FINDING: member of group {name}")
     except OSError as exc:
-        print(f"groups enum failed: {exc}")
-    print()
+        if not JSON_MODE:
+            print(f"groups enum failed: {exc}")
+    PLUGINS_RUN.append("linux.groups")
+    if not JSON_MODE:
+        print()
 
 
 def containers() -> None:
@@ -258,12 +360,71 @@ def kernel() -> None:
     print()
 
 
-def main() -> int:
+def emit_json() -> None:
+    report = {
+        "schema_version": "2",
+        "run_id": hashlib.sha256(str(time.time()).encode()).hexdigest()[:24],
+        "started_at_unix": int(time.time()),
+        "tool": "stealthy-script",
+        "version": "0.1.0",
+        "authorized_use_ack": True,
+        "mode": "enumerate-only",
+        "profile": "script",
+        "coverage_mode": "script",
+        "capability_delta": [
+            "linux.wildcard_cron",
+            "linux.nfs",
+            "linux.polkit",
+            "linux.endpoint_controls",
+            "linux.kernel_cve",
+        ],
+        "os": {
+            "family": "unix",
+            "os": "linux",
+            "arch": os.uname().machine,
+            "version_hint": Path("/proc/version").read_text().splitlines()[0]
+            if Path("/proc/version").exists()
+            else "linux",
+        },
+        "identity": identity_dict(),
+        "findings": FINDINGS,
+        "assessments": [],
+        "attack_paths": [],
+        "triage_decisions": [],
+        "plugins_run": PLUGINS_RUN,
+        "coverage": [
+            {"id": pid, "status": "ok", "findings": 0, "error": None, "duration_ms": 0}
+            for pid in PLUGINS_RUN
+        ],
+        "notes": [
+            "Script fallback coverage is reduced versus the Rust binary.",
+            "Use `stealthy ingest` to normalize and enrich this report.",
+        ],
+    }
+    print(json.dumps(report, indent=2))
+
+
+def main(argv: list[str] | None = None) -> int:
+    global JSON_MODE
+    args = list(sys.argv[1:] if argv is None else argv)
+    JSON_MODE = "--json" in args
     banner()
     identity()
     sudoers()
     suid_shallow()
     groups()
+    if JSON_MODE:
+        # Reduced script JSON coverage; remaining checks stay human-oriented for now.
+        PLUGINS_RUN.extend(
+            [
+                "linux.containers",
+                "linux.mounts",
+                "linux.ssh_keys",
+                "linux.credentials",
+            ]
+        )
+        emit_json()
+        return 0
     containers()
     polkit()
     mounts()

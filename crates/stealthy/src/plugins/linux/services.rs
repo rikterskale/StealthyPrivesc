@@ -64,6 +64,7 @@ impl Plugin for ServicesPlugin {
                                 recommendation: "World-writable config under /etc can yield privilege or persistence.".into(),
                                 noisy: false,
                                 leaves_artifacts: false,
+                                ..Default::default()
                             });
                         }
                     }
@@ -81,6 +82,7 @@ impl Plugin for ServicesPlugin {
                 recommendation: "Review package-specific paths for the target role.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -113,6 +115,7 @@ fn scan_writable(dir: &Path, depth: u32, euid: u32, gids: &[u32], findings: &mut
                 recommendation: "Determine which privileged process reads this path.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
         if meta.is_dir() {

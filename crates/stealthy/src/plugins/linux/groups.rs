@@ -34,6 +34,7 @@ impl Plugin for GroupsPlugin {
                 "Review memberships that map to block-device, container, or sudo access.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
 
         // (group, severity, note)
@@ -105,6 +106,7 @@ impl Plugin for GroupsPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -119,6 +121,7 @@ impl Plugin for GroupsPlugin {
                 recommendation: "Still review custom enterprise groups.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

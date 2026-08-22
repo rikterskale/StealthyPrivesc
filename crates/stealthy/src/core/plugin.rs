@@ -10,9 +10,14 @@ pub struct PluginContext<'a> {
     pub verbose: bool,
     #[allow(dead_code)]
     pub auto_exploit: bool,
+    /// When true, plugins should skip known-audited helpers (e.g. `sudo -l`).
+    pub prefer_quiet: bool,
     pub allow_techniques: &'a TechniqueAllowlist,
     #[allow(dead_code)]
     pub store: &'a mut EncryptedStore,
+    /// Finding IDs approved for reversible probes (empty = legacy blanket auto_exploit).
+    #[allow(dead_code)]
+    pub approved_probe_ids: &'a [String],
 }
 
 /// Independent privilege-escalation check.

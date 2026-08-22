@@ -57,6 +57,7 @@ impl Plugin for EnvPathPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
                 continue;
             }
@@ -72,6 +73,7 @@ impl Plugin for EnvPathPlugin {
                             .into(),
                         noisy: true,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             } else if p.is_dir() {
@@ -85,6 +87,7 @@ impl Plugin for EnvPathPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -100,6 +103,7 @@ impl Plugin for EnvPathPlugin {
                 recommendation: "Keep enum-only on high-sensitivity hosts.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -114,6 +118,7 @@ impl Plugin for EnvPathPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

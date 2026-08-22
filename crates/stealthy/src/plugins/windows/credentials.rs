@@ -59,6 +59,7 @@ impl Plugin for CredentialsPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -74,6 +75,7 @@ impl Plugin for CredentialsPlugin {
                 recommendation: "DefaultPassword in Winlogon is a classic credential leak.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -95,6 +97,7 @@ impl Plugin for CredentialsPlugin {
                         recommendation: "Review offline with approved tooling.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -111,6 +114,7 @@ impl Plugin for CredentialsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

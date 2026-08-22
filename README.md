@@ -77,9 +77,19 @@ cargo build -p stealthy --release
 # High-signal only + live progress
 ./target/release/stealthy --authorized enum --min-severity high
 
+# OPSEC profile (skips audited sudo -l; higher delay)
+./target/release/stealthy --authorized --profile quiet enum
+
 # Quiet + select plugins
 ./target/release/stealthy --authorized -q \
   enum --plugins linux.sudo,linux.containers,linux.suid,linux.groups
+
+# Triage stub for stepwise probe approval
+./target/release/stealthy --authorized enum --triage --triage-out decisions.json
+
+# Stage a drop bundle on the operator workstation
+./target/release/stealthy stage --os linux --out ./drop \
+  --binary ./target/release/stealthy
 
 # Markdown / JSON / SARIF console formats
 ./target/release/stealthy --authorized --format markdown enum > report.md

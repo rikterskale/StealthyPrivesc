@@ -22,9 +22,16 @@ subcommand. Host-enumerating commands require `--authorized` or
 | `--plaintext-file` | Write JSON instead of an encrypted file | Off |
 | `--also-markdown` | Write `PATH.md` beside a file output | Off |
 | `--exfil-url URL` | Operator-controlled destination metadata for remote output | None |
+| `--profile quiet\|balanced\|thorough\|ci` | Named OPSEC / engagement posture (explicit flags override) | `balanced` |
+| `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
+| `--checkpoint PATH` | Write/update plaintext JSON checkpoint during the run | None |
+| `--ledger-dir PATH` | Artifact ledger directory | `.stealthy-artifacts` |
 
 Severity levels, from least to greatest, are `info`, `low`, `medium`, `high`,
 and `critical`.
+
+Profiles: `quiet` (skip audited helpers like `sudo -l`, higher delay),
+`balanced` (default), `thorough` (no delay, verbose), `ci` (quiet JSON).
 
 ## `guide`
 
@@ -68,10 +75,14 @@ TSV output contains `id`, `name`, and `description` columns.
 ```text
 stealthy --authorized enum
 stealthy --authorized scan
+stealthy --authorized --profile quiet enum
 stealthy --authorized enum --auto-exploit
 stealthy --authorized enum --allow-techniques kernel-exploit,potato
 stealthy --authorized enum --plugins ID1,ID2
 stealthy --authorized enum --skip ID1,ID2
+stealthy --authorized enum --triage --triage-out decisions.json
+stealthy --authorized enum --approve-file decisions.json
+stealthy --authorized --checkpoint /tmp/run.json enum
 ```
 
 `scan` is a visible alias for `enum`. Options:
@@ -83,6 +94,42 @@ stealthy --authorized enum --skip ID1,ID2
   This revision accepts the flag and records scaffold findings; payloads land later.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
+- `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
+
+## `resume`
+
+```text
+stealthy --authorized resume --checkpoint /tmp/run.json
+```
+
+Continues a prior checkpointed run, skipping plugins already marked `ok`.
+
+## `ingest`
+
+```text
+stealthy ingest script-report.json --format json
+```
+
+Normalizes script-fallback JSON into schema v2 (stable IDs, MITRE, attack paths).
+
+## `artifacts` / `cleanup`
+
+```text
+stealthy artifacts --latest
+stealthy cleanup --latest --secure-delete
+```
+
+List or remove removable paths recorded in the run ledger.
+
+## `stage` / `verify` / `one-liners`
+
+```text
+stealthy stage --os linux --arch x86_64 --out ./drop --binary ./target/release/stealthy
+stealthy verify --path ./drop/cache-update --expect-sha256 HEX
+stealthy one-liners --os linux --transport ssh
+```
+
+Operator-workstation delivery helpers (no host enumeration; no auth gate).
 
 ## `report`
 

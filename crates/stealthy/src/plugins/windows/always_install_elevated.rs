@@ -36,6 +36,7 @@ impl Plugin for AlwaysInstallElevatedPlugin {
                     recommendation: "Classic privesc via crafted MSI. Extremely noisy on modern EDR — opt in with --allow-techniques msi when ROE permits.".into(),
                     noisy: true,
                     leaves_artifacts: true,
+                    ..Default::default()
                 });
                 let msi = TechniqueFamily::Msi;
                 let allowed = ctx.allow_techniques.allows(msi);
@@ -52,6 +53,7 @@ impl Plugin for AlwaysInstallElevatedPlugin {
                 recommendation: "No action.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             }),
         }
 

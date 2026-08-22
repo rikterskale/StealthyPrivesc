@@ -47,6 +47,7 @@ impl Plugin for PolkitPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -75,6 +76,7 @@ impl Plugin for PolkitPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                     if ctx.auto_exploit && p.is_dir() {
                         if let Ok(true) = exploit::writable_probe(p) {
@@ -88,6 +90,7 @@ impl Plugin for PolkitPlugin {
                                     .into(),
                                 noisy: true,
                                 leaves_artifacts: false,
+                                ..Default::default()
                             });
                         }
                     }
@@ -113,6 +116,7 @@ impl Plugin for PolkitPlugin {
                                             .into(),
                                     noisy: false,
                                     leaves_artifacts: false,
+                                    ..Default::default()
                                 });
                             }
                         }
@@ -131,6 +135,7 @@ impl Plugin for PolkitPlugin {
                 recommendation: "Review custom .rules files manually if present.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

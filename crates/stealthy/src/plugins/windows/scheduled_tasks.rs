@@ -38,6 +38,7 @@ impl Plugin for ScheduledTasksPlugin {
                 recommendation: "Use schtasks /query when process creation is acceptable.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -84,6 +85,7 @@ fn walk_tasks(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
             for cmd in extract_commands(&text) {
@@ -108,6 +110,7 @@ fn walk_tasks(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
                             .into(),
                         noisy: false,
                         leaves_artifacts: true,
+                        ..Default::default()
                     });
                 }
             }

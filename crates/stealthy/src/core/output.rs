@@ -17,6 +17,10 @@ pub struct OutputOptions {
     pub format: ReportFormat,
     pub min_severity: Severity,
     pub verbose: bool,
+    #[allow(dead_code)]
+    pub run_id: String,
+    #[allow(dead_code)]
+    pub ledger_dir: std::path::PathBuf,
 }
 
 pub struct EmitResult {
@@ -210,8 +214,13 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
         term::dim(&report.os.version_hint)
     );
     println!(
-        "  mode={}  plugins_run={}",
+        "  mode={}  profile={}  plugins_run={}",
         report.mode,
+        if report.profile.is_empty() {
+            "balanced"
+        } else {
+            &report.profile
+        },
         report.plugins_run.len()
     );
     println!();
@@ -234,6 +243,21 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
         findings.len()
     );
     println!();
+
+    if !report.attack_paths.is_empty() {
+        println!("{}", term::bold("Attack paths"));
+        for path in &report.attack_paths {
+            println!(
+                "  {}. {} — {} (noise={})",
+                path.rank, path.title, path.summary, path.estimated_noise
+            );
+            println!(
+                "       {}",
+                term::dim(&format!("findings: {}", path.finding_ids.join(", ")))
+            );
+        }
+        println!();
+    }
 
     if findings.is_empty() {
         println!(
@@ -298,6 +322,26 @@ fn print_finding(idx: usize, f: &Finding) {
         term::cyan(&f.plugin),
         term::bold(&f.title)
     );
+    if !f.finding_id.is_empty() {
+        println!(
+            "       {} {}  exploitability={}  tti={}",
+            term::dim("id"),
+            f.finding_id,
+            f.exploitability,
+            if f.time_to_impact.is_empty() {
+                "unknown"
+            } else {
+                &f.time_to_impact
+            }
+        );
+    }
+    if !f.mitre_techniques.is_empty() {
+        println!(
+            "       {} {}",
+            term::dim("MITRE"),
+            f.mitre_techniques.join(", ")
+        );
+    }
     println!("       {}", f.detail);
     println!(
         "       {} {} {}",
@@ -333,6 +377,8 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **User:** `{}` (elevated={})\n\
          - **OS:** {} / {} ({})\n\
          - **Mode:** {}\n\
+         - **Profile:** {}\n\
+         - **Coverage mode:** {}\n\
          - **Plugins run:** {}\n\
          - **Findings:** {} total, {} shown\n\n",
         report.version,
@@ -346,10 +392,34 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         report.os.arch,
         report.os.version_hint,
         report.mode,
+        if report.profile.is_empty() {
+            "balanced"
+        } else {
+            &report.profile
+        },
+        if report.coverage_mode.is_empty() {
+            "binary"
+        } else {
+            &report.coverage_mode
+        },
         report.plugins_run.join(", "),
         total,
         findings.len()
     ));
+    if !report.attack_paths.is_empty() {
+        out.push_str("## Attack paths\n\n");
+        for path in &report.attack_paths {
+            out.push_str(&format!(
+                "{}. **{}** — {} _(noise: {})_\n  - findings: `{}`\n",
+                path.rank,
+                path.title,
+                path.summary,
+                path.estimated_noise,
+                path.finding_ids.join("`, `")
+            ));
+        }
+        out.push('\n');
+    }
     out.push_str("## Severity summary\n\n");
     out.push_str("| Critical | High | Medium | Low | Info |\n| --- | --- | --- | --- | --- |\n");
     out.push_str(&format!(
@@ -363,6 +433,11 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
     for (i, f) in findings.iter().enumerate() {
         out.push_str(&format!(
             "### {}. [{}] {} (`{}`)\n\n\
+             - **finding_id:** `{}`\n\
+             - **MITRE:** {}\n\
+             - **technique_id:** `{}`\n\
+             - **exploitability:** {}\n\
+             - **time_to_impact:** {}\n\n\
              {}\n\n\
              **What's next:** {}\n\n\
              **Command:** `{}`\n\n\
@@ -373,6 +448,23 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
             f.severity.as_str().to_ascii_uppercase(),
             f.title,
             f.plugin,
+            f.finding_id,
+            if f.mitre_techniques.is_empty() {
+                "_none_".into()
+            } else {
+                f.mitre_techniques
+                    .iter()
+                    .map(|t| format!("`{t}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            f.technique_id,
+            f.exploitability,
+            if f.time_to_impact.is_empty() {
+                "unknown"
+            } else {
+                &f.time_to_impact
+            },
             f.detail,
             f.what_next(),
             f.next_command(),
@@ -428,6 +520,10 @@ pub fn render_sarif(report: &RunReport, findings: &[&Finding]) -> String {
                     "next_command": finding.next_command(),
                     "noisy": finding.noisy,
                     "leaves_artifacts": finding.leaves_artifacts,
+                    "finding_id": finding.finding_id,
+                    "mitre_techniques": finding.mitre_techniques,
+                    "technique_id": finding.technique_id,
+                    "exploitability": finding.exploitability,
                 }
             })
         })
@@ -495,7 +591,6 @@ fn restrict_file_permissions(_file: &std::fs::File) -> Result<()> {
 }
 
 /// Best-effort overwrite then unlink. Not a guarantee against forensic recovery.
-#[allow(dead_code)]
 pub fn secure_delete_hint(path: &Path) -> Result<()> {
     if !path.exists() {
         bail!("path does not exist");

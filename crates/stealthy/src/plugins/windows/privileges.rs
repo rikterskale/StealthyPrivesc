@@ -58,6 +58,7 @@ impl Plugin for PrivilegesPlugin {
                         },
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
                 let potato = privs.iter().any(|p| {
@@ -77,6 +78,7 @@ impl Plugin for PrivilegesPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                     let potato_tech = TechniqueFamily::Potato;
                     let allowed = ctx.allow_techniques.allows(potato_tech);
@@ -95,6 +97,7 @@ impl Plugin for PrivilegesPlugin {
                         recommendation: "Verify process token access rights.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -109,6 +112,7 @@ impl Plugin for PrivilegesPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }

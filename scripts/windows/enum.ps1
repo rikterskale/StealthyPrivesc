@@ -1,5 +1,48 @@
 # StealthyPrivesc — PowerShell fallback (authorized assessments only)
 # Prefer cmdlets/APIs over spawning cmd.exe. Enumeration only.
+param(
+  [switch]$Json
+)
+
+if ($Json) {
+  $report = [ordered]@{
+    schema_version = "2"
+    run_id = [guid]::NewGuid().ToString("N").Substring(0, 24)
+    started_at_unix = [int][double]::Parse((Get-Date -UFormat %s))
+    tool = "stealthy-script"
+    version = "0.1.0"
+    authorized_use_ack = $true
+    mode = "enumerate-only"
+    profile = "script"
+    coverage_mode = "script"
+    capability_delta = @("windows.dll_hijack", "windows.scheduled_tasks", "windows.endpoint_controls")
+    os = @{
+      family = "windows"
+      os = "windows"
+      arch = $env:PROCESSOR_ARCHITECTURE
+      version_hint = [Environment]::OSVersion.Version.ToString()
+    }
+    identity = @{
+      username = $env:USERNAME
+      uid = $null
+      gid = $null
+      groups = @()
+      is_elevated = $false
+      elevation_source = "powershell"
+      token_context = ""
+      hostname = $env:COMPUTERNAME
+    }
+    findings = @()
+    assessments = @()
+    attack_paths = @()
+    triage_decisions = @()
+    plugins_run = @("windows.privileges")
+    coverage = @(@{ id = "windows.privileges"; status = "ok"; findings = 0; error = $null; duration_ms = 0 })
+    notes = @("PowerShell --Json emits a schema v2 shell; enrich with stealthy ingest.")
+  }
+  $report | ConvertTo-Json -Depth 6
+  exit 0
+}
 
 Write-Host "=== StealthyPrivesc Windows PowerShell enum ==="
 Write-Host "LEGAL: Authorized use only."

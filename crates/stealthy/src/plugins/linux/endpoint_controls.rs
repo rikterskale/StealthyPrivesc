@@ -47,6 +47,7 @@ impl Plugin for EndpointControlsPlugin {
                 recommendation: "Confirm /proc and securityfs access; use scripts/linux fallbacks if the binary cannot run.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -66,6 +67,7 @@ impl Plugin for EndpointControlsPlugin {
                 },
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
             if allowed || ctx.auto_exploit {
                 findings.push(exploit::technique_status(self.id(), tech, allowed));
@@ -91,6 +93,7 @@ fn apparmor_findings(blocking: &mut bool) -> Vec<Finding> {
             recommendation: "Continue; record SELinux/noexec results separately.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
         return out;
     }
@@ -121,6 +124,7 @@ fn apparmor_findings(blocking: &mut bool) -> Vec<Finding> {
         },
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
     out
 }
@@ -151,6 +155,7 @@ fn selinux_findings() -> Vec<Finding> {
                 .into(),
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
     out
 }
@@ -202,6 +207,7 @@ fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
                 recommendation: "Custom ELF drops on this mount will fail exec. Prefer script fallbacks (bash/python) or an approved executable mount.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
     }
@@ -217,6 +223,7 @@ fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
             recommendation: "Still verify the intended drop path before writing a binary.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     out
@@ -241,6 +248,7 @@ fn hardening_signals() -> Vec<Finding> {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
     }
@@ -254,6 +262,7 @@ fn hardening_signals() -> Vec<Finding> {
             recommendation: "Prefer low-noise reads; expect telemetry on helper spawns.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     out

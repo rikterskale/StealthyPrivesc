@@ -34,3 +34,14 @@ are available through `--auto-exploit`, and high-impact families through
 - Provenance in Markdown and SARIF output for downstream evidence handling.
 - Backward-compatible deserialization for reports created before Phase 3.
 - CI-published Rust LCOV coverage for regression tracking.
+
+## Phase 4 (operator productization)
+
+- Schema v2 findings with stable `finding_id`, MITRE techniques, exploitability,
+  and ranked `attack_paths`.
+- Named OPSEC profiles (`--profile quiet|balanced|thorough|ci`).
+- Per-plugin timeouts, SIGINT-aware cancellation, and checkpoint/resume.
+- Artifact ledger with `artifacts` / `cleanup` commands.
+- Triage flow (`--triage`, `--triage-out`, `--approve-file`) for stepwise probes.
+- Script JSON parity (`enum.py --json`) and `stealthy ingest`.
+- Delivery kit: `stage`, `verify`, `one-liners`.

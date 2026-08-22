@@ -51,6 +51,7 @@ impl Plugin for EndpointControlsPlugin {
                         .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -70,6 +71,7 @@ impl Plugin for EndpointControlsPlugin {
                 },
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
             if allowed || ctx.auto_exploit {
                 findings.push(exploit::technique_status(self.id(), tech, allowed));
@@ -102,6 +104,7 @@ fn applocker_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
             recommendation: "Custom .exe may be denied. Prefer script fallbacks allowlisted by policy, or an approved signed host binary.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     } else {
         out.push(Finding {
@@ -114,6 +117,7 @@ fn applocker_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
                 "Still check local SRP / WDAC; absence here is not proof of no controls.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     Ok(out)
@@ -154,6 +158,7 @@ fn wdac_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
             recommendation: "WDAC/CI can block unsigned PEs. Prefer allowlisted script hosts or ROE-approved signed builds.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     } else {
         out.push(Finding {
@@ -167,6 +172,7 @@ fn wdac_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
                     .into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     Ok(out)
@@ -207,6 +213,7 @@ fn smartscreen_findings() -> Result<Vec<Finding>> {
         recommendation: "SmartScreen may warn or block unmarked downloads. Prefer checksum-verified install from an approved channel.".into(),
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
     Ok(out)
 }
@@ -225,6 +232,7 @@ fn amsi_findings() -> Result<Vec<Finding>> {
                 "Script hosts may still load AMSI; treat script fallbacks as auditable.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     } else {
         out.push(Finding {
@@ -236,6 +244,7 @@ fn amsi_findings() -> Result<Vec<Finding>> {
             recommendation: "AMSI inspects script content. Prefer approved script hosts; do not attempt AMSI disable/patch in this tool.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     Ok(out)
@@ -262,6 +271,7 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
         recommendation: "Presence of Defender policy keys indicates AV context; do not attempt to disable AV/EDR from this tool.".into(),
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
 
     // Lightweight product-name hints from uninstall registry (read-only, capped).
@@ -314,6 +324,7 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
                     .into(),
             noisy: true,
             leaves_artifacts: false,
+            ..Default::default()
         });
     } else {
         out.push(Finding {
@@ -325,6 +336,7 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
             recommendation: "Expect telemetry on PE drops and script hosts. Prefer approved channels; do not attempt AV/EDR disable from this tool.".into(),
             noisy: true,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
     Ok(out)
@@ -351,6 +363,7 @@ fn powershell_policy_findings() -> Result<Vec<Finding>> {
         recommendation: "If powershell.exe is constrained, use enum.js / cscript or MSBuild EnumTasks when those hosts are allowlisted.".into(),
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
     Ok(out)
 }

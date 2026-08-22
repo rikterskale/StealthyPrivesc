@@ -177,6 +177,8 @@ mod tests {
             },
             findings: vec![],
             assessments: vec![],
+            attack_paths: vec![],
+            triage_decisions: vec![],
             plugins_run: vec![],
             coverage: vec![PluginCoverage {
                 id: "test".into(),
@@ -186,6 +188,9 @@ mod tests {
                 duration_ms: 0,
             }],
             notes: vec![],
+            profile: "balanced".into(),
+            coverage_mode: "binary".into(),
+            capability_delta: vec![],
         };
         let sealed = store.seal_report(&report).unwrap();
         let reopened = EncryptedStore::open_sealed_report(&sealed, &store.key_hex()).unwrap();
@@ -205,6 +210,7 @@ mod tests {
             recommendation: "r".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
         assert_eq!(store.findings().len(), 1);
     }

@@ -73,6 +73,7 @@ impl Plugin for ContainersPlugin {
                     ),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
 
                 match std::fs::OpenOptions::new().read(true).write(true).open(p) {
@@ -86,6 +87,7 @@ impl Plugin for ContainersPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     }),
                     Err(e) if ctx.verbose => findings.push(Finding {
                         plugin: self.id().into(),
@@ -96,6 +98,7 @@ impl Plugin for ContainersPlugin {
                         recommendation: "Check group membership.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     }),
                     Err(_) => {}
                 }
@@ -112,6 +115,7 @@ impl Plugin for ContainersPlugin {
                 recommendation: "Rootless podman sockets may live under $XDG_RUNTIME_DIR.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -130,6 +134,7 @@ impl Plugin for ContainersPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -146,6 +151,7 @@ impl Plugin for ContainersPlugin {
                     recommendation: "Confirm before any container-based demonstration.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }

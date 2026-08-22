@@ -33,6 +33,7 @@ impl Plugin for ServicesPlugin {
                     recommendation: "Unquoted paths with spaces can allow binary planting in parent dirs if writable. Verify the service account and directory ACLs under the approved scope.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
 
                 if let Some(bin) = super::executable_path(&image_path) {
@@ -47,6 +48,7 @@ impl Plugin for ServicesPlugin {
                                 .into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                         if ctx.auto_exploit {
                             let p = std::path::Path::new(&parent);
@@ -64,6 +66,7 @@ impl Plugin for ServicesPlugin {
                                             .into(),
                                         noisy: true,
                                         leaves_artifacts: false,
+                                        ..Default::default()
                                     });
                                 }
                             }
@@ -85,6 +88,7 @@ impl Plugin for ServicesPlugin {
                         recommendation: "Replacing a service binary is high-impact and noisy — opt in with --allow-techniques service-replace when ROE permits.".into(),
                         noisy: false,
                         leaves_artifacts: true,
+                        ..Default::default()
                     });
                     let tech = crate::exploit::TechniqueFamily::ServiceReplace;
                     let allowed = ctx.allow_techniques.allows(tech);
@@ -107,6 +111,7 @@ impl Plugin for ServicesPlugin {
                         .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

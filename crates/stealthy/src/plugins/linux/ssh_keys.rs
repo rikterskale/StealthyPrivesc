@@ -69,6 +69,7 @@ impl Plugin for SshKeysPlugin {
                 recommendation: "Expand to application service accounts if in scope.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -111,6 +112,7 @@ fn check_private_key(path: &Path, findings: &mut Vec<Finding>) {
             .into(),
         noisy: false,
         leaves_artifacts: false,
+        ..Default::default()
     });
 }
 
@@ -133,6 +135,7 @@ fn check_authorized_keys(path: &Path, findings: &mut Vec<Finding>) {
                 .into(),
             noisy: false,
             leaves_artifacts: true,
+            ..Default::default()
         });
     }
 }

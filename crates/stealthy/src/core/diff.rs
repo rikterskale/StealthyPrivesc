@@ -64,6 +64,9 @@ fn index(findings: &[Finding]) -> BTreeMap<String, &Finding> {
 }
 
 fn key(finding: &Finding) -> String {
+    if !finding.finding_id.is_empty() {
+        return finding.finding_id.clone();
+    }
     format!(
         "{}\u{1f}{}\u{1f}{:?}",
         finding.plugin, finding.title, finding.kind
@@ -102,9 +105,14 @@ mod tests {
             },
             findings,
             assessments: vec![],
+            attack_paths: vec![],
+            triage_decisions: vec![],
             plugins_run: vec![],
             coverage: vec![],
             notes: vec![],
+            profile: "balanced".into(),
+            coverage_mode: "binary".into(),
+            capability_delta: vec![],
         }
     }
 
@@ -118,6 +126,7 @@ mod tests {
             recommendation: "review".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         }
     }
 

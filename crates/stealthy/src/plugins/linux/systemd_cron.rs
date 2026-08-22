@@ -88,6 +88,7 @@ impl Plugin for SystemdCronPlugin {
                                     recommendation: "Persistence via cron/systemd is noisy; obtain explicit approval first.".into(),
                                     noisy: true,
                                     leaves_artifacts: false,
+                                    ..Default::default()
                                 }),
                                 Ok(false) => {}
                                 Err(e) => ctx.store.note(format!("probe failed on {}: {e}", path.display())),
@@ -108,6 +109,7 @@ impl Plugin for SystemdCronPlugin {
                 recommendation: "Also review user crontab and timers with systemctl --user list-timers if in scope.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -141,6 +143,7 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -167,6 +170,7 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
                                         "Modify/replace the unit only with ROE approval.".into(),
                                     noisy: false,
                                     leaves_artifacts: false,
+                                    ..Default::default()
                                 });
                             }
                         }
@@ -200,6 +204,7 @@ fn check_writable_tree(
             recommendation: "Writable scheduled-task configuration often yields root at next run. Confirm ownership and timers carefully.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
     }
 
@@ -217,6 +222,7 @@ fn check_writable_tree(
                             recommendation: "Inspect unit/cron contents and ExecStart/command lines for injection.".into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                     }
                 }

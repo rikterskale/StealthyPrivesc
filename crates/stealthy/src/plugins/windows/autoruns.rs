@@ -51,6 +51,7 @@ impl Plugin for AutorunsPlugin {
                 },
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -67,6 +68,7 @@ impl Plugin for AutorunsPlugin {
                 recommendation: "Use --auto-exploit to probe directory writability.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
             if ctx.auto_exploit && dir_writable(&dir) {
                 findings.push(Finding {
@@ -79,6 +81,7 @@ impl Plugin for AutorunsPlugin {
                         .into(),
                     noisy: true,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
             if let Ok(rd) = std::fs::read_dir(&dir) {
@@ -94,6 +97,7 @@ impl Plugin for AutorunsPlugin {
                             recommendation: "Replace/modify only with ROE approval.".into(),
                             noisy: false,
                             leaves_artifacts: true,
+                            ..Default::default()
                         });
                     }
                 }
@@ -111,6 +115,7 @@ impl Plugin for AutorunsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

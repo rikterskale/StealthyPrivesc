@@ -40,6 +40,7 @@ impl Plugin for PathLdPlugin {
                         recommendation: "Check whether you can create this directory and plant a trojan binary name.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                     continue;
                 }
@@ -55,6 +56,7 @@ impl Plugin for PathLdPlugin {
                             recommendation: "Binary planting in PATH is a classic privesc if privileged processes inherit PATH.".into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                         if ctx.auto_exploit {
                             if let Ok(true) = exploit::writable_probe(p) {
@@ -69,6 +71,7 @@ impl Plugin for PathLdPlugin {
                                             .into(),
                                     noisy: true,
                                     leaves_artifacts: false,
+                                    ..Default::default()
                                 });
                             }
                         }
@@ -89,6 +92,7 @@ impl Plugin for PathLdPlugin {
                         recommendation: "Inherited loader variables can redirect privileged dynamically linked programs.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -106,6 +110,7 @@ impl Plugin for PathLdPlugin {
                     recommendation: "If writable, this is a powerful persistence/privesc primitive — handle with extreme care.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -122,6 +127,7 @@ impl Plugin for PathLdPlugin {
                     recommendation: "Critical misconfiguration. Do not modify without explicit approval.".into(),
                     noisy: false,
                     leaves_artifacts: true,
+                    ..Default::default()
                 });
             }
         }
@@ -137,6 +143,7 @@ impl Plugin for PathLdPlugin {
                     "Still review sudo secure_path and systemd Environment= directives.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

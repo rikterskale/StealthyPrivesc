@@ -8,6 +8,7 @@
 *.dll
 *.so
 .stealthy_probe_marker
+.stealthy-artifacts/
 release-dist/
 release-staging/
 __pycache__/

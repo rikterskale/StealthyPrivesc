@@ -1,4 +1,6 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
+
+use crate::core::profile::EngagementProfile;
 
 /// StealthyPrivesc — modular privilege-escalation enumerator for authorized assessments.
 ///
@@ -21,12 +23,16 @@ pub struct Cli {
     )]
     pub i_understand_authorized_use_only: bool,
 
+    /// Named OPSEC / engagement profile (explicit flags override).
+    #[arg(long, global = true, value_enum, default_value_t = EngagementProfile::Balanced)]
+    pub profile: EngagementProfile,
+
     /// Reduce console noise (still stores findings in memory).
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, action = ArgAction::SetTrue)]
     pub quiet: bool,
 
     /// Extra diagnostic output (may be noisier on-host).
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, action = ArgAction::SetTrue)]
     pub verbose: bool,
 
     /// Disable ANSI colors (also honors NO_COLOR).
@@ -36,6 +42,14 @@ pub struct Cli {
     /// Randomized low-and-slow delay budget in milliseconds between checks (0 = off).
     #[arg(long, global = true, default_value_t = 50)]
     pub delay_ms: u64,
+
+    /// Per-plugin timeout in milliseconds (0 = disabled).
+    #[arg(long, global = true, default_value_t = 120_000)]
+    pub plugin_timeout_ms: u64,
+
+    /// Artifact ledger directory (default: .stealthy-artifacts).
+    #[arg(long, global = true)]
+    pub ledger_dir: Option<std::path::PathBuf>,
 
     /// Console / file report shape.
     #[arg(long, global = true, value_enum, default_value_t = ReportFormat::Human)]
@@ -69,8 +83,20 @@ pub struct Cli {
     #[arg(long, global = true, env = "STEALTHY_EXFIL_URL")]
     pub exfil_url: Option<String>,
 
+    /// Write/update a plaintext JSON checkpoint during the run.
+    #[arg(long, global = true)]
+    pub checkpoint: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+/// Flags that must be resolved after parse with occurrence tracking.
+#[derive(Debug, Clone, Default)]
+pub struct CliOverrides {
+    pub delay_ms_set: bool,
+    pub plugin_timeout_ms_set: bool,
+    pub format_set: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -111,12 +137,109 @@ pub enum Commands {
         format: ReportFormat,
     },
 
+    /// Normalize a script-fallback JSON report into schema v2.
+    Ingest {
+        /// Script or partial JSON report path.
+        input: std::path::PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = ReportFormat::Json)]
+        format: ReportFormat,
+    },
+
     /// List compiled-in plugin IDs for this build/OS.
     #[command(visible_alias = "plugins")]
     ListPlugins {
         /// Machine-readable TSV (id\\tname\\tdescription).
         #[arg(long)]
         tsv: bool,
+    },
+
+    /// List artifact ledger entries for a run.
+    Artifacts {
+        /// Run ID (default: latest ledger).
+        #[arg(long)]
+        run_id: Option<String>,
+        /// Use the most recently written ledger.
+        #[arg(long)]
+        latest: bool,
+        /// Emit JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Remove removable artifacts recorded in the ledger.
+    Cleanup {
+        /// Run ID (default: latest ledger).
+        #[arg(long)]
+        run_id: Option<String>,
+        /// Use latest ledger.
+        #[arg(long)]
+        latest: bool,
+        /// Overwrite then unlink when possible.
+        #[arg(long)]
+        secure_delete: bool,
+        /// Also attempt to remove this binary.
+        #[arg(long)]
+        remove_self: bool,
+    },
+
+    /// Package a drop bundle for an approved transport.
+    Stage {
+        /// Target OS family.
+        #[arg(long, value_parser = ["linux", "windows"])]
+        os: String,
+        /// Target architecture.
+        #[arg(long, default_value = "x86_64", value_parser = ["x86_64", "aarch64"])]
+        arch: String,
+        /// Drop / binary basename.
+        #[arg(long, default_value = "cache-update")]
+        name: String,
+        /// Output directory.
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// Optional real binary to copy into the bundle.
+        #[arg(long)]
+        binary: Option<std::path::PathBuf>,
+    },
+
+    /// Verify a local or remote artifact hash.
+    Verify {
+        /// Local path to verify.
+        #[arg(long)]
+        path: Option<std::path::PathBuf>,
+        /// SSH target (user@host) for remote verify.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// Expected SHA-256 hex digest.
+        #[arg(long)]
+        expect_sha256: String,
+    },
+
+    /// Print copy-paste transport one-liners (no execution).
+    OneLiners {
+        #[arg(long, value_parser = ["linux", "windows"])]
+        os: String,
+        #[arg(long, value_parser = ["ssh", "scp", "http", "smb", "winrm"])]
+        transport: String,
+    },
+
+    /// Resume an interrupted run from a checkpoint JSON file.
+    Resume {
+        /// Checkpoint path from a prior `--checkpoint` run.
+        #[arg(long)]
+        checkpoint: std::path::PathBuf,
+        /// Opt-in: attempt low-noise, reversible verification actions.
+        #[arg(long)]
+        auto_exploit: bool,
+        /// Opt-in high-impact technique families when ROE permits.
+        #[arg(long, value_delimiter = ',')]
+        allow_techniques: Option<Vec<String>>,
+        /// Comma-separated plugin IDs to run (default: all for this OS).
+        #[arg(long, value_delimiter = ',')]
+        plugins: Option<Vec<String>>,
+        /// Comma-separated plugin IDs to skip.
+        #[arg(long, value_delimiter = ',')]
+        skip: Option<Vec<String>>,
     },
 
     /// Enumerate privilege-escalation opportunities (default).
@@ -140,6 +263,18 @@ pub enum Commands {
         /// Comma-separated plugin IDs to skip.
         #[arg(long, value_delimiter = ',')]
         skip: Option<Vec<String>>,
+
+        /// Enumerate then open triage (TTY prompts and/or --triage-out stub).
+        #[arg(long)]
+        triage: bool,
+
+        /// Write a triage decisions stub JSON for offline editing.
+        #[arg(long)]
+        triage_out: Option<std::path::PathBuf>,
+
+        /// Apply triage decisions; `probe` actions enable reversible probes.
+        #[arg(long)]
+        approve_file: Option<std::path::PathBuf>,
     },
 }
 
@@ -200,19 +335,18 @@ Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 const AFTER_HELP: &str = "\
 Examples:
   stealthy guide
-  stealthy --authorized disclaimer
-  stealthy --authorized list-plugins
-  stealthy --authorized enum
-  stealthy --authorized -q enum --plugins linux.sudo,linux.groups
-  stealthy --authorized enum --min-severity high
-  stealthy --authorized enum --auto-exploit
-  stealthy --authorized enum --allow-techniques kernel-exploit,potato
-  stealthy --authorized --format json scan
-  stealthy --authorized --format sarif -q scan > findings.sarif
-  stealthy --authorized --output file --output-path /tmp/f.seal enum
-  stealthy --authorized enum --fail-on critical
-  stealthy diff baseline.json current.json
-  stealthy doctor
+  stealthy --authorized --profile quiet enum
+  stealthy --authorized --profile ci enum --plugins linux.kernel_cve
+  stealthy --authorized enum --triage --triage-out decisions.json
+  stealthy --authorized enum --approve-file decisions.json
+  stealthy --authorized --checkpoint /tmp/run.json enum
+  stealthy --authorized resume --checkpoint /tmp/run.json
+  stealthy stage --os linux --arch x86_64 --out ./drop --binary ./target/release/stealthy
+  stealthy verify --path ./drop/cache-update --expect-sha256 HEX
+  stealthy one-liners --os linux --transport ssh
+  stealthy ingest script-report.json
+  stealthy artifacts --latest
+  stealthy cleanup --latest --secure-delete
 
 Docs: README.md  ·  docs/operator-runbook.md  ·  docs/techniques.md
 ";

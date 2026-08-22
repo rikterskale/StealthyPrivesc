@@ -39,6 +39,7 @@ impl Plugin for KernelCvePlugin {
             recommendation: "Compare against current CVE feeds offline. Opt in with --allow-techniques kernel-exploit when ROE permits.".into(),
             noisy: false,
             leaves_artifacts: false,
+            ..Default::default()
         });
 
         // Very small static hint table — informational only.
@@ -77,6 +78,7 @@ impl Plugin for KernelCvePlugin {
                     recommendation: "Validate with distro security tracker. Run exploits only with ROE approval (--allow-techniques kernel-exploit).".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }

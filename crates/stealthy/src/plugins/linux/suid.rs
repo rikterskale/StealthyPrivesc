@@ -90,6 +90,7 @@ impl Plugin for SuidPlugin {
                     recommendation: "Cross-check against GTFOBins / capability guidance. Do not execute abuse payloads without approval.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             });
         }
@@ -112,6 +113,7 @@ impl Plugin for SuidPlugin {
                             "Review cap_setuid/cap_sys_admin style capabilities carefully.".into(),
                         noisy: true,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -131,6 +133,7 @@ impl Plugin for SuidPlugin {
                         .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -146,6 +149,7 @@ impl Plugin for SuidPlugin {
                         .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

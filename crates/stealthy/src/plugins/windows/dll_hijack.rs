@@ -58,6 +58,7 @@ impl Plugin for DllHijackPlugin {
                     recommendation: "Identify privileged processes that load DLLs from this path before any write test.".into(),
                     noisy: true,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -74,6 +75,7 @@ impl Plugin for DllHijackPlugin {
                 recommendation: "Keep enum-only on high-sensitivity hosts.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -94,6 +96,7 @@ impl Plugin for DllHijackPlugin {
                                 .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -110,6 +113,7 @@ impl Plugin for DllHijackPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

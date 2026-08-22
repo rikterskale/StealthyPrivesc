@@ -4,11 +4,11 @@ All techniques assume **written authorization**. Default mode only enumerates an
 
 ## Linux
 
-| Technique | Plugin / script | Noise | Artifacts | Auto-exploit |
-| --- | --- | --- | --- | --- |
-| Readable sudoers / NOPASSWD | `linux.sudo` | Low | None | Recommend only |
-| `sudo -l` / `sudo --version` | `linux.sudo` | Medium | Audit logs | Never auto-run abuse |
-| SUID/SGID / capabilities | `linux.suid` | Low–Medium | None | Never execute abuse |
+| Technique | Plugin / script | MITRE (default) | Noise | Artifacts | Auto-exploit |
+| --- | --- | --- | --- | --- | --- |
+| Readable sudoers / NOPASSWD | `linux.sudo` | T1548.003 | Low | None | Recommend only |
+| `sudo -l` / `sudo --version` | `linux.sudo` | T1548.003 | Medium | Audit logs | Never auto-run abuse |
+| SUID/SGID / capabilities | `linux.suid` | T1548.001 | Low–Medium | None | Never execute abuse |
 | Writable systemd/cron/timers | `linux.systemd_cron` | Low | Probe marker if auto | Reversible probe only |
 | Container sockets / groups | `linux.containers` | Low | None | Never start containers |
 | Interesting groups | `linux.groups` | Low | None | Recommend only |

@@ -60,6 +60,7 @@ impl Plugin for CredentialsPlugin {
                         recommendation: "Readable shadow/backups often mean password-hash theft. Do not exfiltrate beyond ROE.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
                 Err(_) => {
@@ -88,6 +89,7 @@ impl Plugin for CredentialsPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -103,6 +105,7 @@ impl Plugin for CredentialsPlugin {
                 recommendation: "Continue with service config and sudo checks.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

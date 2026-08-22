@@ -52,6 +52,7 @@ impl Plugin for NfsPlugin {
                     },
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -70,6 +71,7 @@ impl Plugin for NfsPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -86,6 +88,7 @@ impl Plugin for NfsPlugin {
                     "Remote share discovery is out of scope for this quiet local plugin.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

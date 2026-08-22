@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
+    #[default]
     Info,
     Low,
     Medium,
@@ -32,9 +33,10 @@ impl Severity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingKind {
+    #[default]
     Enumeration,
     Misconfiguration,
     Credential,
@@ -63,6 +65,53 @@ pub struct Finding {
     pub noisy: bool,
     /// True when exploitation could leave persistent artifacts.
     pub leaves_artifacts: bool,
+    /// Stable fingerprint across runs (schema v2).
+    #[serde(default)]
+    pub finding_id: String,
+    /// Observed object (path, privilege name, rule, …).
+    #[serde(default)]
+    pub object: String,
+    /// Short condition key for fingerprinting.
+    #[serde(default)]
+    pub condition: String,
+    /// Heuristic exploitability score 0–100.
+    #[serde(default)]
+    pub exploitability: u8,
+    /// Rough operator time-to-impact hint.
+    #[serde(default)]
+    pub time_to_impact: String,
+    /// Rank within the run's attack-path list, when assigned.
+    #[serde(default)]
+    pub attack_path_rank: Option<u32>,
+    /// MITRE ATT&CK technique IDs.
+    #[serde(default)]
+    pub mitre_techniques: Vec<String>,
+    /// Internal technique catalog ID.
+    #[serde(default)]
+    pub technique_id: String,
+}
+
+impl Default for Finding {
+    fn default() -> Self {
+        Self {
+            plugin: String::new(),
+            kind: FindingKind::Enumeration,
+            severity: Severity::Info,
+            title: String::new(),
+            detail: String::new(),
+            recommendation: String::new(),
+            noisy: false,
+            leaves_artifacts: false,
+            finding_id: String::new(),
+            object: String::new(),
+            condition: String::new(),
+            exploitability: 0,
+            time_to_impact: String::new(),
+            attack_path_rank: None,
+            mitre_techniques: Vec::new(),
+            technique_id: String::new(),
+        }
+    }
 }
 
 impl Finding {
@@ -149,12 +198,16 @@ impl Finding {
                             "stealthy --authorized --format json enum --allow-techniques {id}"
                         )
                     })
-                    .unwrap_or_else(|| "Review the approved technique in the ROE; no payload command is available in this build.".into());
+                    .unwrap_or_else(|| {
+                        "Review the approved technique in the ROE; no payload command is available in this build.".into()
+                    });
             }
-            _ => return format!(
-                "stealthy --authorized --format json enum --plugins {}",
-                self.plugin
-            ),
+            _ => {
+                return format!(
+                    "stealthy --authorized --format json enum --plugins {}",
+                    self.plugin
+                )
+            }
         };
         command.into()
     }
@@ -192,6 +245,21 @@ pub struct OsInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttackPath {
+    pub rank: u32,
+    pub title: String,
+    pub summary: String,
+    pub finding_ids: Vec<String>,
+    pub estimated_noise: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriageDecision {
+    pub finding_id: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub schema_version: String,
     #[serde(default)]
@@ -202,15 +270,34 @@ pub struct RunReport {
     pub version: String,
     pub authorized_use_ack: bool,
     pub mode: String,
+    /// Engagement / OPSEC profile used for this run.
+    #[serde(default)]
+    pub profile: String,
+    /// `binary` or `script` evidence source.
+    #[serde(default = "default_coverage_mode")]
+    pub coverage_mode: String,
+    /// Plugin IDs missing relative to a full binary run (script mode).
+    #[serde(default)]
+    pub capability_delta: Vec<String>,
     pub os: OsInfo,
     pub identity: IdentityInfo,
     pub findings: Vec<Finding>,
     /// Machine-readable assessment metadata aligned by finding index.
     #[serde(default)]
     pub assessments: Vec<FindingAssessment>,
+    /// Ranked operator attack paths derived from findings.
+    #[serde(default)]
+    pub attack_paths: Vec<AttackPath>,
+    /// Recorded triage decisions for this run, when present.
+    #[serde(default)]
+    pub triage_decisions: Vec<TriageDecision>,
     pub plugins_run: Vec<String>,
     pub coverage: Vec<PluginCoverage>,
     pub notes: Vec<String>,
+}
+
+fn default_coverage_mode() -> String {
+    "binary".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

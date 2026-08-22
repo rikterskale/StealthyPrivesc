@@ -52,6 +52,7 @@ impl Plugin for UacPlugin {
                         recommendation: "Weak UAC settings enable auto-elevation / token abuse paths; validate against hardening baselines.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
             }
         }
@@ -66,6 +67,7 @@ impl Plugin for UacPlugin {
                 recommendation: "Confirm registry access; use script fallback if needed.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

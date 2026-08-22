@@ -40,6 +40,7 @@ impl Plugin for SudoPlugin {
                             .into(),
                     noisy: true,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
                 // Crude historical hints only — never exploit.
                 if line.contains("1.8.") || line.contains("1.9.0") || line.contains("1.9.1") {
@@ -54,6 +55,7 @@ impl Plugin for SudoPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -70,7 +72,25 @@ impl Plugin for SudoPlugin {
 
         // Noisy path: only when verbose or when quiet paths found nothing useful.
         // `sudo -l` is commonly audited — warn the operator.
-        if ctx.verbose || findings.is_empty() {
+        // Quiet/OPSEC profiles skip this audited helper entirely.
+        if ctx.prefer_quiet {
+            if findings.is_empty() {
+                findings.push(Finding {
+                    plugin: self.id().into(),
+                    kind: FindingKind::Recommendation,
+                    severity: Severity::Info,
+                    title: "sudo -l skipped (quiet profile)".into(),
+                    detail:
+                        "prefer_quiet/OPSEC profile avoids audited sudo -l; readable sudoers only."
+                            .into(),
+                    recommendation: "Re-run with --profile balanced|thorough if sudo -l is in ROE."
+                        .into(),
+                    noisy: false,
+                    leaves_artifacts: false,
+                    ..Default::default()
+                });
+            }
+        } else if ctx.verbose || findings.is_empty() {
             findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Recommendation,
@@ -82,6 +102,7 @@ impl Plugin for SudoPlugin {
                         .into(),
                 noisy: true,
                 leaves_artifacts: false,
+                ..Default::default()
             });
 
             match Command::new("sudo").args(["-n", "-l"]).output() {
@@ -99,6 +120,7 @@ impl Plugin for SudoPlugin {
                             recommendation: "Review each NOPASSWD command for GTFOBins-style escalation paths. Do not auto-run them.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                     } else if out.status.success() {
                         findings.push(Finding {
@@ -110,6 +132,7 @@ impl Plugin for SudoPlugin {
                             recommendation: "Manually review allowed commands for escalation primitives.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                     } else if !combined.trim().is_empty() {
                         findings.push(Finding {
@@ -121,6 +144,7 @@ impl Plugin for SudoPlugin {
                             recommendation: "If password sudo is available interactively, re-check during an approved window.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            ..Default::default()
                         });
                     }
                 }
@@ -192,6 +216,7 @@ fn scan_sudoers_text(
                 recommendation: "Validate whether the allowed binary can be abused (GTFOBins). Escalate only with approval.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
         if trimmed.contains("ALL=(ALL)") || trimmed.contains("ALL=(ALL:ALL)") {
@@ -205,6 +230,7 @@ fn scan_sudoers_text(
                     "If this applies to the current user, full root via sudo is likely.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
     }

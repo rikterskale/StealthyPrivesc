@@ -1,0 +1,93 @@
+//! Operator triage decisions for stepwise probe approval.
+
+use std::io::{self, BufRead, IsTerminal, Write};
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+use crate::core::types::{Finding, TriageDecision};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriageFile {
+    pub schema_version: String,
+    #[serde(default)]
+    pub run_id: String,
+    pub decisions: Vec<TriageDecision>,
+}
+
+impl TriageFile {
+    pub fn empty(run_id: impl Into<String>) -> Self {
+        Self {
+            schema_version: "1".into(),
+            run_id: run_id.into(),
+            decisions: Vec::new(),
+        }
+    }
+}
+
+pub fn load_approve_file(path: &Path) -> Result<TriageFile> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read approve file {}", path.display()))?;
+    Ok(serde_json::from_str(&text)?)
+}
+
+pub fn write_triage_stub(path: &Path, run_id: &str, findings: &[Finding]) -> Result<()> {
+    let mut file = TriageFile::empty(run_id);
+    for finding in findings.iter().take(12) {
+        if finding.severity.rank() < crate::core::types::Severity::Medium.rank() {
+            continue;
+        }
+        file.decisions.push(TriageDecision {
+            finding_id: finding.finding_id.clone(),
+            action: "defer".into(),
+        });
+    }
+    let body = serde_json::to_string_pretty(&file)?;
+    std::fs::write(path, body).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+/// Prompt on a TTY for each candidate; non-TTY returns empty decisions.
+pub fn prompt_tty(run_id: &str, findings: &[Finding]) -> Result<TriageFile> {
+    let mut file = TriageFile::empty(run_id);
+    if !io::stdin().is_terminal() {
+        return Ok(file);
+    }
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+    for finding in findings.iter().filter(|f| {
+        f.severity.rank() >= crate::core::types::Severity::Medium.rank() && f.kind.is_positive()
+    }) {
+        writeln!(
+            stdout,
+            "\n[{}] {} — {}\n  action? [y=probe, v=validate, n=defer, d=out_of_scope, s=skip]",
+            finding.severity.as_str(),
+            finding.finding_id,
+            finding.title
+        )?;
+        stdout.flush()?;
+        let mut line = String::new();
+        stdin.lock().read_line(&mut line)?;
+        let action = match line.trim().to_ascii_lowercase().as_str() {
+            "y" | "probe" => "probe",
+            "v" | "validate" => "validate",
+            "d" | "out_of_scope" => "out_of_scope",
+            "s" | "skip" => continue,
+            _ => "defer",
+        };
+        file.decisions.push(TriageDecision {
+            finding_id: finding.finding_id.clone(),
+            action: action.into(),
+        });
+    }
+    Ok(file)
+}
+
+pub fn probe_ids(decisions: &[TriageDecision]) -> Vec<String> {
+    decisions
+        .iter()
+        .filter(|d| d.action == "probe")
+        .map(|d| d.finding_id.clone())
+        .collect()
+}

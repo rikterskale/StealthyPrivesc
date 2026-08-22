@@ -1,0 +1,48 @@
+{
+  "schema_version": "2",
+  "run_id": "script-fixture-1",
+  "started_at_unix": 0,
+  "tool": "stealthy-script",
+  "version": "0.1.0",
+  "authorized_use_ack": true,
+  "mode": "enumerate-only",
+  "profile": "script",
+  "coverage_mode": "script",
+  "capability_delta": [],
+  "os": {
+    "family": "unix",
+    "os": "linux",
+    "arch": "x86_64",
+    "version_hint": "linux"
+  },
+  "identity": {
+    "username": "tester",
+    "uid": 1000,
+    "gid": 1000,
+    "groups": [],
+    "is_elevated": false,
+    "elevation_source": "euid",
+    "token_context": "",
+    "hostname": "lab"
+  },
+  "findings": [
+    {
+      "plugin": "linux.sudo",
+      "kind": "misconfiguration",
+      "severity": "high",
+      "title": "Readable sudoers rule of interest",
+      "detail": "/etc/sudoers: alice ALL=(ALL) NOPASSWD: ALL",
+      "recommendation": "Review GTFOBins paths.",
+      "noisy": false,
+      "leaves_artifacts": false
+    }
+  ],
+  "assessments": [],
+  "attack_paths": [],
+  "triage_decisions": [],
+  "plugins_run": ["linux.sudo"],
+  "coverage": [
+    {"id": "linux.sudo", "status": "ok", "findings": 1, "error": null, "duration_ms": 1}
+  ],
+  "notes": ["fixture"]
+}

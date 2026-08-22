@@ -31,6 +31,14 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | `--allow-techniques` scaffolding | Done (flags + findings; no disable/evasion payloads) |
 | Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
+| Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
+| Stable finding IDs + attack paths | Done (schema v2) |
+| MITRE / technique catalog | Done (engine-enriched) |
+| Plugin timeouts + checkpoint/resume | Done |
+| Artifact ledger + cleanup | Done |
+| Triage approve-file + TTY | Done |
+| Script JSON parity + ingest | Done (`enum.py --json`, `stealthy ingest`) |
+| Delivery kit | Done (`stage`, `verify`, `one-liners`) |
 
 ### Linux plugin IDs
 

@@ -34,6 +34,7 @@ impl Plugin for AdminSessionsPlugin {
                         recommendation: "Cross-check with scripts/windows/enum.ps1.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
                 for m in members {
@@ -47,6 +48,7 @@ impl Plugin for AdminSessionsPlugin {
                             "Cross-check for active sessions / tokens of these principals.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        ..Default::default()
                     });
                 }
             }
@@ -61,6 +63,7 @@ impl Plugin for AdminSessionsPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    ..Default::default()
                 });
             }
         }
@@ -76,6 +79,7 @@ impl Plugin for AdminSessionsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -89,6 +93,7 @@ impl Plugin for AdminSessionsPlugin {
                 recommendation: "Compare against Administrators membership list.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -102,6 +107,7 @@ impl Plugin for AdminSessionsPlugin {
                 recommendation: "Retry with elevated context or script fallback.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 

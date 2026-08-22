@@ -59,6 +59,7 @@ impl Plugin for WildcardCronPlugin {
                 recommendation: "User crontabs may still be vulnerable; inspect with care.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
 
@@ -86,6 +87,7 @@ fn scan_cron_script(path: &str, text: &str, findings: &mut Vec<Finding>) {
                 recommendation: "If the working directory is writable, filename-based option injection may be possible (classic tar/chown tricks).".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                ..Default::default()
             });
         }
     }
