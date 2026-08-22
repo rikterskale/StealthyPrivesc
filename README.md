@@ -1,0 +1,156 @@
+# StealthyPrivesc
+
+Modular, cross-platform privilege-escalation **enumeration** framework for **authorized** red team engagements and internal security assessments.
+
+## Legal / ethical disclaimer
+
+**Authorized use only.**
+
+This tool exists solely for:
+
+- Red team engagements with explicit written permission
+- Internal security assessments under an approved charter
+- Defensive research in lab environments you own or are authorized to test
+
+Unauthorized reconnaissance, evasion, or privilege escalation is illegal and unethical. By running the binary you must pass `--i-understand-authorized-use-only` (or set `STEALTHY_AUTHORIZED=1`) to acknowledge this boundary.
+
+The authors and distributors assume **no liability** for misuse.
+
+## Design posture
+
+| Default | Behavior |
+| --- | --- |
+| Mode | Enumeration + recommendations only |
+| Auto-exploit | Opt-in (`--auto-exploit`), low-noise reversible probes only |
+| Kernel exploits | **Never** in this build |
+| Disk writes | Off by default (encrypted in-memory results) |
+| Script fallbacks | Provided when a custom binary cannot run |
+
+## Architecture
+
+```text
+crates/stealthy/          Rust core (static-friendly release profile)
+  src/core/               OS detect, identity, plugin runner, encrypted store, evasion helpers
+  src/plugins/linux/      Linux checks (14): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards
+  src/plugins/windows/    Windows checks (10): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns
+  src/exploit/            Policy-constrained reversible probes only
+scripts/linux/            Bash + Python fallbacks (no custom binary)
+scripts/windows/          PowerShell + JScript + MSBuild host stubs
+docs/                     Architecture, build, technique risk notes
+```
+
+## Quick start
+
+```bash
+# Build (Linux host)
+cargo build -p stealthy --release
+
+# First-run guide (no auth required)
+./target/release/stealthy guide
+./target/release/stealthy disclaimer
+
+# Enumerate (required authorization flag; --authorized is the short alias)
+./target/release/stealthy --authorized enum
+
+# High-signal only + live progress
+./target/release/stealthy --authorized enum --min-severity high
+
+# Quiet + select plugins
+./target/release/stealthy --authorized -q \
+  enum --plugins linux.sudo,linux.containers,linux.suid,linux.groups
+
+# Markdown / JSON console formats
+./target/release/stealthy --authorized --format markdown enum > report.md
+./target/release/stealthy --authorized --format json -q enum
+
+# Encrypted file + sidecar Markdown
+./target/release/stealthy --authorized \
+  --output file --output-path /tmp/findings.seal --also-markdown \
+  enum
+
+# Fail CI/automation if critical findings exist
+./target/release/stealthy --authorized enum --fail-on critical; echo exit=$?
+
+# Limited reversible probes (still no kernel exploits)
+./target/release/stealthy --authorized enum --auto-exploit
+```
+
+### Script-only fallbacks
+
+```bash
+# Linux
+bash scripts/linux/enum.sh
+python3 scripts/linux/enum.py
+
+# Windows (examples)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1
+cscript //nologo scripts\windows\enum.js
+```
+
+## CLI flags
+
+| Flag | Purpose |
+| --- | --- |
+| `--authorized` / `--i-understand-authorized-use-only` | Required acknowledgment (`STEALTHY_AUTHORIZED=1`) |
+| `-q` / `--quiet` | Less console noise |
+| `-v` / `--verbose` | Per-finding progress detail |
+| `--no-color` | Disable ANSI colors (also honors `NO_COLOR`) |
+| `--format human\|json\|markdown` | Console report shape (default `human`) |
+| `--min-severity info\|low\|medium\|high\|critical` | Filter displayed findings |
+| `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
+| `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
+| `--output memory\|file\|remote` | Result destination (default `memory`) |
+| `--output-path PATH` | Destination for `--output file` |
+| `--plaintext-file` | Write JSON instead of sealed blob |
+| `--also-markdown` | Also write `PATH.md` evidence report |
+| `--exfil-url URL` | Operator-configured HTTPS target for `--output remote` (v1 prints sealed body; no silent client) |
+| `guide` | First-run operator guide (no auth) |
+| `disclaimer` | Print legal text (no auth) |
+| `list-plugins` / `plugins` | Table of compiled plugin IDs |
+| `enum --auto-exploit` | Opt-in reversible probes only |
+| `enum --plugins a,b` | Enable listed plugins |
+| `enum --skip a,b` | Skip listed plugins |
+
+Exit codes: `0` ok · `2` missing authorization · `4` `--fail-on` triggered
+
+## Technique risk notes (summary)
+
+| Class | Risk | Notes |
+| --- | --- | --- |
+| File reads (`/proc`, sudoers, registry) | Low | Preferred |
+| `sudo -l` / `whoami /priv` | Medium | Often audited |
+| Write probes | Medium | Only with `--auto-exploit`; marker deleted |
+| Service binary replace / MSI abuse | High | Not automated |
+| Potato / token impersonation | High | Recommended only, not executed |
+| Kernel LPE | Critical | **Blocked** |
+
+See [`docs/techniques.md`](docs/techniques.md) for detail.
+
+## Build / cross-compile
+
+See [`docs/build.md`](docs/build.md).
+
+## Operator docs
+
+- [`docs/operator-runbook.md`](docs/operator-runbook.md) — comprehensive copy-paste deploy & run steps (Linux + Windows)
+- [`docs/architecture.md`](docs/architecture.md) — module layout and data flow
+- [`docs/build.md`](docs/build.md) — toolchain and cross targets
+- [`docs/techniques.md`](docs/techniques.md) — per-class risk notes
+- [`docs/design.md`](docs/design.md) — design decisions
+- [`docs/capabilities.md`](docs/capabilities.md) — capability matrix
+- [`docs/first-user-journey.md`](docs/first-user-journey.md) — first-run contract
+
+## Configuration
+
+Environment variables:
+
+- `STEALTHY_AUTHORIZED=1` — same as the authorization CLI flag
+- `STEALTHY_EXFIL_URL` — default for `--exfil-url`
+
+## Safety guarantees (v1)
+
+1. Refuses to run without authorization acknowledgment
+2. Default = enumerate + recommend
+3. `--auto-exploit` never runs kernel exploits
+4. Results stay in memory unless you explicitly request file/remote output
+5. Comments warn where techniques create artifacts or EDR telemetry

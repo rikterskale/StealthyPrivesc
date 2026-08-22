@@ -1,0 +1,16 @@
+/target/
+**/*.rs.bk
+.idea/
+.vscode/
+*.seal
+*.bin
+*.exe
+*.dll
+*.so
+.stealthy_probe_marker
+release-dist/
+release-staging/
+__pycache__/
+*.pyc
+prompt.txt
+spec.txt

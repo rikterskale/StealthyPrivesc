@@ -1,666 +1,74 @@
 # StealthyPrivesc Capabilities
 
-Status: design reference
-
-This document consolidates the capabilities described in the high-level design. The repository is currently greenfield and contains no implemented tool functionality yet. Capabilities marked **planned** are design targets, not available commands.
-
 ## Capability status
 
-| Area | Current status |
-|---|---|
-| Tool implementation | Not started; design-only repository |
-| Windows recon | Planned |
-| Linux recon | Planned |
-| macOS support | Planned, identity/host facts only in v1 |
-| Fact, graph, path, plan, and report schemas | Planned |
-| Attack-path ranking | Planned |
-| Authorization and audit controls | Planned |
-| Privilege-affecting execution | Deferred behind on-target plan application and review gates |
-| C2 and multi-host orchestration | Deferred to Phase 6+ |
+Implementation is active: Rust core, Linux/Windows plugins, and script fallbacks land in this repository revision. Historical note: earlier drafts described a greenfield docs-only tree; that is no longer accurate.
+
+Source design: [`docs/design.md`](design.md)
+
+First-user journey contract: [`docs/first-user-journey.md`](first-user-journey.md)
+
+Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 
 ## Initial MVP capabilities
 
-### Authorization and operating modes
+| Area | Status |
+| --- | --- |
+| Authorization gate | Done |
+| OS + identity enumeration | Done |
+| Encrypted in-memory store | Done |
+| Linux plugins (14) | Done |
+| Windows plugins (10) | Done |
+| Script fallbacks | Done (extended for new checks) |
+| Limited `--auto-exploit` probes | Done (non-kernel; PATH/polkit/timer/unquoted-parent) |
+| Full Windows service DACL/SDDL enum | Deferred (use accesschk; documented) |
+| Silent network C2 client | Deferred (operator-printed sealed blob) |
 
-- Required authorization/consent metadata before recon or module execution.
-- Authorization fields for engagement ID, client, scope, scope hash, operator ID, expiry, mode, and legal acknowledgement.
-- RFC 3339 UTC expiry validation.
-- Scope hash validation using normalized UTF-8 scope text.
-- `lab` and `engagement` modes.
-- Fail-closed mode mismatch handling between authorization, CLI, and configuration.
-- Lab mode with broader collection and detection-test support when explicitly enabled.
-- Engagement mode with high stealth defaults, reduced logging, conservative collection, and confirmation gates.
-- `--force` and `--no-interactive` policy handling without bypassing authorization requirements.
-- Append-mode JSONL audit events containing engagement, operator, host, action, module, result, risk, dry-run state, and configuration digest information.
+### Linux plugin IDs
 
-The authorization gate is a process and UX control, not cryptographic proof that an engagement is authorized.
+`linux.sudo`, `linux.suid`, `linux.systemd_cron`, `linux.containers`, `linux.groups`, `linux.polkit`, `linux.mounts`, `linux.ssh_keys`, `linux.path_ld`, `linux.kernel_cve`, `linux.nfs`, `linux.credentials`, `linux.services`, `linux.wildcard_cron`
 
-### Windows host capabilities
+Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/containerd/LXD).
 
-Planned PowerShell 5.1+ agent with native Windows collectors for:
+### Windows plugin IDs
 
-- User and host identity
-- Current privileges and elevation state
-- Token information
-- Services
-- Scheduled tasks
-- Patches and host configuration
-- UAC settings
-- AppLocker and related policy presence
-- Writable filesystem locations, including program locations
-- Credential-store presence markers without emitting secret material by default
-
-Example planned invocation:
-
-```powershell
-.\privesc-tool.ps1 -Auto -AuthFile .\auth.json -OutDir .\privesc-out
-```
-
-The Windows agent is planned to emit the same shared facts envelope as the Unix agent. An optional `-ApplyPlan` bridge may delegate execution to a local Go core; it must not perform remote elevation itself.
-
-### Linux host capabilities
-
-Planned Bash 4+ Linux-first agent with collectors for:
-
-- User, host, and privilege identity
-- `sudo` and NOPASSWD indicators
-- SUID files
-- File capabilities
-- Writable cron configuration
-- Writable systemd user units
-- Kernel and patch/version hints
-- SSH-related configuration markers
-- Container indicators
-- Optional cloud metadata reachability probes
-
-Example planned invocation:
-
-```bash
-./privesc-tool.sh --auto --auth-file ./auth.json --out-dir ./privesc-out
-```
-
-Python is not required on target hosts in v1. Optional Python tooling may be used on the operator workstation for research purposes.
-
-### macOS capabilities
-
-macOS support is best-effort in v1 and limited to:
-
-- Host identity
-- User identity
-- Basic privilege facts
-- Optional informational launchd counts
-
-TCC/SIP bypasses and full macOS privilege-model parity are out of scope for v1.
-
-### Shared fact model
-
-Agents are planned to emit `facts.v1.json` with:
-
-- Schema version
-- Collection timestamp
-- Host identity and OS family
-- Agent name and version
-- Username, UID/SID, groups, and privilege level
-- Typed facts with stable dotted keys
-- Confidence values
-- Stealth cost values
-- Source collector IDs
-- Sensitive-value markers
-- Optional raw references
-- Collection duration, truncation, and error metadata
-
-Facts are intended to be cross-platform contracts. Windows and Linux collectors may differ, but shared keys use consistent types and semantics. macOS emits a reduced subset.
-
-Planned sensitive-data controls include:
-
-- `sensitive` fact markers
-- Report redaction by default
-- Optional at-rest redaction
-- User-only output-directory permissions (`0700` or equivalent ACL)
-- Output size limits
-- Collector allowlists and category controls
-
-### Graph and attack-path capabilities
-
-The attack-path graph is the primary product differentiator. Planned capabilities include:
-
-- Facts-to-graph materialization
-- State, technique, asset, and goal nodes
-- Typed edges with preconditions
-- Technique eligibility based on hard fact predicates
-- Soft fact modifiers for success probability
-- Confidence aggregation
-- Detection-risk scoring
-- Noise and footprint scoring
-- Time-cost scoring
-- Configurable reliability, stealth, and time weights
-- Goal ranking for `goal.local_admin`, `goal.root`, and `goal.system`
-- Reserved handling for domain and lateral-movement concepts
-- Top-k simple-path ranking using Yen's algorithm or an equivalent algorithm
-- Maximum depth and node-visit limits
-- Discarded-path explanations
-- Stable ranking tie-breakers
-- Golden graph profiles for noisy and stealth-oriented behavior
-
-Planned graph artifacts:
-
-- `graph.v1.json`
-- `paths.v1.json`
-
-The graph records score snapshots at build time so that ranking is reproducible for a given graph artifact.
-
-### Reporting capabilities
-
-Planned report outputs:
-
-- JSON report (`report.v1.json`)
-- Markdown report (`report.md`)
-- Colorized CLI view
-
-Reports are planned to include:
-
-- Host and identity summaries
-- Current privilege level
-- Ranked paths and goals
-- Path reliability, stealth, time, and utility scores
-- Recommended actions such as validate or dry-run
-- Findings and warnings
-- Sensitive-value redaction status
-- Collection metadata
-- Graph/path artifact references
-- Audit references
-- Authorized-use and stealth-score disclaimers
-
-HTML reporting is deferred unless separately approved.
-
-### Guided first-user journey
-
-Planned `privesc guide` capability for a new authorized operator:
-
-- Installation and environment checks
-- Platform and agent availability checks
-- Authorization and mode explanation
-- Safe fixture-backed preview
-- Non-interactive onboarding mode for CI and automation
-- Facts, graph, paths, report, and audit artifact walkthrough
-- Findings and score interpretation
-- Actionable troubleshooting guidance
-- Explicit separation between preview and privilege-affecting execution
-
-The detailed contract is documented in [`docs/first-user-journey.md`](first-user-journey.md).
+`windows.privileges`, `windows.services`, `windows.scheduled_tasks`, `windows.always_install_elevated`, `windows.uac`, `windows.dll_hijack`, `windows.credentials`, `windows.admin_sessions`, `windows.env_path`, `windows.autoruns`
 
 ## Planned command surface
 
-These commands are design targets and are not currently implemented:
+| Command | Purpose |
+| --- | --- |
+| `stealthy guide` | First-run operator guide (no auth) |
+| `stealthy disclaimer` | Print legal / ethical text (no auth) |
+| `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
+| `stealthy enum` | Run enumeration (default mode) |
+| `stealthy enum --auto-exploit` | Add reversible probes only |
+| `stealthy enum --plugins ...` | Select plugins |
+| `stealthy enum --skip ...` | Skip plugins |
 
-| Command | Capability |
-|---|---|
-| `privesc auth check` | Full authorization-file validation |
-| `privesc recon collect` | Same-host agent invocation and facts collection |
-| `privesc graph build` | Facts to graph materialization |
-| `privesc graph rank` | Ranked paths from facts/graph |
-| `privesc plugin list` | Static registry introspection |
-| `privesc plugin validate` | Plugin precondition validation |
-| `privesc plan export` | Dry-run selected path and export `plan.v1.json` |
-| `privesc plan apply` | On-target plan validation and gated application |
-| `privesc run` | Recon, graph, ranking, and report pipeline |
-| `privesc report render` | JSON, Markdown, and color report rendering |
-| `privesc guide` | Guided first-user setup and safe preview |
-
-Planned exit-code categories include authorization failure, validation failure, partial collection, configuration/mode mismatch, topology denial, and unavailable or disabled apply bridges.
+Global: `--authorized` (alias), `-q`, `-v`, `--no-color`, `--format`, `--min-severity`, `--fail-on`, `--delay-ms`, `--output`, `--output-path`, `--plaintext-file`, `--also-markdown`, `--exfil-url`.
 
 ## Artifact workflow
 
-The intended v1 workflow is:
+Default: no artifacts.
 
-```text
-Target agent
-  -> facts.v1.json
-  -> operator-host graph build and ranking
-  -> graph.v1.json / paths.v1.json
-  -> operator-host report and dry-run validation
-  -> plan.v1.json
-  -> target-local plan apply, if enabled
-  -> audit and report artifacts
-```
+Optional:
 
-The default artifact directory is planned to contain:
-
-```text
-privesc-out/
-├── auth.json          # optional working copy
-├── facts.v1.json
-├── graph.v1.json      # optional debug artifact
-├── paths.v1.json
-├── plan.v1.json       # required for on-target apply
-├── report.v1.json
-├── report.md
-└── audit.jsonl
-```
-
-Agents communicate through files and exit codes in v1. A custom RPC or stdin JSON protocol is not required.
-
-## Plan and execution capabilities
-
-### Operator-host capabilities
-
-The operator-host core is planned to support:
-
-- Facts validation
-- Graph construction and ranking
-- Report generation
-- Plugin metadata inspection
-- Plugin validation
-- Plugin dry-run
-- Plan export
-- Plan integrity checks
-
-The operator host must not directly perform privilege-affecting remote execution in v1.
-
-### On-target capabilities
-
-On-target plan application is planned to:
-
-- Revalidate authorization
-- Load the plan and matching facts
-- Verify the raw-byte `facts_sha256`
-- Compute the facts-derived host ID
-- Probe the live local host identity
-- Require `live_host_id == plan.host_id == facts_host_id`
-- Revalidate plugin preconditions
-- Apply mode, risk, feature-flag, and confirmation policy
-- Execute only when the action is permitted
-- Emit audit events
-
-Host binding is intended to prevent accidental application of a target plan to the operator workstation. It is not a cryptographic host-authentication mechanism.
-
-### Planned execution policy
-
-- Validate and dry-run are side-effect-free interfaces.
-- Low- and medium-risk lab actions may be allowed subject to confirmation.
-- High- and critical-risk lab actions require confirmation.
-- High- and critical-risk engagement actions are dry-run-only by default.
-- Engagement high-risk execution requires an explicit high-risk flag and confirmation.
-- Detection-test plugins are denied in engagement mode.
-- Feature flags default to disabled for post-exploitation categories.
-- Pure script execution adapters are deferred until later phases.
-
-## Planned plugin capabilities
-
-Plugins are planned as static Go registry entries with adjacent `plugin.meta.v1.yaml` metadata. Early implementations are stubs that validate preconditions and produce dry-run plans without payloads or exploit recipes.
-
-### Exploitation metadata and stubs
-
-Planned Windows categories include:
-
-- Token-related techniques
-- Service-related techniques
-- DLL and named-pipe technique classes
-- UAC-related technique classes
-- Kernel-related technique classes
-
-Planned Unix categories include:
-
-- SUID
-- `sudo`
-- Cron
-- File capabilities
-- Container-related technique classes
-- Kernel-related technique classes
-
-### Credential-access metadata and stubs
-
-Planned categories include:
-
-- Windows credential stores
-- LSASS/DPAPI/SAM/Kerberos-related classes
-- Linux shadow, SSH, history, environment, and cloud-related classes
-
-The design does not authorize inclusion of credential-dump recipes or secret-extraction payloads in early releases.
-
-### Persistence metadata and stubs
-
-Planned categories include:
-
-- Windows scheduled tasks
-- WMI
-- Run keys
-- Services
-- DLL search-order classes
-- Linux cron
-- systemd
-- SSH keys
-- Shell profiles
-
-### Evasion and stealth policy
-
-Planned cross-cutting policy capabilities include:
-
-- Collector selection
-- Timing and jitter controls
-- Detection-risk eligibility caps
-- Target-side logging policy
-- Cleanup-hook registration
-- Lab-only detection-test hooks
-- C2 jitter controls in later phases
-
-This category is explicitly not intended to provide AMSI/ETW bypasses or other evasion recipes.
+1. Encrypted seal file via `--output file --output-path PATH`
+2. Plaintext JSON via `--plaintext-file`
+3. Operator-driven remote POST instructions via `--output remote --exfil-url URL`
 
 ## Security, privacy, and operational controls
 
-Planned controls include:
-
-- Authorized-use notice in README, CLI, and reports
-- Required legal acknowledgement
-- Authorization expiry
-- Mode binding
-- Audit logging
-- Feature flags
-- Confirmation gates
-- Dry-run defaults for high-risk engagement actions
-- Sensitive fact markers
-- Report redaction
-- Restricted artifact-directory permissions
-- Collector timeouts
-- Output caps
-- Configurable collector allowlists
-- No domain-wide or lateral movement execution in v1
-- No unattended worm or blast behavior
-- No guarantee of EDR evasion
-- Signed releases and checksums as future supply-chain controls
-
-CI is planned to validate the user journey across clean installation, release archives, safe fixture workflows, documented commands, failure messages, shell-agent compatibility, artifact round trips, and schema compatibility.
-
-The design treats audit JSONL as tamper-evident operational history only if an external trusted sink or stronger storage control is added later; local append mode alone does not guarantee integrity.
-
-## CI and delivery-quality capabilities
-
-The repository CI workflow is planned to provide these engineering and user-friction checks:
-
-### Source and test quality
-
-- Go formatting enforcement
-- Go vet checks
-- Linux race-detected tests
-- Windows test execution
-- Exact 100% Go coverage gate
-- Coverage artifact upload
-- Conditional activation as the Go implementation lands
-
-### Documentation quality and accuracy
-
-- Markdown encoding and non-empty-file checks
-- Required top-level headings
-- Balanced fenced code blocks
-- Tab and accidental trailing-whitespace checks
-- Local documentation-link validation
-- Required-section checks for design, capabilities, and first-user journey documents
-- Cross-document command consistency
-- Cross-document artifact-name consistency
-- Verification that documented CLI commands expose working `--help` paths
-- Executable safe documentation examples
-
-### Installation and release quality
-
-- Clean source-build installation on Ubuntu and Windows
-- Release archive creation and extraction
-- ZIP and tarball packaging checks
-- SHA-256 checksum generation and verification
-- Runtime checks from an extracted archive rather than the repository checkout
-- Version and help-command smoke tests
-- Checks that shipped documentation is available with the release
-
-### End-to-end user workflow quality
-
-- Fixture-backed first-user journey
-- Non-interactive safe preview
-- Expected artifact creation
-- JSON artifact parsing
-- Report schema-version checks
-- Facts → graph → paths → report artifact flow
-- Audit-log presence checks
-- Artifact round-trip tests
-- Schema compatibility tests
-
-### Failure and troubleshooting quality
-
-- Missing authorization-file contract
-- Missing facts-file contract
-- Expected non-zero exit codes
-- Actionable error-message checks
-- No traceback leakage in normal user errors
-- No false-success result after a failed operation
-- Planned coverage for expired authorization, invalid JSON, mode mismatch, host mismatch, read-only output directories, unsupported platforms, timeouts, and interrupted collection
-
-### Cross-platform agent quality
-
-- Bash syntax validation
-- Optional ShellCheck validation
-- PowerShell parser validation
-- Windows and Linux agent matrix coverage
-- Agent fixture-test hook
-- Platform-specific user workflow checks
-
-### Security and workflow integrity
-
-- Common secret-pattern scanning
-- Unexpected executable-payload detection
-- Pinned GitHub Action enforcement
-- Least-privilege workflow permissions
-- Concurrency cancellation for superseded runs
-- Aggregate readiness gate requiring all active checks to pass
-
-Checks that depend on the Go CLI or first-user fixtures remain skipped during the design-only stage and activate automatically once the corresponding implementation contracts exist.
-
-## Phased capability roadmap
-
-### Phase 1: foundation
-
-- Repository scaffolding
-- Authorized-use and policy documentation
-- Authorization schema
-- Example lab and engagement configurations
-- CI and schema-validation skeleton
-
-### Phase 2: contracts and recon
-
-- Shared facts, graph, path, plan, and report schemas
-- Windows PowerShell recon
-- Linux Bash recon
-- macOS identity/host subset
-- Fixture-based agent tests
-
-### Phase 3: graph and reporting
-
-- Go core CLI
-- Authorization and audit implementation
-- Fact-to-graph materialization
-- Scoring and ranking
-- JSON/Markdown/color reporting
-- End-to-end recon-to-report pipeline
-
-### Phase 4: plugin interfaces
-
-- Static plugin registry
-- Plugin metadata contracts
-- Validate and dry-run interfaces
-- Feature flags
-- Plan export
-- Apply topology and host-binding tests
-
-### Phase 5: category stubs and policy
-
-- Exploitation stubs
-- Credential-access stubs
-- Persistence stubs
-- Evasion/stealth policy
-- Lab-only detect-test hooks
-
-### Phase 6 and later
-
-- Optional C2 design spike and eventual orchestration
-- Multi-host workflows
-- Pure-script execution adapters
-- Stronger authorization binding, such as signed authorization files
-- Packaging, release checksums, and optional signing
-- Interactive UX polish
-- Optional HTML reporting
-
-## Future enhancements
-
-The following capabilities come from the extended exploitation-path and guided-runtime vision. They are future enhancements, not current functionality or v1 commitments. Any implementation must remain behind authorization, mode, feature-flag, risk, host-binding, and review gates.
-
-### First-class exploitation paths
-
-Future `ExploitationPath` objects may extend the current ranked `AttackPath` model with:
-
-- Explicit sequenced steps
-- Per-step rationale and expected outcome
-- Platform-specific PowerShell and Bash/sh representations
-- Expected success signals
-- Expected failure signals
-- Noise, duration, detection, and OPSEC estimates
-- A validation ladder such as confirm → evidence → proof
-- Technique-specific troubleshooting branches
-- Alternative eligible edges when a step cannot proceed
-- Remaining-path and remaining-budget state
-
-These objects would remain knowledge-driven and serializable. They must not embed malware, credential-dumping recipes, bypass code, or unrestricted payload-generation instructions.
-
-### Playbook generation and export
-
-Future playbook generation may produce:
-
-- Self-contained JSON playbooks
-- Human-readable Markdown playbooks
-- Optional pure PowerShell export
-- Optional pure Bash/sh export
-- Versioned playbook metadata
-- Facts, paths, plugin-registry, and configuration digests
-- Ordered validation and operator-confirmation steps
-- Expected evidence and failure handling for each step
-
-Pure-shell exports would be operator guidance or explicitly gated runners. They would not bypass the authorization, host-binding, confirmation, or engagement-risk controls.
-
-### Enriched technique knowledge base
-
-The future technique metadata layer may add:
-
-- Platform-specific command representation metadata
-- Preconditions and environmental constraints
-- Success and failure signal definitions
-- OPSEC notes
-- Remediation cards
-- Alternative technique relationships
-- Coverage-gap explanations
-- Windows service, token, autorun, DLL, and related technique classes
-- Linux SUID, capabilities, writable systemd, container, and related technique classes
-- GTFOBins-aware reference metadata without embedding weaponized recipes
-
-In the current Go architecture, this information belongs in versioned plugin metadata and knowledge contracts rather than a Python-specific `core/knowledge.py` implementation.
-
-### Interactive guided runtime
-
-Future TUI or wizard capabilities may:
-
-- Load a selected ranked path
-- Show the current step, rationale, risk, and expected result
-- Offer a copy-command view
-- Offer an explicitly authorized platform-shell invocation
-- Record operator success, failure, skip, or abort decisions
-- Surface matching troubleshooting branches
-- Suggest alternative eligible edges
-- Re-score remaining path options after confirmed state changes
-- Reuse timeline and review dispositions for auditability
-
-The guided runtime must default to preview and confirmation. It is not an unattended execution engine.
-
-### Troubleshooting decision trees
-
-Future troubleshooting knowledge may be keyed by technique and environmental constraint, including:
-
-- `noexec` mounts
-- AppArmor or SELinux denials
-- UAC and token-integrity constraints
-- Protected-process restrictions
-- Container-runtime limitations
-- Missing interpreters or shell utilities
-- Permission and filesystem constraints
-- Collector coverage gaps
-
-Troubleshooting output should explain why a check or step was skipped, what evidence is missing, and which safe validation or alternative analysis step is appropriate. It must not recommend bypassing authorization or disabling defensive controls as a generic remedy.
-
-### Zero-Python target operation
-
-Future target-side capabilities may formalize the zero-Python architecture:
-
-- Self-contained PowerShell collector for Windows
-- Self-contained POSIX/Bash collector for Linux
-- No external Python dependency on target hosts
-- Strict JSON output compatible with the shared facts contract
-- Coverage metadata so quiet output is not mistaken for complete coverage
-- Dry-run and plan-preview support
-- Noise and OPSEC hints
-- Explicitly authorized staged collection where permitted
-- Optional in-memory or operator-selected non-persistent operation
-- Offline shell-only preview of a pre-generated playbook
-
-The operator-side Go core remains responsible for graph construction, ranking, report generation, and policy enforcement. Target collectors must not silently turn into remote execution channels.
-
-### Dual-shell native support
-
-Future path steps may provide native representations for:
-
-- Windows PowerShell
-- Linux Bash/sh
-
-Future active validation may allow a complete path to be evaluated as a sequence of authorized, validated shell steps under the configured noise budget, jitter, parent-process, and confirmation policies. Active validation remains distinct from passive collection and must be disabled by default in engagement mode when risk is high.
-
-### Offline pure-shell playbook runner
-
-Future releases may provide a limited PowerShell or Bash menu-driven runner for a pre-generated playbook when the target has no Python or Go runtime. It would provide:
-
-- Step display
-- Explicit confirmation
-- Success/failure recording
-- Local artifact and audit output
-- No graph re-ranking on the target
-- No dynamic payload generation
-- No bypass of host-binding or authorization policy
-
-The operator-host analyzer remains the source of path ranking and playbook generation.
-
-### Visualization and multi-host extensions
-
-Future visualization capabilities may include:
-
-- TUI attack-path browser
-- Browser dashboard parity
-- Interactive graph exploration
-- Campaign graph views
-- Multi-host path projections when authorized history is available
-- Cross-host findings and coverage timelines
-
-Domain, lateral-movement, and multi-host execution remain outside v1. Any future multi-host view must preserve the current reserved-status and authorization boundaries.
+- Required authorization acknowledgment
+- Kernel exploits blocked
+- Noisy techniques labeled in findings
+- Low-and-slow delay knob
+- Script fallbacks when binaries are blocked
 
 ## Explicitly out of scope for v1
 
-- General malware-framework behavior
-- Unattended worm or lateral blast behavior
-- Domain-wide or forest-wide targeting
-- Active Directory and lateral-movement execution
-- Remote privilege-affecting execution from the operator host
-- TCC/SIP bypasses
-- Full macOS privilege-model parity
-- Python on target agents
-- Dynamic or subprocess plugin loading
-- Exploit recipe cookbook
-- AMSI/ETW bypass implementations
-- LSASS dump recipes
-- Ready-to-use persistence payloads
-- Guaranteed EDR evasion
-- Mandatory C2
-
-## Source design
-
-The authoritative design source for these capabilities is [`docs/design.md`](design.md), particularly its goals, key decisions, proposed design, plugin contracts, API surface, security considerations, open questions, and PR plan.
+- Kernel exploit execution
+- Automatic MSI / service binary replacement
+- Built-in AMSI/ETW patching in the Rust core
+- Fully autonomous multi-host C2

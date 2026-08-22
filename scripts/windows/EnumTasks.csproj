@@ -1,0 +1,15 @@
+<!--
+  StealthyPrivesc MSBuild / LOLBAS-friendly fallback stub.
+  Build with: msbuild EnumTasks.csproj
+  Or inline-task style hosts that compile C# without dropping a custom .exe first.
+
+  AUTHORIZED USE ONLY. This project file itself is not a payload; it documents
+  how operators can host enumeration inside allowlisted toolchains.
+-->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="Enum">
+    <Message Text="StealthyPrivesc MSBuild host — authorized assessments only" Importance="high" />
+    <Message Text="Prefer scripts/windows/enum.ps1 or the stealthy Rust core when executable." Importance="high" />
+    <Message Text="Kernel exploits and silent disk drops are out of policy." Importance="high" />
+  </Target>
+</Project>
