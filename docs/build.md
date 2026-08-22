@@ -2,13 +2,13 @@
 
 ## Prerequisites
 
-- Rust stable (1.70+ recommended) via [rustup](https://rustup.rs/)
+- Current Rust stable toolchain via [rustup](https://rustup.rs/)
 - For Windows cross-builds from Linux: `mingw-w64` or `cargo-xwin` / `cargo-zigbuild`
 
 ## Native Linux build
 
 ```bash
-cargo build -p stealthy --release
+cargo build --locked -p stealthy --release
 ./target/release/stealthy --help
 ```
 
@@ -43,7 +43,7 @@ MSVC target (`x86_64-pc-windows-msvc`) is best built on a Windows agent or via `
 ## Tests
 
 ```bash
-cargo test -p stealthy
+cargo test --locked -p stealthy
 ```
 
 ## Script fallbacks (no Rust required)

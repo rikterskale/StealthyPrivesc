@@ -47,6 +47,7 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy enum --auto-exploit` | Add reversible probes only |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
+| `stealthy diff BASELINE CURRENT` | Compare plaintext JSON reports offline |
 
 Global: `--authorized` (alias), `-q`, `-v`, `--no-color`, `--format`, `--min-severity`, `--fail-on`, `--delay-ms`, `--output`, `--output-path`, `--plaintext-file`, `--also-markdown`, `--exfil-url`.
 

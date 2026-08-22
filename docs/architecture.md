@@ -4,13 +4,17 @@
 
 StealthyPrivesc is a small Rust core plus independently selectable plugins, with pure-script fallbacks when a custom binary cannot execute under application control.
 
+For the end-to-end visual flow, see the [Architecture Diagram](architecture-diagram.md).
+
 ## Data flow
 
-1. CLI parses flags and requires `--i-understand-authorized-use-only`
-2. Core detects OS and enumerates identity with minimal process spawning
-3. Plugin registry is filtered by OS, `--plugins`, and `--skip`
-4. Each plugin returns `Finding` values; core stores them in an encrypted in-memory store
-5. Output mode emits a human report and optionally a sealed blob / remote instructions
+1. CLI parses flags and applies the authorization boundary
+2. Safe local commands (`guide`, `doctor`, `disclaimer`, `report`, `diff`) run without host enumeration
+3. Core detects OS and enumerates identity with minimal process spawning
+4. Plugin IDs are validated, then the registry is filtered by OS, `--plugins`, and `--skip`
+5. Each plugin returns `Finding` values; core adds provenance, assessments, and coverage timing
+6. Findings are stored in an encrypted in-memory store
+7. Output mode emits a human report and optionally JSON, Markdown, SARIF, a sealed blob, or remote instructions
 
 ## Core modules
 

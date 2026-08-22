@@ -4,6 +4,8 @@ Modular, cross-platform privilege-escalation **enumeration** framework for **aut
 
 Documentation hub: [`docs/README.md`](docs/README.md).
 
+Start here: [Installation](docs/installation.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Architecture Diagram](docs/architecture-diagram.md)
+
 ## Legal / ethical disclaimer
 
 **Authorized use only.**
@@ -117,6 +119,8 @@ cscript //nologo scripts\windows\enum.js
 
 ## CLI flags
 
+For the complete command and option reference, see [`docs/cli-reference.md`](docs/cli-reference.md).
+
 | Flag | Purpose |
 | --- | --- |
 | `--authorized` / `--i-understand-authorized-use-only` | Required acknowledgment (`STEALTHY_AUTHORIZED=1`) |
@@ -164,7 +168,11 @@ See [`docs/build.md`](docs/build.md).
 
 - [`docs/operator-runbook.md`](docs/operator-runbook.md) — comprehensive copy-paste deploy & run steps (Linux + Windows)
 - [`docs/architecture.md`](docs/architecture.md) — module layout and data flow
+- [`docs/architecture-diagram.md`](docs/architecture-diagram.md) — end-to-end visual architecture
 - [`docs/build.md`](docs/build.md) — toolchain and cross targets
+- [`docs/installation.md`](docs/installation.md) — release installation and source builds
+- [`docs/user-guide.md`](docs/user-guide.md) — simple operator workflow
+- [`docs/cli-reference.md`](docs/cli-reference.md) — complete commands, flags, output modes, and exit codes
 - [`docs/techniques.md`](docs/techniques.md) — per-class risk notes
 - [`docs/design.md`](docs/design.md) — design decisions
 - [`docs/capabilities.md`](docs/capabilities.md) — capability matrix
