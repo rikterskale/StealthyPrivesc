@@ -1,68 +1,147 @@
-# Next-Gen Stealthy Privilege Escalation Tool
+# StealthyPrivesc Design
 
 ## Overview
 
-StealthyPrivesc is a production-oriented enumeration framework for authorized assessments. It prioritizes living-off-the-land execution, quiet discovery, modular checks, and strict exploitation policy over noisy auto-pwn features.
+StealthyPrivesc is a cross-platform, authorized-assessment enumerator. The
+current product is a Rust command-line tool with independently selectable Linux
+and Windows plugins, script fallbacks, and an explicit authorization boundary.
+The design favors useful read-only evidence, operator-controlled scope, and
+reversible behavior over autonomous exploitation or covert collection.
+
+The implementation source of truth is the Rust workspace under
+`crates/stealthy/`. The capability matrix, [architecture overview](architecture.md),
+[CLI reference](cli-reference.md), and [operator runbook](operator-runbook.md)
+describe the behavior users can rely on today.
 
 ## Goals & Non-Goals
 
 ### Goals
 
-- Cross-platform core (Windows + Linux) with script fallbacks
-- Quiet enumeration before any optional action
-- Encrypted in-memory results by default
-- Clear operator CLI and risk documentation
-- Compilable Rust core with selectable plugins
+- Provide consistent Linux and Windows enumeration from one CLI.
+- Make the first run safe, visible, and useful without requiring an output file.
+- Require explicit authorization acknowledgment before host-enumerating actions.
+- Keep plugin selection, pacing, output, and evidence handling operator-controlled.
+- Produce human, JSON, Markdown, and SARIF results with provenance and coverage.
+- Offer script fallbacks when binary execution is unavailable or restricted.
+- Keep the core small enough to review, test, and build reproducibly.
 
 ### Non-Goals
 
-- Fully automated exploitation of every finding
-- Kernel exploit packs
-- Silent C2 beaconing without operator configuration
-- Extreme obfuscation that destroys maintainability
+- Fully automated exploitation or an auto-pwn workflow.
+- Kernel exploit execution, persistence creation, or service binary replacement.
+- Silent C2, autonomous multi-host operation, or background network collection.
+- Credential exfiltration, secret dumping, or bypassing endpoint controls.
+- Obfuscation that makes behavior difficult to inspect or maintain.
 
 ## Key Decisions
 
-1. **Rust core** — smaller static releases and low-level control versus Go
-2. **Enumerate-first** — recommendations are the default product
-3. **Opt-in auto-exploit** — reversible probes only; kernel blocked
-4. **Authorization gate** — CLI refuses to run without explicit ack
-5. **Script fallbacks** — survive AppLocker/WDAC and missing binary execution
-6. **Readable code** — stealth via behavior and LOLBIN use, not unreadable blobs
+1. **Rust core** — provides a compact, typed implementation with a practical
+   cross-compilation path and no required runtime service.
+2. **Enumerate first** — the default command collects observations and
+   recommendations; it does not attempt a privilege escalation.
+3. **Explicit authorization** — host-enumerating commands require
+   `--authorized` or `STEALTHY_AUTHORIZED=1`. Local commands such as `doctor`,
+   `guide`, `report`, and `diff` remain available without that gate.
+4. **Opt-in reversible probes** — `--auto-exploit` is a separate decision and
+   is limited to supported, reversible, low-noise checks. Kernel exploits and
+   persistence are always excluded.
+5. **Plugin isolation** — each plugin reports `Finding` values through a common
+   contract, allowing platform-specific selection and targeted reruns.
+6. **Memory-first output** — findings stay in the encrypted in-memory store by
+   default. File and remote modes require an explicit operator choice.
+7. **Script fallbacks** — approved Bash, Python, PowerShell, JScript, and
+   MSBuild-hosted fallbacks cover restricted binary environments with reduced
+   coverage and a separate evidence contract.
 
-## Proposed Design
+## Current architecture
 
-See [`architecture.md`](architecture.md) for module layout.
+The runtime flow is:
 
-Primary binary: `stealthy`
+1. Parse global options and the selected subcommand.
+2. Apply the authorization gate only when the command needs host access.
+3. Detect the OS and execution identity.
+4. Validate requested plugin IDs and filter the registry by platform, include,
+   and skip selections.
+5. Run selected plugins with the configured delay budget and collect findings,
+   assessments, notes, and coverage status.
+6. Seal the run in memory and render it as human, JSON, Markdown, or SARIF
+   output, or persist it through the explicitly selected file/remote mode.
 
-Command surface:
+| Module | Responsibility |
+| --- | --- |
+| `core::os` | OS family, architecture, and version hints |
+| `core::identity` | Host, user, groups, and elevation context |
+| `core::plugin` | Plugin trait, registry filtering, and execution context |
+| `core::engine` | Authorization-aware orchestration, timing, coverage, and report assembly |
+| `core::types` | Findings, assessments, reports, severities, and provenance fields |
+| `core::store` | ChaCha20-Poly1305 sealed export and zeroizing report key |
+| `core::output` | Human, JSON, Markdown, SARIF, memory, file, and remote rendering |
+| `core::diff` | Offline comparison of plaintext JSON reports |
+| `core::evasion` | Low-and-slow pacing and operator-facing notes |
+| `exploit` | Policy gate for the limited reversible probes |
+| `plugins::linux/windows` | Platform-specific enumeration checks |
 
-- `stealthy disclaimer`
-- `stealthy list-plugins`
-- `stealthy enum [--auto-exploit] [--plugins ...] [--skip ...]`
+The command surface is deliberately small:
 
-Global flags cover quiet/verbose, delay, and output mode (`memory` / `file` / `remote`).
+| Command | Authorization | Purpose |
+| --- | --- | --- |
+| `guide`, `doctor`, `disclaimer` | Not required | Local readiness, first-run, and legal guidance |
+| `list-plugins` / `plugins` | Required | Show plugins compiled into the current build |
+| `enum` / `scan` | Required | Run the selected enumeration checks |
+| `report` | Not required | Decode a sealed report with an operator-held key |
+| `diff` | Not required | Compare two plaintext JSON reports offline |
 
 ## Security & Privacy Considerations
 
-- Authorization acknowledgment required
-- No disk logs by default
-- Sealed exports use ephemeral ChaCha20-Poly1305 keys zeroized on drop
-- Findings that imply secret material avoid dumping raw secret bytes by default
-- Operators must handle evidence under engagement ROE
+- The authorization flag is a guardrail and audit signal, not a substitute for
+  written Rules of Engagement.
+- Default execution is enumerate-only, memory-only, and does not silently send
+  results over the network.
+- Sealed file output uses an ephemeral ChaCha20-Poly1305 key that must be
+  handled separately from the report. Plaintext JSON and Markdown remain
+  sensitive evidence.
+- Findings avoid dumping raw credential material by default, but operators
+  still control the target context, output path, and evidence custody.
+- Plugins label noisy checks and possible artifacts so operators can account
+  for telemetry and cleanup.
+- Script fallbacks are intentionally documented as lower-coverage alternatives;
+  they do not bypass AppLocker, WDAC, AppArmor, or other controls by design.
 
 ## Risks
 
-- Some checks (`sudo -l`, write probes) still generate telemetry
-- False confidence if shallow scans miss deep filesystem issues
-- Misuse outside authorization is a legal risk — mitigated by disclaimer gate and docs, not by technical impossibility
+- Read-only checks such as `sudo -l`, registry access, or credential-path
+  inspection can still generate telemetry or expose sensitive metadata.
+- Heuristic findings and kernel-version hints are not proof of exploitability.
+- A successful process can still contain plugin coverage errors; conclusions
+  must account for `coverage`, selected plugins, identity, and filtering.
+- Running as root or SYSTEM changes visibility and is not equivalent to a
+  standard-user assessment.
+- Cross-compiled artifacts can be valid files for the wrong target; release
+  packaging must record the target triple and verify hashes on both sides.
+- Operators can misuse transport, remote output, or reversible probes outside
+  the intended scope; the ROE and runbook remain the controlling policy.
 
-## PR Plan
+## Maintenance and delivery plan
 
-1. Scaffold Cargo workspace + CLI authorization gate
-2. Core store/engine/identity/os modules
-3. Linux plugin set (10 checks)
-4. Windows plugin set (8 checks)
-5. Script fallbacks + operator docs
-6. CI: rustfmt/clippy/test + markdown contract
+The project is maintained as an implemented product, not a scaffold. Changes
+that affect behavior should update the code, tests, CLI contract, capability
+matrix, and operator documentation together.
+
+Every behavior change should preserve or update these checks:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --locked -p stealthy --all-targets -- -D warnings`
+- `cargo test --locked --workspace`
+- Locked release builds on Linux and Windows
+- Release CLI UX smoke tests, including authorization, JSON, SARIF, sealed
+  output, diff, and failure semantics
+- Markdown structure, local links, required headings, and pinned workflow
+  actions
+- Linux/Python and Windows PowerShell fallback syntax checks
+- Security/supply-chain checks and the final CI readiness gate
+
+When a design decision changes, update this document and the linked
+[capability status](capabilities.md), [phase coverage](phases.md), and
+[architecture diagram](architecture-diagram.md) in the same change. Keep
+historical rationale in the commit or issue record rather than leaving stale
+“proposed” command lists in the current design document.

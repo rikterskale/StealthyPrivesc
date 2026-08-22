@@ -79,20 +79,20 @@ jobs:
 
           required_sections = {
               Path('docs/design.md'): [
-                  '# Next-Gen Stealthy Privilege Escalation Tool',
+                  '# StealthyPrivesc Design',
                   '## Overview',
                   '## Goals & Non-Goals',
                   '## Key Decisions',
-                  '## Proposed Design',
+                  '## Current architecture',
                   '## Security & Privacy Considerations',
                   '## Risks',
-                  '## PR Plan',
+                  '## Maintenance and delivery plan',
               ],
               Path('docs/capabilities.md'): [
                   '# StealthyPrivesc Capabilities',
                   '## Capability status',
                   '## Initial MVP capabilities',
-                  '## Planned command surface',
+                  '## Implemented command surface',
                   '## Artifact workflow',
                   '## Security, privacy, and operational controls',
                   '## Explicitly out of scope for v1',

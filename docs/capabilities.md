@@ -2,7 +2,11 @@
 
 ## Capability status
 
-Implementation is active: Rust core, Linux/Windows plugins, and script fallbacks land in this repository revision. Historical note: earlier drafts described a greenfield docs-only tree; that is no longer accurate.
+This document describes the implemented product on the current `main` revision.
+The Rust core, Linux/Windows plugins, reversible-probe gate, evidence outputs,
+and script fallbacks are present in this repository. The command surface below
+is implemented, not a future roadmap; historical design notes belong in
+[`docs/design.md`](design.md) or the project history.
 
 Source design: [`docs/design.md`](design.md)
 
@@ -36,20 +40,29 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 
 `windows.privileges`, `windows.services`, `windows.scheduled_tasks`, `windows.always_install_elevated`, `windows.uac`, `windows.dll_hijack`, `windows.credentials`, `windows.admin_sessions`, `windows.env_path`, `windows.autoruns`
 
-## Planned command surface
+## Implemented command surface
 
 | Command | Purpose |
 | --- | --- |
 | `stealthy guide` | First-run operator guide (no auth) |
+| `stealthy doctor` | Local platform, plugin, and working-directory readiness check (no auth) |
 | `stealthy disclaimer` | Print legal / ethical text (no auth) |
 | `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
-| `stealthy enum` | Run enumeration (default mode) |
+| `stealthy enum` / `stealthy scan` | Run enumeration (default mode) |
 | `stealthy enum --auto-exploit` | Add reversible probes only |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
+| `stealthy report PATH --key-hex KEY` | Decode a sealed report locally (no host access) |
 | `stealthy diff BASELINE CURRENT` | Compare plaintext JSON reports offline |
 
-Global: `--authorized` (alias), `-q`, `-v`, `--no-color`, `--format`, `--min-severity`, `--fail-on`, `--delay-ms`, `--output`, `--output-path`, `--plaintext-file`, `--also-markdown`, `--exfil-url`.
+Authorization is required for `list-plugins`, `enum`, and `scan`; it is not
+required for `guide`, `doctor`, `disclaimer`, `report`, or `diff`. The visible
+`--authorized` flag is an alias for the full acknowledgment flag, and
+`STEALTHY_AUTHORIZED=1` is the supported environment equivalent.
+
+Global options: `-q`, `-v`, `--no-color`, `--format`, `--min-severity`,
+`--fail-on`, `--delay-ms`, `--output`, `--output-path`, `--plaintext-file`,
+`--also-markdown`, and `--exfil-url`.
 
 ## Artifact workflow
 
@@ -79,14 +92,14 @@ Optional:
 - Built-in AMSI/ETW patching in the Rust core
 - Fully autonomous multi-host C2
 
-## Phase 2 coverage
+## Phase 2 coverage (implemented)
 
 - POSIX ACL-aware writable-path evaluation with conservative `getfacl` fallback
 - Windows token-context metadata, read-only ACL evaluation, machine PATH, and Winlogon coverage
 - Machine-readable finding assessments for confidence, applicability, and evidence quality
 - User-level systemd and current-user crontab inspection
 
-## Phase 3 coverage
+## Phase 3 coverage (implemented)
 
 - Run provenance and per-plugin timing telemetry
 - Offline baseline comparison and finding drift detection

@@ -6,6 +6,22 @@ Related docs: [`README.md`](../README.md) · [`build.md`](build.md) · [`techniq
 
 ---
 
+## Task-based navigation
+
+Use the [runbook module index](runbook/README.md) to choose a focused entry
+point:
+
+| Task | Module |
+| --- | --- |
+| Confirm ROE, identity, scope, and stop conditions | [Pre-flight](runbook/preflight.md) |
+| Build, verify, and package one artifact | [Build and package](runbook/build-and-package.md) |
+| Deploy and run on a Linux or Windows target | [Target operations](runbook/targets.md) |
+| Handle evidence, cleanup, interruption, or recovery | [Evidence and recovery](runbook/evidence-and-recovery.md) |
+
+The modules are concise workflow guides. This file remains the detailed
+copy-paste reference for transport variants, platform-specific procedures,
+operator recipes, and review checklists.
+
 ## How to use this runbook
 
 This document is intentionally written as an operator workflow rather than a
@@ -276,26 +292,28 @@ and obtain the required approval first.
 Linux packaging:
 
 ```bash
-STAGE=release-staging/stealthy-linux-x64
+STAGE=release-staging/stealthy-linux-x86_64
 rm -rf "$STAGE" && mkdir -p "$STAGE/scripts/linux" "$STAGE/docs"
 cp target/release/stealthy "$STAGE/"
 cp scripts/linux/enum.sh scripts/linux/enum.py "$STAGE/scripts/linux/"
-cp README.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
+cp README.md docs/installation.md docs/user-guide.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
 chmod +x "$STAGE/stealthy" "$STAGE/scripts/linux/"*
-tar -C release-staging -czf stealthy-linux-x64.tar.gz stealthy-linux-x64
-sha256sum stealthy-linux-x64.tar.gz
+# Keep ./stealthy at the archive root for scripts/install.sh.
+tar -C "$STAGE" -czf stealthy-linux-x86_64.tar.gz .
+sha256sum stealthy-linux-x86_64.tar.gz
 ```
 
 Windows packaging (from Linux after cross-build):
 
 ```bash
-STAGE=release-staging/stealthy-windows-x64
+STAGE=release-staging/stealthy-windows-x86_64
 rm -rf "$STAGE" && mkdir -p "$STAGE/scripts/windows" "$STAGE/docs"
 cp target/x86_64-pc-windows-gnu/release/stealthy.exe "$STAGE/"
 cp scripts/windows/enum.ps1 scripts/windows/enum.js scripts/windows/EnumTasks.csproj "$STAGE/scripts/windows/"
-cp README.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
-(cd release-staging && zip -r ../stealthy-windows-x64.zip stealthy-windows-x64)
-sha256sum stealthy-windows-x64.zip
+cp README.md docs/installation.md docs/user-guide.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
+# Keep ./stealthy.exe at the archive root for scripts/install.ps1.
+(cd "$STAGE" && zip -r ../../stealthy-windows-x86_64.zip .)
+sha256sum stealthy-windows-x86_64.zip
 ```
 
 ---

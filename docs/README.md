@@ -7,6 +7,7 @@ Use this page as the navigation hub for the project.
 - New operator: read [Installation](installation.md), then the [User Guide](user-guide.md).
 - Command lookup: use the [CLI Reference](cli-reference.md).
 - Assessment operator: read the [Operator Runbook](operator-runbook.md).
+- Fast runbook navigation: use the [Runbook Modules](runbook/README.md).
 - Developer: read [Build](build.md), [Architecture](architecture.md), and [Design](design.md).
 - System overview: view the [Architecture Diagram](architecture-diagram.md).
 - Defender or reviewer: read [Capabilities](capabilities.md) and [Technique Risk Notes](techniques.md).
@@ -31,6 +32,7 @@ authorization and remains enumeration-only unless `--auto-exploit` is chosen.
 | Learn the workflow | [User Guide](user-guide.md), [First User Journey](first-user-journey.md) |
 | Find a command or flag | [CLI Reference](cli-reference.md) |
 | Deploy to a target | [Operator Runbook](operator-runbook.md) |
+| Choose a focused runbook workflow | [Runbook Modules](runbook/README.md) |
 | Understand the design | [Architecture](architecture.md), [Architecture Diagram](architecture-diagram.md), [Design](design.md) |
 | Review coverage and risk | [Capabilities](capabilities.md), [Technique Risk Notes](techniques.md) |
 
