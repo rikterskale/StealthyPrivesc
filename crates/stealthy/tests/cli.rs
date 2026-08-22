@@ -57,3 +57,32 @@ fn encrypted_file_output_does_not_print_the_key_by_default() {
         assert_eq!(mode, 0o600);
     }
 }
+
+#[test]
+fn doctor_json_reports_schema_and_checks() {
+    let output = stealthy().args(["doctor", "--json"]).output().unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], "1");
+    assert!(value["checks"].is_object());
+}
+
+#[test]
+fn sarif_output_is_valid_sarif_21() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "sarif",
+            "scan",
+            "--plugins",
+            "linux.kernel_cve",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["version"], "2.1.0");
+    assert!(value["runs"].is_array());
+}

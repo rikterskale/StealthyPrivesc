@@ -11,18 +11,23 @@ mod plugins;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, ReportFormat};
 use crate::core::engine::Engine;
+use crate::core::output;
+use crate::core::store::EncryptedStore;
 use crate::core::term;
 
 fn main() -> Result<()> {
     let mut cli = Cli::parse();
     term::init(cli.no_color);
 
-    // Guide + disclaimer never need the auth gate. Bare `--help` is handled by clap.
+    // Local UX commands never need the auth gate. Bare `--help` is handled by clap.
     let needs_auth = !matches!(
         &cli.command,
-        Some(Commands::Disclaimer) | Some(Commands::Guide)
+        Some(Commands::Disclaimer)
+            | Some(Commands::Guide)
+            | Some(Commands::Doctor { .. })
+            | Some(Commands::Report { .. })
     );
 
     if needs_auth && !cli.i_understand_authorized_use_only {
@@ -45,6 +50,12 @@ fn main() -> Result<()> {
             print_guide();
             Ok(())
         }
+        Commands::Doctor { json } => print_doctor(json),
+        Commands::Report {
+            input,
+            key_hex,
+            format,
+        } => print_report(&input, &key_hex, format),
         Commands::ListPlugins { tsv } => {
             print_plugins(tsv);
             Ok(())
@@ -62,6 +73,85 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn print_doctor(json: bool) -> Result<()> {
+    let os = crate::core::os::detect();
+    let plugin_count = plugins::registry().len();
+    let cwd = std::env::current_dir().ok();
+    let cwd_ok = cwd.as_ref().is_some_and(|p| p.is_dir());
+    let supported = matches!(os.os.as_str(), "linux" | "windows");
+    let healthy = supported && plugin_count > 0 && cwd_ok;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "schema_version": "1",
+                "healthy": healthy,
+                "os": os,
+                "plugins": plugin_count,
+                "current_directory": cwd.map(|p| p.display().to_string()),
+                "checks": {
+                    "supported_os": supported,
+                    "plugins_available": plugin_count > 0,
+                    "working_directory": cwd_ok,
+                }
+            })
+        );
+    } else {
+        println!("{}", term::bold("StealthyPrivesc doctor"));
+        println!("  {} OS: {} ({})", check(supported), os.os, os.arch);
+        println!(
+            "  {} Plugins compiled: {}",
+            check(plugin_count > 0),
+            plugin_count
+        );
+        println!(
+            "  {} Working directory: {}",
+            check(cwd_ok),
+            cwd.map(|p| p.display().to_string())
+                .unwrap_or_else(|| "unavailable".into())
+        );
+        println!();
+        println!(
+            "{}",
+            if healthy {
+                term::ok("Ready for an authorized scan.")
+            } else {
+                term::err("Action required before scanning.")
+            }
+        );
+    }
+    if healthy {
+        Ok(())
+    } else {
+        std::process::exit(3)
+    }
+}
+
+fn check(ok: bool) -> String {
+    if ok {
+        term::ok("[ok]")
+    } else {
+        term::err("[!!]")
+    }
+}
+
+fn print_report(path: &std::path::Path, key_hex: &str, format: ReportFormat) -> Result<()> {
+    let sealed = std::fs::read_to_string(path)?;
+    let report = EncryptedStore::open_sealed_report(&sealed, key_hex)?;
+    let findings = report.findings.iter().collect::<Vec<_>>();
+    match format {
+        ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+        ReportFormat::Sarif => println!("{}", output::render_sarif(&report, &findings)),
+        ReportFormat::Markdown | ReportFormat::Human => {
+            print!(
+                "{}",
+                output::render_markdown(&report, &findings, findings.len())
+            );
+        }
+    }
+    Ok(())
 }
 
 fn print_auth_required() {
@@ -153,15 +243,22 @@ fn print_guide() {
     println!("{}", term::bold("1. Legal boundary"));
     println!("   Authorized engagements only. Read: stealthy disclaimer");
     println!();
-    println!("{}", term::bold("2. Acknowledge authorization"));
+    println!("{}", term::bold("2. Check readiness"));
+    println!("   {}", term::cyan("stealthy doctor"));
+    println!(
+        "   {}",
+        term::dim("Safe local checks; no host enumeration.")
+    );
+    println!();
+    println!("{}", term::bold("3. Acknowledge authorization"));
     println!("   {}", term::cyan("stealthy --authorized enum"));
     println!("   {}", term::dim("# or: export STEALTHY_AUTHORIZED=1"));
     println!();
-    println!("{}", term::bold("3. Discover plugins for this OS"));
+    println!("{}", term::bold("4. Discover plugins for this OS"));
     println!("   {}", term::cyan("stealthy --authorized list-plugins"));
     println!();
-    println!("{}", term::bold("4. First safe enumeration (memory-only)"));
-    println!("   {}", term::cyan("stealthy --authorized enum"));
+    println!("{}", term::bold("5. First safe enumeration (memory-only)"));
+    println!("   {}", term::cyan("stealthy --authorized scan"));
     println!(
         "   {}",
         term::dim("Findings stay in memory. Nothing written to disk.")

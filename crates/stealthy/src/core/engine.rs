@@ -8,7 +8,7 @@ use crate::core::output::{self, OutputOptions};
 use crate::core::plugin::{filter_plugins, PluginContext};
 use crate::core::store::EncryptedStore;
 use crate::core::term;
-use crate::core::types::{RunReport, Severity};
+use crate::core::types::{PluginCoverage, RunReport, Severity};
 use crate::plugins;
 
 pub struct Engine {
@@ -107,6 +107,7 @@ impl Engine {
         }
 
         let mut plugins_run = Vec::new();
+        let mut coverage = Vec::new();
         let total = selected.len();
 
         for (idx, plugin) in selected.iter().enumerate() {
@@ -155,11 +156,24 @@ impl Engine {
                         );
                     }
                     plugins_run.push(plugin.id().to_string());
+                    coverage.push(PluginCoverage {
+                        id: plugin.id().to_string(),
+                        status: "ok".into(),
+                        findings: n,
+                        error: None,
+                    });
                 }
                 Err(e) => {
-                    store.note(format!("plugin {} error: {e:#}", plugin.id()));
+                    let error = format!("{e:#}");
+                    store.note(format!("plugin {} error: {error}", plugin.id()));
+                    coverage.push(PluginCoverage {
+                        id: plugin.id().to_string(),
+                        status: "error".into(),
+                        findings: 0,
+                        error: Some(error.clone()),
+                    });
                     if !self.quiet {
-                        eprintln!("    {} plugin failed: {e:#}", term::err("[!]"));
+                        eprintln!("    {} plugin failed: {error}", term::err("[!]"));
                     }
                 }
             }
@@ -173,6 +187,7 @@ impl Engine {
 
         let (findings, notes) = store_into_parts(&store);
         let report = RunReport {
+            schema_version: "1".into(),
             tool: "stealthy".into(),
             version: env!("CARGO_PKG_VERSION").into(),
             authorized_use_ack: true,
@@ -181,6 +196,7 @@ impl Engine {
             identity: ident,
             findings,
             plugins_run,
+            coverage,
             notes,
         };
 

@@ -53,6 +53,9 @@ pub fn emit(
         ReportFormat::Markdown => {
             print!("{}", render_markdown(report, &filtered, total));
         }
+        ReportFormat::Sarif => {
+            println!("{}", render_sarif(report, &filtered));
+        }
     }
 
     match opts.mode {
@@ -231,6 +234,29 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
         println!();
     }
 
+    if !report.coverage.is_empty() {
+        println!("{}", term::bold("Coverage"));
+        for coverage in &report.coverage {
+            let detail = coverage
+                .error
+                .as_deref()
+                .map(|e| format!(": {e}"))
+                .unwrap_or_default();
+            println!(
+                "  {} {} · {} finding(s){}",
+                if coverage.status == "ok" {
+                    term::ok("[ok]")
+                } else {
+                    term::err("[error]")
+                },
+                coverage.id,
+                coverage.findings,
+                detail
+            );
+        }
+        println!();
+    }
+
     println!("{}", term::dim(&bar));
     println!(
         "{}",
@@ -268,6 +294,7 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
     out.push_str(&format!(
         "# StealthyPrivesc report\n\n\
          - **Version:** {}\n\
+         - **Schema:** {}\n\
          - **Host:** `{}`\n\
          - **User:** `{}` (elevated={})\n\
          - **OS:** {} / {} ({})\n\
@@ -275,6 +302,7 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **Plugins run:** {}\n\
          - **Findings:** {} total, {} shown\n\n",
         report.version,
+        report.schema_version,
         report.identity.hostname,
         report.identity.username,
         report.identity.is_elevated,
@@ -322,8 +350,58 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         }
         out.push('\n');
     }
+    if !report.coverage.is_empty() {
+        out.push_str("## Plugin coverage\n\n| Plugin | Status | Findings | Error |\n| --- | --- | ---: | --- |\n");
+        for coverage in &report.coverage {
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} |\n",
+                coverage.id,
+                coverage.status,
+                coverage.findings,
+                coverage.error.as_deref().unwrap_or("").replace('|', "\\|")
+            ));
+        }
+        out.push('\n');
+    }
     out.push_str("---\n_Authorized assessments only. Kernel exploits disabled in this build._\n");
     out
+}
+
+pub fn render_sarif(report: &RunReport, findings: &[&Finding]) -> String {
+    let results = findings
+        .iter()
+        .map(|finding| {
+            serde_json::json!({
+                "ruleId": finding.plugin,
+                "level": match finding.severity {
+                    Severity::Critical | Severity::High => "error",
+                    Severity::Medium => "warning",
+                    Severity::Low | Severity::Info => "note",
+                },
+                "message": { "text": format!("{}: {}", finding.title, finding.detail) },
+                "properties": {
+                    "severity": finding.severity.as_str(),
+                    "kind": format!("{:?}", finding.kind).to_ascii_lowercase(),
+                    "recommendation": finding.recommendation,
+                    "noisy": finding.noisy,
+                    "leaves_artifacts": finding.leaves_artifacts,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": { "driver": {
+                "name": report.tool,
+                "version": report.version,
+                "informationUri": "https://github.com/rikterskale/StealthyPrivesc"
+            }},
+            "results": results
+        }]
+    })
+    .to_string()
 }
 
 fn write_file(

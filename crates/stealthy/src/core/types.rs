@@ -77,6 +77,7 @@ pub struct OsInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
+    pub schema_version: String,
     pub tool: String,
     pub version: String,
     pub authorized_use_ack: bool,
@@ -85,5 +86,14 @@ pub struct RunReport {
     pub identity: IdentityInfo,
     pub findings: Vec<Finding>,
     pub plugins_run: Vec<String>,
+    pub coverage: Vec<PluginCoverage>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginCoverage {
+    pub id: String,
+    pub status: String,
+    pub findings: usize,
+    pub error: Option<String>,
 }

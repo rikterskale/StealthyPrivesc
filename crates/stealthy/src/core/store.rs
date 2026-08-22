@@ -50,6 +50,24 @@ impl EncryptedStore {
         self.seal_bytes(&plaintext)
     }
 
+    /// Decode and authenticate a sealed report using an operator-supplied key.
+    pub fn open_sealed_report(sealed: &str, key_hex: &str) -> Result<RunReport> {
+        let key = hex::decode(key_hex).context("decode hex key")?;
+        if key.len() != 32 {
+            return Err(anyhow!("report key must contain exactly 32 bytes"));
+        }
+        let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, sealed)
+            .context("decode sealed report")?;
+        if raw.len() < 12 {
+            return Err(anyhow!("sealed report is shorter than a nonce"));
+        }
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+        let plaintext = cipher
+            .decrypt(Nonce::from_slice(&raw[..12]), &raw[12..])
+            .map_err(|_| anyhow!("sealed report authentication failed"))?;
+        serde_json::from_slice(&plaintext).context("parse sealed report")
+    }
+
     pub fn seal_bytes(&self, plaintext: &[u8]) -> Result<String> {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.key));
         let mut nonce_bytes = [0u8; 12];
@@ -104,7 +122,9 @@ impl Drop for EncryptedStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{FindingKind, Severity};
+    use crate::core::types::{
+        FindingKind, IdentityInfo, OsInfo, PluginCoverage, RunReport, Severity,
+    };
 
     #[test]
     fn seal_roundtrip_shape() {
@@ -126,6 +146,45 @@ mod tests {
         *raw.last_mut().unwrap() ^= 1;
         let tampered = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, raw);
         assert!(store.open_bytes(&tampered).is_err());
+    }
+
+    #[test]
+    fn sealed_report_can_be_reopened_with_operator_key() {
+        let store = EncryptedStore::new();
+        let report = RunReport {
+            schema_version: "1".into(),
+            tool: "stealthy".into(),
+            version: "0.1.0".into(),
+            authorized_use_ack: true,
+            mode: "enumerate-only".into(),
+            os: OsInfo {
+                family: "unix".into(),
+                os: "linux".into(),
+                arch: "x86_64".into(),
+                version_hint: "test".into(),
+            },
+            identity: IdentityInfo {
+                username: "tester".into(),
+                uid: Some(1000),
+                gid: Some(1000),
+                groups: vec![],
+                is_elevated: false,
+                hostname: "host".into(),
+            },
+            findings: vec![],
+            plugins_run: vec![],
+            coverage: vec![PluginCoverage {
+                id: "test".into(),
+                status: "ok".into(),
+                findings: 0,
+                error: None,
+            }],
+            notes: vec![],
+        };
+        let sealed = store.seal_report(&report).unwrap();
+        let reopened = EncryptedStore::open_sealed_report(&sealed, &store.key_hex()).unwrap();
+        assert_eq!(reopened.schema_version, "1");
+        assert_eq!(reopened.coverage[0].status, "ok");
     }
 
     #[test]

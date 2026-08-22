@@ -80,6 +80,25 @@ pub enum Commands {
     /// First-run operator guide (safe; no host enumeration).
     Guide,
 
+    /// Check platform, plugin, permissions, and output prerequisites.
+    Doctor {
+        /// Emit a compact JSON diagnostic document.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Decode an encrypted report using its operator-held hex key.
+    Report {
+        /// Sealed report path.
+        input: std::path::PathBuf,
+        /// Hex key printed when the report was created with --verbose.
+        #[arg(long)]
+        key_hex: String,
+        /// Report format to print.
+        #[arg(long, value_enum, default_value_t = ReportFormat::Json)]
+        format: ReportFormat,
+    },
+
     /// List compiled-in plugin IDs for this build/OS.
     #[command(visible_alias = "plugins")]
     ListPlugins {
@@ -89,6 +108,7 @@ pub enum Commands {
     },
 
     /// Enumerate privilege-escalation opportunities (default).
+    #[command(visible_alias = "scan")]
     Enum {
         /// Opt-in: attempt only low-noise, reversible verification actions.
         /// Kernel exploits are never used.
@@ -123,6 +143,8 @@ pub enum ReportFormat {
     Json,
     /// Markdown report on stdout.
     Markdown,
+    /// SARIF 2.1.0 for GitHub code-scanning-compatible consumers.
+    Sarif,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -163,9 +185,11 @@ Examples:
   stealthy --authorized enum
   stealthy --authorized -q enum --plugins linux.sudo,linux.groups
   stealthy --authorized enum --min-severity high
-  stealthy --authorized --format json enum
+  stealthy --authorized --format json scan
+  stealthy --authorized --format sarif -q scan > findings.sarif
   stealthy --authorized --output file --output-path /tmp/f.seal enum
   stealthy --authorized enum --fail-on critical
+  stealthy doctor
 
 Docs: README.md  ·  docs/operator-runbook.md  ·  docs/techniques.md
 ";

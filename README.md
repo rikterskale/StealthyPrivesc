@@ -2,6 +2,8 @@
 
 Modular, cross-platform privilege-escalation **enumeration** framework for **authorized** red team engagements and internal security assessments.
 
+Documentation hub: [`docs/README.md`](docs/README.md).
+
 ## Legal / ethical disclaimer
 
 **Authorized use only.**
@@ -41,16 +43,34 @@ docs/                     Architecture, build, technique risk notes
 
 ## Quick start
 
+### Install a published release
+
+Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.ps1 | iex
+```
+
+Both installers verify the release SHA-256 checksum. For high-assurance
+environments, download and review the script before execution.
+
 ```bash
 # Build (Linux host)
 cargo build -p stealthy --release
 
 # First-run guide (no auth required)
+./target/release/stealthy doctor
 ./target/release/stealthy guide
 ./target/release/stealthy disclaimer
 
 # Enumerate (required authorization flag; --authorized is the short alias)
-./target/release/stealthy --authorized enum
+./target/release/stealthy --authorized scan
 
 # High-signal only + live progress
 ./target/release/stealthy --authorized enum --min-severity high
@@ -59,14 +79,19 @@ cargo build -p stealthy --release
 ./target/release/stealthy --authorized -q \
   enum --plugins linux.sudo,linux.containers,linux.suid,linux.groups
 
-# Markdown / JSON console formats
+# Markdown / JSON / SARIF console formats
 ./target/release/stealthy --authorized --format markdown enum > report.md
 ./target/release/stealthy --authorized --format json -q enum
+./target/release/stealthy --authorized --format sarif -q scan > findings.sarif
 
 # Encrypted file + sidecar Markdown
 ./target/release/stealthy --authorized \
   --output file --output-path /tmp/findings.seal --also-markdown \
   enum
+
+# Decode a sealed report with the separately handled key
+./target/release/stealthy report /tmp/findings.seal \
+  --key-hex "$STEALTHY_REPORT_KEY" --format json
 
 # Fail CI/automation if critical findings exist
 ./target/release/stealthy --authorized enum --fail-on critical; echo exit=$?
@@ -95,7 +120,7 @@ cscript //nologo scripts\windows\enum.js
 | `-q` / `--quiet` | Less console noise |
 | `-v` / `--verbose` | Per-finding progress detail |
 | `--no-color` | Disable ANSI colors (also honors `NO_COLOR`) |
-| `--format human\|json\|markdown` | Console report shape (default `human`) |
+| `--format human\|json\|markdown\|sarif` | Console report shape (default `human`) |
 | `--min-severity info\|low\|medium\|high\|critical` | Filter displayed findings |
 | `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
@@ -105,6 +130,8 @@ cscript //nologo scripts\windows\enum.js
 | `--also-markdown` | Also write `PATH.md` evidence report |
 | `--exfil-url URL` | Operator-configured HTTPS target for `--output remote` (v1 prints sealed body; no silent client) |
 | `guide` | First-run operator guide (no auth) |
+| `doctor` | Local readiness checks (no auth) |
+| `report PATH --key-hex KEY` | Decode a sealed report (no host access) |
 | `disclaimer` | Print legal text (no auth) |
 | `list-plugins` / `plugins` | Table of compiled plugin IDs |
 | `enum --auto-exploit` | Opt-in reversible probes only |
