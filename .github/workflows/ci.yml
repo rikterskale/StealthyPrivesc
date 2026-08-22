@@ -190,6 +190,9 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 
+      - name: Validate locked dependency graph
+        run: cargo metadata --locked --format-version 1 --no-deps > /dev/null
+
       - name: Format check
         run: cargo fmt --all -- --check
 
@@ -204,13 +207,15 @@ jobs:
 
       - name: CLI smoke
         run: |
+          set -euo pipefail
           bin=./target/release/stealthy
           "$bin" guide
           "$bin" disclaimer
           "$bin" --help
-          if "$bin" enum; then echo 'expected auth failure'; exit 1; fi
+          if "$bin" enum; then echo 'expected auth failure' >&2; exit 1; fi
           "$bin" --authorized list-plugins
-          "$bin" --authorized --no-color enum --plugins linux.kernel_cve --min-severity info | head -n 40
+          "$bin" --authorized --no-color enum --plugins linux.kernel_cve --min-severity info > /tmp/stealthy-human-report.txt
+          test -s /tmp/stealthy-human-report.txt
           "$bin" --authorized --format json -q enum --plugins linux.kernel_cve | python -c 'import json,sys; json.load(sys.stdin)'
 
   ux:
@@ -230,6 +235,9 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Validate locked dependency graph
+        run: cargo metadata --locked --format-version 1 --no-deps > /dev/null
 
       - name: Build release binary
         run: cargo build --locked -p stealthy --release
@@ -271,6 +279,12 @@ jobs:
 
           listing = run("--authorized", "list-plugins", "--tsv").stdout.strip().splitlines()
           assert listing and all(len(line.split("\t")) == 3 for line in listing)
+          plugin_ids = [line.split("\t", 1)[0] for line in listing]
+          assert len(plugin_ids) == len(set(plugin_ids))
+          assert all(plugin_id and " " not in plugin_id for plugin_id in plugin_ids)
+
+          version = run("--version").stdout.strip()
+          assert version.startswith("stealthy ") and version.split(" ", 1)[1]
 
           unknown = run(
               "--authorized", "--quiet", "enum", "--plugins", "not.a.real.plugin", expected=1
@@ -291,9 +305,20 @@ jobs:
                   json_reports.append(report)
                   parsed = json.loads(result.stdout)
                   assert parsed["schema_version"] == "1"
+                  assert isinstance(parsed["run_id"], str) and parsed["run_id"]
+                  assert isinstance(parsed["started_at_unix"], int)
+                  assert parsed["authorized_use_ack"] is True
+                  assert parsed["mode"] == "enumerate-only"
+                  assert isinstance(parsed["plugins_run"], list) and parsed["plugins_run"]
                   assert parsed["identity"]["elevation_source"]
                   assert len(parsed["assessments"]) == len(parsed["findings"])
-                  assert all(isinstance(item["duration_ms"], int) for item in parsed["coverage"])
+                  assert all(isinstance(item["duration_ms"], int) and item["duration_ms"] >= 0
+                             for item in parsed["coverage"])
+                  assert all(
+                      {"plugin", "kind", "severity", "title", "detail", "recommendation",
+                       "noisy", "leaves_artifacts"} <= set(item)
+                      for item in parsed["findings"]
+                  )
 
               diff = json.loads(run("diff", *(str(path) for path in json_reports)).stdout)
               assert not diff["added"] and not diff["removed"] and not diff["changed"]
@@ -320,11 +345,77 @@ jobs:
               assert sealed.is_file() and sealed.stat().st_size > 0
               if os.name == "posix":
                   assert stat.S_IMODE(sealed.stat().st_mode) == 0o600
+              bad_key = run(
+                  "report", str(sealed), "--key-hex", "00" * 32, expected=1
+              )
+              assert "authentication" in bad_key.stderr.lower()
+
+              sealed_verbose = root / "verbose.seal"
+              verbose = run(
+                  "--authorized", "--verbose", "--output", "file",
+                  "--output-path", str(sealed_verbose),
+                  "enum", "--plugins", "linux.kernel_cve"
+              )
+              key_lines = [
+                  line for line in verbose.stderr.splitlines()
+                  if "decrypt key (hex):" in line
+              ]
+              assert len(key_lines) == 1
+              key = key_lines[0].split("decrypt key (hex):", 1)[1].strip()
+              reopened = json.loads(run(
+                  "report", str(sealed_verbose), "--key-hex", key,
+                  "--format", "json"
+              ).stdout)
+              assert reopened["schema_version"] == "1"
+              assert reopened["findings"]
+              reopened_sarif = json.loads(run(
+                  "report", str(sealed_verbose), "--key-hex", key,
+                  "--format", "sarif"
+              ).stdout)
+              assert reopened_sarif["version"] == "2.1.0"
+
+              sidecar_seal = root / "sidecar.seal"
+              run(
+                  "--authorized", "--quiet", "--output", "file",
+                  "--output-path", str(sidecar_seal), "--also-markdown",
+                  "enum", "--plugins", "linux.kernel_cve"
+              )
+              sidecar = Path(str(sidecar_seal) + ".md")
+              assert sidecar.is_file()
+              assert sidecar.read_text(encoding="utf-8").startswith("# StealthyPrivesc report")
+
+              plaintext = root / "findings.json"
+              run(
+                  "--authorized", "--quiet", "--output", "file",
+                  "--plaintext-file", "--output-path", str(plaintext),
+                  "enum", "--plugins", "linux.kernel_cve"
+              )
+              assert json.loads(plaintext.read_text(encoding="utf-8"))["schema_version"] == "1"
+              if os.name == "posix":
+                  assert stat.S_IMODE(plaintext.stat().st_mode) == 0o600
+
+              before = sorted(root.iterdir())
+              run("--authorized", "--quiet", "enum", "--plugins", "linux.kernel_cve")
+              assert sorted(root.iterdir()) == before
 
           missing_path = run("--authorized", "--quiet", "--output", "file", expected=1)
           assert "output=file requires --output-path" in missing_path.stderr
           remote_url = run("--authorized", "--quiet", "--output", "remote", expected=1)
           assert "requires --exfil-url" in remote_url.stderr
+          plaintext_without_file = run(
+              "--authorized", "--quiet", "--plaintext-file", "enum",
+              "--plugins", "linux.kernel_cve", expected=1
+          )
+          assert "output=file" in plaintext_without_file.stderr
+          markdown_without_file = run(
+              "--authorized", "--quiet", "--also-markdown", "enum",
+              "--plugins", "linux.kernel_cve", expected=1
+          )
+          assert "output=file" in markdown_without_file.stderr
+          missing_report = run(
+              "report", "does-not-exist.seal", "--key-hex", "00", expected=1
+          )
+          assert missing_report.stderr.strip()
           assert run(
               "--authorized", "--quiet", "--fail-on", "info", "enum",
               "--plugins", "linux.kernel_cve", expected=4
@@ -354,13 +445,24 @@ jobs:
         run: cargo install --locked cargo-llvm-cov --version 0.6.16
 
       - name: Generate LCOV coverage report
-        run: cargo llvm-cov --locked --workspace --all-targets --lcov --output-path lcov.info
+        run: |
+          cargo llvm-cov --locked --workspace --all-targets --summary-only | tee coverage-summary.txt
+          cargo llvm-cov --locked --workspace --all-targets --lcov --output-path lcov.info
+          {
+            echo '## Rust coverage summary'
+            echo
+            echo '```text'
+            cat coverage-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish coverage artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: rust-lcov-${{ github.sha }}
-          path: lcov.info
+          path: |
+            lcov.info
+            coverage-summary.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -379,6 +481,12 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Validate locked dependency graph
+        run: cargo metadata --locked --format-version 1 --no-deps > $null
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -418,13 +526,17 @@ jobs:
         shell: bash
         run: |
           find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          bash -n scripts/install.sh
           python3 -m py_compile scripts/linux/enum.py
 
       - name: Check PowerShell agent syntax
         if: matrix.shell == 'windows'
         shell: pwsh
         run: |
-          $scripts = @(Get-ChildItem -Path scripts\windows -Filter *.ps1 -Recurse -ErrorAction SilentlyContinue)
+          $scripts = @(
+            Get-ChildItem -Path scripts\windows -Filter *.ps1 -Recurse -ErrorAction SilentlyContinue
+            Get-Item scripts\install.ps1
+          )
           foreach ($script in $scripts) {
             $tokens = $null
             $errors = $null

@@ -60,6 +60,12 @@ pub fn emit(
 
     match opts.mode {
         OutputMode::Memory => {
+            if opts.plaintext_file {
+                anyhow::bail!("--plaintext-file requires --output=file");
+            }
+            if opts.also_markdown {
+                anyhow::bail!("--also-markdown requires --output=file");
+            }
             if !opts.quiet && matches!(opts.format, ReportFormat::Human) {
                 eprintln!(
                     "\n{} {} finding(s) in memory ({} shown) · seal key prefix {}",
