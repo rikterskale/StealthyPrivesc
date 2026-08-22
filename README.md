@@ -35,11 +35,11 @@ The authors and distributors assume **no liability** for misuse.
 ```text
 crates/stealthy/          Rust core (static-friendly release profile)
   src/core/               OS detect, identity, plugin runner, encrypted store, evasion helpers
-  src/plugins/linux/      Linux checks (14): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards
-  src/plugins/windows/    Windows checks (10): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns
+  src/plugins/linux/      Linux checks (15): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls
+  src/plugins/windows/    Windows checks (11): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls
   src/exploit/            Reversible probes + `--allow-techniques` scaffolding
-scripts/linux/            Bash + Python fallbacks (no custom binary)
-scripts/windows/          PowerShell + JScript + MSBuild host stubs
+scripts/linux/            Bash + Python fallbacks (no custom binary; includes control checks)
+scripts/windows/          PowerShell + JScript + MSBuild host stubs (includes control checks)
 docs/                     Architecture, build, technique risk notes
 ```
 

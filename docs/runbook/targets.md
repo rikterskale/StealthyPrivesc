@@ -44,8 +44,10 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
    ```
 
 5. If SmartScreen, AppLocker, WDAC, or another policy blocks the executable,
-   record the exact control and prefer the approved script-only path. Use
-   `--allow-techniques endpoint-bypass` only when ROE explicitly permits it.
+   record the exact control (or run `windows.endpoint_controls` / script
+   fallback inventory) and prefer the approved script-only path. Use
+   `--allow-techniques endpoint-bypass` only when ROE explicitly permits
+   scaffold tracking — this tool does not disable those controls.
 
 ## Follow-up choices
 

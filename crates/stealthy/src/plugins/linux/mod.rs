@@ -1,5 +1,6 @@
 mod containers;
 mod credentials;
+mod endpoint_controls;
 mod groups;
 mod kernel_cve;
 mod mounts;
@@ -32,5 +33,6 @@ pub fn plugins() -> Vec<&'static dyn Plugin> {
         &credentials::CredentialsPlugin,
         &services::ServicesPlugin,
         &wildcard_cron::WildcardCronPlugin,
+        &endpoint_controls::EndpointControlsPlugin,
     ]
 }

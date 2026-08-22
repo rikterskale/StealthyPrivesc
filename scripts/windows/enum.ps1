@@ -119,6 +119,50 @@ Write-Host "[*] SeImpersonate highlight"
 if ((whoami /priv) -match 'SeImpersonatePrivilege') {
   Write-Host "FINDING: SeImpersonatePrivilege present — Potato-family may apply (manual only)"
 }
-
 Write-Host ""
+
+Write-Host "[*] endpoint controls (AppLocker / WDAC / SmartScreen / AMSI / Defender)"
+function Test-RegKey([string]$Path) {
+  try { return (Test-Path -LiteralPath $Path) } catch { return $false }
+}
+$srp = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\SrpV2'
+$collections = @('Exe','Script','Msi','Dll','Appx') | Where-Object { Test-RegKey (Join-Path $srp $_) }
+if ($collections.Count -gt 0) {
+  Write-Host ("FINDING: AppLocker SrpV2 collections present: " + ($collections -join ','))
+} else {
+  Write-Host 'AppLocker SrpV2 collections not found'
+}
+$ciPolicy = Test-RegKey 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy'
+$vbs = $null
+try {
+  $vbs = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -ErrorAction Stop).EnableVirtualizationBasedSecurity
+} catch {}
+Write-Host ("WDAC/CI PolicyKey={0} VBS={1}" -f $ciPolicy, $vbs)
+if ($ciPolicy -or $vbs -eq 1) {
+  Write-Host 'FINDING: WDAC / Code Integrity signals present'
+}
+try {
+  $ss = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' -ErrorAction Stop).SmartScreenEnabled
+  Write-Host "SmartScreenEnabled=$ss"
+} catch {
+  Write-Host 'SmartScreenEnabled unreadable'
+}
+$amsi = 'HKLM:\SOFTWARE\Microsoft\AMSI\Providers'
+if (Test-RegKey $amsi) {
+  $providers = @(Get-ChildItem -LiteralPath $amsi -ErrorAction SilentlyContinue)
+  Write-Host ("AMSI providers={0}" -f $providers.Count)
+  if ($providers.Count -gt 0) {
+    Write-Host 'FINDING: AMSI providers registered (script content may be inspected)'
+  }
+} else {
+  Write-Host 'AMSI providers key absent/unreadable'
+}
+try {
+  $das = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -ErrorAction SilentlyContinue).DisableAntiSpyware
+  Write-Host "Defender DisableAntiSpyware=$das"
+} catch {}
+Write-Host 'NOTE: if custom .exe is blocked, prefer enum.ps1 / enum.js / EnumTasks.csproj (approved fallbacks).'
+Write-Host 'NOTE: this script does not disable AppLocker, WDAC, SmartScreen, AMSI, or AV/EDR.'
+Write-Host ""
+
 Write-Host "Done. Enumeration only — no auto-exploit."

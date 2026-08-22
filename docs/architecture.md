@@ -27,7 +27,7 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 | `core::evasion` | Low-and-slow delays and operator notes |
 | `core::output` | memory / file / remote emission |
 | `core::engine` | Orchestration |
-| `exploit` | Policy gate for reversible probes only |
+| `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
 
 ## Plugin contract
 
@@ -38,11 +38,18 @@ Each plugin implements:
 
 Plugins should prefer direct filesystem/registry reads. When a noisy helper is required, findings must set `noisy: true`.
 
+Endpoint-control plugins (`linux.endpoint_controls`, `windows.endpoint_controls`)
+enumerate host policy that can block custom binaries. They recommend approved
+script fallbacks and may emit `endpoint-bypass` scaffold findings when that
+family is opted in. They do not disable AppLocker, WDAC, SmartScreen, AMSI,
+AppArmor, antivirus, or EDR.
+
 ## Script fallbacks
 
-Under AppLocker/WDAC or missing binary execution:
+Under AppLocker/WDAC/SmartScreen/`noexec`/AppArmor or missing binary execution:
 
-- Linux: `scripts/linux/enum.sh`, `scripts/linux/enum.py`
-- Windows: `scripts/windows/enum.ps1`, `enum.js`, MSBuild host stub
+- Linux: `scripts/linux/enum.sh`, `scripts/linux/enum.py` (include endpoint-control checks)
+- Windows: `scripts/windows/enum.ps1`, `enum.js`, MSBuild `EnumTasks.csproj` host stub
 
-These mirror the highest-value checks without shipping a custom `.exe`.
+These mirror the highest-value checks — including endpoint-control inventory —
+without shipping a custom `.exe` and without attempting to turn controls off.

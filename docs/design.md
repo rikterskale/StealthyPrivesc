@@ -81,7 +81,7 @@ The runtime flow is:
 | `core::diff` | Offline comparison of plaintext JSON reports |
 | `core::evasion` | Low-and-slow pacing and operator-facing notes |
 | `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
-| `plugins::linux/windows` | Platform-specific enumeration checks |
+| `plugins::linux/windows` | Platform-specific enumeration checks, including endpoint-control inventory |
 
 The command surface is deliberately small:
 

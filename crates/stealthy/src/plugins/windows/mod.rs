@@ -4,6 +4,7 @@ mod always_install_elevated;
 mod autoruns;
 mod credentials;
 mod dll_hijack;
+mod endpoint_controls;
 mod env_path;
 mod privileges;
 mod scheduled_tasks;
@@ -42,6 +43,7 @@ pub fn plugins() -> Vec<&'static dyn Plugin> {
         &admin_sessions::AdminSessionsPlugin,
         &env_path::EnvPathPlugin,
         &autoruns::AutorunsPlugin,
+        &endpoint_controls::EndpointControlsPlugin,
     ]
 }
 

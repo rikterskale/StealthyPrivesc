@@ -173,6 +173,67 @@ def mounts() -> None:
     print()
 
 
+def endpoint_controls() -> None:
+    print("[*] endpoint controls (AppArmor / SELinux / noexec)")
+    if Path("/sys/module/apparmor").is_dir() or Path(
+        "/sys/kernel/security/apparmor"
+    ).is_dir():
+        profile = "unreadable"
+        for p in (
+            Path("/proc/self/attr/current"),
+            Path("/proc/self/attr/apparmor/current"),
+        ):
+            try:
+                profile = p.read_text().strip()
+                break
+            except OSError:
+                continue
+        print(f"AppArmor current={profile}")
+        if "(enforce)" in profile:
+            print("FINDING: AppArmor enforce profile active for this process")
+    else:
+        print("AppArmor module not evident")
+
+    enforce = Path("/sys/fs/selinux/enforce")
+    if enforce.is_file():
+        try:
+            print(f"SELinux enforce={enforce.read_text().strip()}")
+        except OSError:
+            pass
+
+    watch = ["/tmp", "/var/tmp", "/dev/shm"]
+    home = os.environ.get("HOME")
+    if home:
+        watch.append(home)
+    try:
+        lines = Path("/proc/self/mountinfo").read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        mountpoint = parts[4]
+        tokens = {
+            t for chunk in line.lower().replace(",", " ").split() for t in [chunk]
+        }
+        if "noexec" not in tokens:
+            continue
+        if any(mountpoint == p or mountpoint.startswith(p + "/") for p in watch):
+            print(f"FINDING: noexec mount on drop path {mountpoint}")
+
+    yama = Path("/proc/sys/kernel/yama/ptrace_scope")
+    if yama.is_file():
+        try:
+            print(f"yama.ptrace_scope={yama.read_text().strip()}")
+        except OSError:
+            pass
+    print(
+        "NOTE: if custom ELF is blocked, prefer this script or enum.sh (approved fallback)."
+    )
+    print()
+
+
 def credentials() -> None:
     print("[*] credentials")
     for p in (
@@ -193,7 +254,7 @@ def kernel() -> None:
         print(Path("/proc/version").read_text().splitlines()[0])
     except OSError:
         pass
-    print("NOTE: kernel exploits are never attempted by this fallback.")
+    print("NOTE: kernel LPE is not executed by this fallback.")
     print()
 
 
@@ -206,6 +267,7 @@ def main() -> int:
     containers()
     polkit()
     mounts()
+    endpoint_controls()
     ssh_keys()
     credentials()
     kernel()

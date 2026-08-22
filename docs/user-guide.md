@@ -278,7 +278,7 @@ Before closing the host, confirm:
 | No plugins matched | Run `--authorized list-plugins`; use exact OS-specific IDs. |
 | Output path error | Add `--output-path` with `--output file`; verify the parent directory is approved and writable. |
 | Sealed report will not open | Use the exact key from that run; if it was never captured, the file is unrecoverable. |
-| Binary blocked | Record the control and use an approved script fallback, or `--allow-techniques endpoint-bypass` only when ROE permits. |
+| Binary blocked | Record via `*.endpoint_controls` / script fallbacks; use `enum.sh`/`enum.py` or `enum.ps1`/`enum.js`. `--allow-techniques endpoint-bypass` is scaffold-only. |
 | Plugin error | Preserve the error/coverage record and rerun only the affected plugin if approved. |
 
 For transport, cross-compilation, and script-only deployment, continue with the

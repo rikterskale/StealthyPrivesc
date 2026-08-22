@@ -81,6 +81,35 @@ fi
 head -n 5 /proc/self/mountinfo 2>/dev/null || true
 echo
 
+echo "[*] endpoint controls (AppArmor / SELinux / noexec)"
+if [ -d /sys/module/apparmor ] || [ -d /sys/kernel/security/apparmor ]; then
+  cur=$(cat /proc/self/attr/current 2>/dev/null || cat /proc/self/attr/apparmor/current 2>/dev/null || echo unreadable)
+  echo "AppArmor current=${cur}"
+  case "$cur" in
+    *'(enforce)'*) echo "FINDING: AppArmor enforce profile active for this process" ;;
+  esac
+else
+  echo "AppArmor module not evident"
+fi
+if [ -r /sys/fs/selinux/enforce ]; then
+  echo "SELinux enforce=$(cat /sys/fs/selinux/enforce 2>/dev/null)"
+fi
+if [ -r /proc/self/mountinfo ]; then
+  for mp in /tmp /var/tmp /dev/shm "${HOME:-/nonexistent}"; do
+    [ -n "$mp" ] || continue
+    line=$(awk -v mp="$mp" '$5==mp {print; exit}' /proc/self/mountinfo 2>/dev/null || true)
+    [ -n "$line" ] || continue
+    case ",$line," in
+      *,noexec,*) echo "FINDING: noexec mount on drop path $mp" ;;
+    esac
+  done
+fi
+if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
+  echo "yama.ptrace_scope=$(cat /proc/sys/kernel/yama/ptrace_scope)"
+fi
+echo "NOTE: if custom ELF is blocked, prefer this script or enum.py (approved fallback)."
+echo
+
 echo "[*] ssh keys (modes only)"
 for d in "${HOME:-/nonexistent}/.ssh" /root/.ssh; do
   [ -d "$d" ] || continue

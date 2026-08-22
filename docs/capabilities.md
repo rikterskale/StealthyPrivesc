@@ -23,23 +23,24 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Authorization gate | Done |
 | OS + identity enumeration | Done |
 | Encrypted in-memory store | Done |
-| Linux plugins (14) | Done |
-| Windows plugins (10) | Done |
-| Script fallbacks | Done (extended for new checks) |
+| Linux plugins (15) | Done |
+| Windows plugins (11) | Done |
+| Endpoint-control detection | Done (`linux.endpoint_controls`, `windows.endpoint_controls`) |
+| Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
-| `--allow-techniques` scaffolding | Done (flags + findings; payloads deferred) |
+| `--allow-techniques` scaffolding | Done (flags + findings; no disable/evasion payloads) |
 | Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
 
 ### Linux plugin IDs
 
-`linux.sudo`, `linux.suid`, `linux.systemd_cron`, `linux.containers`, `linux.groups`, `linux.polkit`, `linux.mounts`, `linux.ssh_keys`, `linux.path_ld`, `linux.kernel_cve`, `linux.nfs`, `linux.credentials`, `linux.services`, `linux.wildcard_cron`
+`linux.sudo`, `linux.suid`, `linux.systemd_cron`, `linux.containers`, `linux.groups`, `linux.polkit`, `linux.mounts`, `linux.ssh_keys`, `linux.path_ld`, `linux.kernel_cve`, `linux.nfs`, `linux.credentials`, `linux.services`, `linux.wildcard_cron`, `linux.endpoint_controls`
 
 Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/containerd/LXD).
 
 ### Windows plugin IDs
 
-`windows.privileges`, `windows.services`, `windows.scheduled_tasks`, `windows.always_install_elevated`, `windows.uac`, `windows.dll_hijack`, `windows.credentials`, `windows.admin_sessions`, `windows.env_path`, `windows.autoruns`
+`windows.privileges`, `windows.services`, `windows.scheduled_tasks`, `windows.always_install_elevated`, `windows.uac`, `windows.dll_hijack`, `windows.credentials`, `windows.admin_sessions`, `windows.env_path`, `windows.autoruns`, `windows.endpoint_controls`
 
 ## Implemented command surface
 

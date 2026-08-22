@@ -648,12 +648,19 @@ done
 
 ### 2.12 Script-only deploy (no custom ELF)
 
-When AppArmor/`noexec`/policy blocks the binary:
+When AppArmor/`noexec`/policy blocks the binary. The script fallbacks now also
+print AppArmor/SELinux/`noexec` inventory. They do not disable those controls.
 
 ```bash
 scp scripts/linux/enum.sh scripts/linux/enum.py "$TARGET:$REMOTE_DIR/"
 ssh "$TARGET" "chmod 750 $REMOTE_DIR/enum.sh $REMOTE_DIR/enum.py; bash $REMOTE_DIR/enum.sh"
 ssh "$TARGET" "python3 $REMOTE_DIR/enum.py"
+```
+
+When the PE/ELF *can* run, still collect control inventory:
+
+```bash
+STEALTHY_AUTHORIZED=1 "$BIN" enum --plugins linux.endpoint_controls
 ```
 
 No disk scripts (stdin only):
@@ -1325,7 +1332,8 @@ copy /Y W:\engagement\stealthy.exe C:\Users\Public\Documents\cache-update\stealt
 
 ### 4.10 Script-only deploy (custom `.exe` blocked)
 
-Drop scripts without the PE:
+Drop scripts without the PE. `enum.ps1` / `enum.js` inventory AppLocker, WDAC/CI,
+SmartScreen, and AMSI signals. They do not disable those controls.
 
 ```powershell
 $Dir = 'C:\Users\Public\Documents\cache-update'
@@ -1333,6 +1341,12 @@ New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 # After copying enum.ps1 / enum.js / EnumTasks.csproj into $Dir:
 powershell -NoProfile -ExecutionPolicy Bypass -File "$Dir\enum.ps1"
 cscript //nologo "$Dir\enum.js"
+```
+
+When the PE *can* run, still collect control inventory:
+
+```powershell
+& $Bin --authorized enum --plugins windows.endpoint_controls
 ```
 
 From operator host over SSH:
@@ -1526,8 +1540,9 @@ Before cleanup, confirm:
 - The report identifies the expected computer, account, architecture, and
   token/elevation context.
 - The expected Windows plugins ran and material coverage errors are explained.
-- SmartScreen, AppLocker, WDAC, AMSI, or EDR blocks are recorded as
-  environmental limitations; do not bypass them outside the ROE.
+- SmartScreen, AppLocker, WDAC, AMSI, or EDR signals are recorded via
+  `windows.endpoint_controls` or script fallbacks; use approved script paths
+  when the PE is blocked. `--allow-techniques endpoint-bypass` is scaffold-only.
 - Any service, task, registry, or file write is attributable to an approved
   action and has a recorded rollback or cleanup result.
 - The sealed-file hash, report run ID, and key custody are recorded off-host.
@@ -1770,6 +1785,7 @@ name or directory. Resolve the exact artifact against the run log first.
 | `linux.credentials` | shadow / backup / home creds |
 | `linux.services` | Writable service configs |
 | `linux.wildcard_cron` | Wildcard injection hints |
+| `linux.endpoint_controls` | AppArmor / SELinux / noexec / audit-Yama signals |
 
 ### Windows (`list-plugins` on a Windows build)
 
@@ -1785,8 +1801,12 @@ name or directory. Resolve the exact artifact against the run log first.
 | `windows.admin_sessions` | Admins (NetAPI) / session hints |
 | `windows.env_path` | PATH hijack candidates |
 | `windows.autoruns` | Run keys / Startup folders |
+| `windows.endpoint_controls` | AppLocker / WDAC / SmartScreen / AMSI / AV-EDR signals |
 
 Remember: Linux builds do not contain Windows plugins and vice versa.
+Endpoint-control plugins detect constraints and recommend approved script
+fallbacks; they do not disable AppLocker, WDAC, SmartScreen, AMSI, AppArmor,
+or AV/EDR.
 
 ---
 

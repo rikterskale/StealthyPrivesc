@@ -192,6 +192,25 @@ fn unknown_allow_techniques_ids_fail() {
 }
 
 #[test]
+fn endpoint_controls_plugin_is_registered() {
+    let output = stealthy()
+        .args(["--authorized", "list-plugins", "--tsv"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let expected = if cfg!(target_os = "windows") {
+        "windows.endpoint_controls"
+    } else {
+        "linux.endpoint_controls"
+    };
+    assert!(
+        stdout.lines().any(|line| line.starts_with(expected)),
+        "missing {expected} in:\n{stdout}"
+    );
+}
+
+#[test]
 fn allow_techniques_records_scaffold_findings() {
     let output = stealthy()
         .args([

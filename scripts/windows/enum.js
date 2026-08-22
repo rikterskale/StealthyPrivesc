@@ -43,6 +43,62 @@ for (var i = 0; i < paths.length; i++) {
     WScript.Echo("FINDING: present " + paths[i]);
   }
 }
+WScript.Echo("");
+
+WScript.Echo("[*] endpoint controls (AppLocker / WDAC / SmartScreen / AMSI)");
+var applocker = [];
+var names = ["Exe", "Script", "Msi", "Dll", "Appx"];
+for (var n = 0; n < names.length; n++) {
+  try {
+    wsh.RegRead(
+      "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\SrpV2\\" +
+        names[n] +
+        "\\EnforcementMode"
+    );
+    applocker.push(names[n]);
+  } catch (e) {}
+}
+if (applocker.length > 0) {
+  WScript.Echo(
+    "FINDING: AppLocker SrpV2 EnforcementMode readable for: " + applocker.join(",")
+  );
+} else {
+  WScript.Echo(
+    "AppLocker EnforcementMode values not readable (policy may still exist)"
+  );
+}
+try {
+  var vbs = wsh.RegRead(
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\EnableVirtualizationBasedSecurity"
+  );
+  WScript.Echo("DeviceGuard VBS=" + vbs);
+  if (vbs === 1) {
+    WScript.Echo("FINDING: VBS enabled (WDAC/CI stack may be active)");
+  }
+} catch (e) {
+  WScript.Echo("DeviceGuard VBS unreadable");
+}
+try {
+  var ss = wsh.RegRead(
+    "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SmartScreenEnabled"
+  );
+  WScript.Echo("SmartScreenEnabled=" + ss);
+} catch (e) {
+  WScript.Echo("SmartScreenEnabled unreadable");
+}
+try {
+  // Presence probe: reading the key default often fails; try a nested path pattern via Providers.
+  wsh.RegRead("HKLM\\SOFTWARE\\Microsoft\\AMSI\\FeatureBits");
+  WScript.Echo("AMSI FeatureBits present");
+} catch (e) {
+  WScript.Echo("AMSI FeatureBits unreadable (providers may still be registered)");
+}
+WScript.Echo(
+  "NOTE: if custom .exe is blocked, prefer enum.ps1 / enum.js / EnumTasks.csproj."
+);
+WScript.Echo(
+  "NOTE: this script does not disable AppLocker, WDAC, SmartScreen, AMSI, or AV/EDR."
+);
 
 WScript.Echo("");
 WScript.Echo("Done. Enumeration only.");

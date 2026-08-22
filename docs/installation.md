@@ -337,12 +337,41 @@ usable. Fix the reported condition and rerun:
 & $Stealthy doctor --json
 ```
 
-If the executable is blocked by SmartScreen, AppLocker, WDAC, antivirus, or a
-similar control, record the exact message, policy, and timestamp. Prefer the
-documented script-only fallback and record the reduced coverage. Endpoint-control
-bypass / unsigned-loader work is available only via
-`--allow-techniques endpoint-bypass` when ROE explicitly permits it (scaffolded
-in this revision).
+If the executable is blocked by SmartScreen, AppLocker, WDAC, antivirus, AppArmor,
+`noexec`, or a similar control, record the exact message, policy, and timestamp.
+Prefer the documented script-only fallback and record the reduced coverage.
+
+This product **detects** those controls (`linux.endpoint_controls` /
+`windows.endpoint_controls` and the script fallbacks). It does **not** disable
+or evade them. `--allow-techniques endpoint-bypass` only records scaffold
+findings when ROE explicitly permits alternate-path tracking.
+
+### Approved paths when a custom binary cannot run
+
+**Linux** (ELF blocked, `noexec` drop path, AppArmor/SELinux constraint):
+
+```bash
+bash scripts/linux/enum.sh | tee enum-shell.txt
+python3 scripts/linux/enum.py | tee enum-python.txt
+```
+
+**Windows** (PE blocked by AppLocker/WDAC/SmartScreen; prefer allowlisted hosts):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1
+cscript //nologo scripts\windows\enum.js
+msbuild scripts\windows\EnumTasks.csproj
+```
+
+After a successful PE run on Windows/Linux, still collect control inventory:
+
+```bash
+"$STEALTHY" --authorized enum --plugins linux.endpoint_controls
+```
+
+```powershell
+& $Stealthy --authorized enum --plugins windows.endpoint_controls
+```
 
 ## Common installation problems
 
@@ -353,7 +382,8 @@ in this revision).
 | SHA-256 mismatch | Stop. Do not run the artifact; preserve the error and obtain a trusted artifact. |
 | `doctor` reports unsupported OS | Stop and use an approved matching build or script fallback; do not bypass the platform check. |
 | `doctor` reports no plugins | Confirm that the binary matches the target OS and architecture, then use `list-plugins` only after authorization. |
-| Windows executable is blocked | Record the SmartScreen/AppLocker/WDAC result and use an approved script-only path if the ROE permits it. |
+| Windows executable is blocked | Record SmartScreen/AppLocker/WDAC; run `enum.ps1` / `enum.js` / `EnumTasks.csproj` if ROE permits. |
+| Linux ELF fails with `Permission denied` on `noexec` | Record the mount; run `enum.sh` / `enum.py` from an executable path. |
 | Build fails with a locked dependency error | Run from the reviewed repository with the existing `Cargo.lock`; do not silently update dependencies during an engagement build. |
 
 ### Quick recovery ladder
@@ -365,8 +395,9 @@ If you need the shortest possible recovery path:
 3. Check the file type, architecture, and SHA-256 hash.
 4. Fix `PATH`, permissions, or build tools based on the stage table above.
 5. Re-run the local verification checks before using `--authorized`.
-6. If still blocked, preserve the diagnostics and switch to the approved
-   script fallback or escalate to the engagement owner.
+6. If still blocked, preserve the diagnostics, switch to the approved
+   script fallback, and optionally record `--allow-techniques endpoint-bypass`
+   scaffold intent when ROE permits.
 
 Never treat a successful download, a zero-byte report, or a process that exits
 without a visible error as proof that installation is complete. The final
