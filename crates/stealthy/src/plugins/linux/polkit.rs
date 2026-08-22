@@ -43,7 +43,7 @@ impl Plugin for PolkitPlugin {
                     },
                     title: format!("pkexec present: {cand}"),
                     detail: format!("mode={:o} suid={suid}", meta.mode()),
-                    recommendation: "Review polkit rules; historical pkexec CVEs are kernel/tooling dependent — never auto-exploit."
+                    recommendation: "Review polkit rules; historical pkexec CVEs are kernel/tooling dependent — use --allow-techniques kernel-exploit when ROE permits."
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,

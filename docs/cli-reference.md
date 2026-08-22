@@ -69,13 +69,18 @@ TSV output contains `id`, `name`, and `description` columns.
 stealthy --authorized enum
 stealthy --authorized scan
 stealthy --authorized enum --auto-exploit
+stealthy --authorized enum --allow-techniques kernel-exploit,potato
 stealthy --authorized enum --plugins ID1,ID2
 stealthy --authorized enum --skip ID1,ID2
 ```
 
 `scan` is a visible alias for `enum`. Options:
 
-- `--auto-exploit`: enables only explicitly supported reversible probes.
+- `--auto-exploit`: enables supported reversible probes.
+- `--allow-techniques`: comma-separated high-impact families when ROE permits.
+  Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,
+  `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`.
+  This revision accepts the flag and records scaffold findings; payloads land later.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 

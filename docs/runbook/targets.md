@@ -44,7 +44,8 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
    ```
 
 5. If SmartScreen, AppLocker, WDAC, or another policy blocks the executable,
-   record the exact control and use the approved script-only path.
+   record the exact control and prefer the approved script-only path. Use
+   `--allow-techniques endpoint-bypass` only when ROE explicitly permits it.
 
 ## Follow-up choices
 
@@ -53,6 +54,7 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
 - `--skip ID1,ID2` only when the reduced coverage is recorded.
 - `--delay-ms 250` for pacing; it is not a telemetry or permission boundary.
 - `--auto-exploit` only after separate ROE approval for reversible probes.
+- `--allow-techniques ...` only after ROE approval for high-impact families.
 
 Never treat an empty finding list or exit code `0` as proof of a clean host
 until coverage, identity, platform, and filters have been reviewed.

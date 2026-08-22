@@ -60,7 +60,7 @@ impl Plugin for ServicesPlugin {
                                             "Confirmed writable unquoted parent ({name}): {parent}"
                                         ),
                                         detail: "Reversible marker write/delete succeeded.".into(),
-                                        recommendation: "Do not plant service binaries without approval."
+                                        recommendation: "Planting/replacing service binaries requires ROE approval (--allow-techniques service-replace)."
                                             .into(),
                                         noisy: true,
                                         leaves_artifacts: false,
@@ -82,10 +82,15 @@ impl Plugin for ServicesPlugin {
                         severity: Severity::Critical,
                         title: format!("Writable service binary: {name}"),
                         detail: format!("account={account} binary={bin}"),
-                        recommendation: "Replacing a service binary is high-impact and noisy — obtain approval before any write.".into(),
+                        recommendation: "Replacing a service binary is high-impact and noisy — opt in with --allow-techniques service-replace when ROE permits.".into(),
                         noisy: false,
                         leaves_artifacts: true,
                     });
+                    let tech = crate::exploit::TechniqueFamily::ServiceReplace;
+                    let allowed = ctx.allow_techniques.allows(tech);
+                    if allowed || ctx.auto_exploit {
+                        findings.push(crate::exploit::technique_status(self.id(), tech, allowed));
+                    }
                 }
             }
         }

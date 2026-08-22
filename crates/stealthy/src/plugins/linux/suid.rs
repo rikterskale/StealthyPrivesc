@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
-use crate::exploit;
 
 pub struct SuidPlugin;
 
@@ -119,16 +118,17 @@ impl Plugin for SuidPlugin {
         }
 
         if ctx.auto_exploit {
-            findings.push(exploit::kernel_exploit_blocked());
             findings.push(Finding {
                 plugin: "linux.suid".into(),
                 kind: FindingKind::Recommendation,
                 severity: Severity::Info,
-                title: "Auto-exploit will not abuse SUID binaries".into(),
+                title: "SUID abuse not covered by reversible auto-exploit".into(),
                 detail:
                     "SUID abuse is high-signal and often irreversible from a telemetry perspective."
                         .into(),
-                recommendation: "Exploit manually only with ROE approval.".into(),
+                recommendation:
+                    "Exploit manually with ROE approval, or track related high-impact flags under --allow-techniques."
+                        .into(),
                 noisy: false,
                 leaves_artifacts: false,
             });

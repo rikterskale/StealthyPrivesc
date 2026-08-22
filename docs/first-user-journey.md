@@ -19,8 +19,8 @@ The first-user path must be:
 - Clear about expected output, exit codes, and recovery
 - Consistent on Linux and Windows
 
-The path does not enable `--auto-exploit`, run kernel exploits, create
-persistence, or silently send findings over the network.
+The path does not enable `--auto-exploit`, `--allow-techniques`, or silently
+send findings over the network.
 
 ## Entry points
 
@@ -271,12 +271,12 @@ plugin reports an error, and `--fail-on` evaluates findings after any
 | Authorization error | Confirm the ROE, then rerun with `--authorized`; exit `2` is expected without it. |
 | First scan appears blank | Remove `--quiet` for human output; use `--quiet --format json` only for machine output. |
 | No plugins or unknown IDs | Run `list-plugins` for this build and copy exact IDs. |
-| Execution blocked | Record the control and use an approved script fallback; do not bypass it. |
+| Execution blocked | Record the control and use an approved script fallback, or `--allow-techniques endpoint-bypass` only when ROE permits. |
 | Sealed report cannot open | Use the exact key from that run. A lost key cannot be recovered by the tool. |
 | Plugin coverage error | Preserve the error, rerun the affected plugin if approved, and label conclusions as limited until resolved. |
 
 ## Safety boundary
 
 The first-user journey never silently changes scope, hides a failed check,
-enables `--auto-exploit`, runs kernel exploits, creates persistence, or clears
-host telemetry. If the ROE and this document conflict, the ROE wins.
+enables `--auto-exploit` or `--allow-techniques`, or clears host telemetry.
+If the ROE and this document conflict, the ROE wins.

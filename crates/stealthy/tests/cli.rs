@@ -171,3 +171,56 @@ fn unknown_plugin_ids_fail_with_actionable_error() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("unknown plugin ID"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("list-plugins"));
 }
+
+#[test]
+fn unknown_allow_techniques_ids_fail() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "enum",
+            "--allow-techniques",
+            "not-a-real-technique",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(err.contains("unknown --allow-techniques"));
+}
+
+#[test]
+fn allow_techniques_records_scaffold_findings() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--allow-techniques",
+            "kernel-exploit,potato",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["mode"], "enumerate+allow-techniques");
+    let notes = value["notes"].as_array().unwrap();
+    assert!(notes.iter().any(|n| n
+        .as_str()
+        .unwrap_or_default()
+        .contains("ALLOW-TECHNIQUES enabled")));
+    let findings = value["findings"].as_array().unwrap();
+    assert!(findings.iter().any(|f| {
+        f["plugin"] == "allow_techniques"
+            && f["title"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Kernel exploit execution opted in")
+    }));
+}

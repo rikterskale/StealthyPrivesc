@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
+use crate::exploit::{self, TechniqueFamily};
 
 pub struct PrivilegesPlugin;
 
@@ -19,7 +20,7 @@ impl Plugin for PrivilegesPlugin {
         &["windows"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
         match enumerate_privileges() {
@@ -72,11 +73,16 @@ impl Plugin for PrivilegesPlugin {
                         title: "Potato-family token impersonation opportunity".into(),
                         detail: "SeImpersonate and/or SeAssignPrimaryToken is enabled on this token."
                             .into(),
-                        recommendation: "Manual review for JuicyPotato/RoguePotato/GodPotato-class techniques if ROE allows. High EDR visibility — never auto-executed by this tool."
+                        recommendation: "High EDR visibility. Opt in with --allow-techniques potato when ROE permits (scaffold in this revision)."
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
                     });
+                    let potato_tech = TechniqueFamily::Potato;
+                    let allowed = ctx.allow_techniques.allows(potato_tech);
+                    if allowed || ctx.auto_exploit {
+                        findings.push(exploit::technique_status(self.id(), potato_tech, allowed));
+                    }
                 }
 
                 if privs.is_empty() {

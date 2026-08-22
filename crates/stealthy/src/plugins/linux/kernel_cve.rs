@@ -14,7 +14,7 @@ impl Plugin for KernelCvePlugin {
         "Kernel version vs known LPE CVEs (informational)"
     }
     fn description(&self) -> &'static str {
-        "Report kernel version and map to well-known LPE CVE hints — never exploit"
+        "Report kernel version and map to well-known LPE CVE hints; execution via --allow-techniques kernel-exploit"
     }
     fn platforms(&self) -> &'static [&'static str] {
         &["linux"]
@@ -36,7 +36,7 @@ impl Plugin for KernelCvePlugin {
             severity: Severity::Info,
             title: "Kernel version".into(),
             detail: version.clone(),
-            recommendation: "Compare against current CVE feeds offline. Kernel exploits are disabled in this tool.".into(),
+            recommendation: "Compare against current CVE feeds offline. Opt in with --allow-techniques kernel-exploit when ROE permits.".into(),
             noisy: false,
             leaves_artifacts: false,
         });
@@ -74,27 +74,17 @@ impl Plugin for KernelCvePlugin {
                     severity: Severity::Medium,
                     title: format!("Possible historical interest: {cve}"),
                     detail: format!("{note}; kernel string matched '{needle}'"),
-                    recommendation: "Validate with distro security tracker. Do NOT run public exploits on production without explicit approval.".into(),
+                    recommendation: "Validate with distro security tracker. Run exploits only with ROE approval (--allow-techniques kernel-exploit).".into(),
                     noisy: false,
                     leaves_artifacts: false,
                 });
             }
         }
 
-        findings.push(exploit::kernel_exploit_blocked());
-
-        if ctx.auto_exploit {
-            findings.push(Finding {
-                plugin: self.id().into(),
-                kind: FindingKind::Recommendation,
-                severity: Severity::Info,
-                title: "Auto-exploit requested but kernel LPE refused".into(),
-                detail: "Policy blocks kernel exploits even with --auto-exploit.".into(),
-                recommendation:
-                    "Use a dedicated, lab-only toolkit if kernel validation is required.".into(),
-                noisy: false,
-                leaves_artifacts: false,
-            });
+        let kernel = exploit::TechniqueFamily::KernelExploit;
+        let allowed = ctx.allow_techniques.allows(kernel);
+        if allowed || ctx.auto_exploit {
+            findings.push(exploit::technique_status(self.id(), kernel, allowed));
         }
 
         Ok(findings)

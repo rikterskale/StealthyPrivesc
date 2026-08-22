@@ -20,8 +20,11 @@ impl Plugin for CredentialsPlugin {
         &["windows"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
+        let dump_allowed = ctx
+            .allow_techniques
+            .allows(crate::exploit::TechniqueFamily::CredentialDump);
 
         let paths = [
             r"C:\Windows\Panther\Unattend.xml",
@@ -46,9 +49,13 @@ impl Plugin for CredentialsPlugin {
                         Severity::Medium
                     },
                     title: format!("Credential-related file present: {p}"),
-                    detail: format!("readable={readable} (contents not dumped)"),
+                    detail: if dump_allowed {
+                        format!("readable={readable} (credential-dump opted in; dump scaffold not executed yet)")
+                    } else {
+                        format!("readable={readable} (contents not dumped; use --allow-techniques credential-dump when ROE permits)")
+                    },
                     recommendation:
-                        "Unattend/SAM backups often contain secrets. Handle under evidence rules."
+                        "Unattend/SAM backups often contain secrets. Handle under evidence rules; dump/exfil via --allow-techniques credential-dump when approved."
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,

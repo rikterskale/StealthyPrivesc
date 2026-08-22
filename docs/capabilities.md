@@ -26,7 +26,8 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Linux plugins (14) | Done |
 | Windows plugins (10) | Done |
 | Script fallbacks | Done (extended for new checks) |
-| Limited `--auto-exploit` probes | Done (non-kernel; PATH/polkit/timer/unquoted-parent) |
+| Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
+| `--allow-techniques` scaffolding | Done (flags + findings; payloads deferred) |
 | Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
 
@@ -49,7 +50,8 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy disclaimer` | Print legal / ethical text (no auth) |
 | `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
 | `stealthy enum` / `stealthy scan` | Run enumeration (default mode) |
-| `stealthy enum --auto-exploit` | Add reversible probes only |
+| `stealthy enum --auto-exploit` | Add reversible probes |
+| `stealthy enum --allow-techniques ...` | Opt into high-impact families (scaffold) |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
 | `stealthy report PATH --key-hex KEY` | Decode a sealed report locally (no host access) |
@@ -77,7 +79,7 @@ Optional:
 ## Security, privacy, and operational controls
 
 - Required authorization acknowledgment
-- Kernel exploits blocked
+- High-impact techniques off by default; require `--allow-techniques`
 - Noisy techniques labeled in findings
 - Effective Linux owner/group/other permission evaluation for service, systemd, and cron paths
 - Sudoers findings filtered against the current username and supplementary groups
@@ -86,7 +88,7 @@ Optional:
 - Script fallbacks when binaries are blocked
 
 ## Explicitly out of scope for v1
-- Fully autonomous multi-host C2
+- Fully autonomous multi-host C2 without operator-driven orchestration
 
 ## Phase 2 coverage (implemented)
 

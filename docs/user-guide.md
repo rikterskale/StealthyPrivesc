@@ -223,10 +223,14 @@ rollback/cleanup owner:
 "$STEALTHY" --authorized enum --auto-exploit
 ```
 
-This mode is limited to supported low-noise reversible probes. It never runs
-kernel exploits, replaces service binaries, builds or runs MSI payloads,
-abuses token impersonation, or creates persistence. Record every probe and
-artifact in the engagement log.
+This mode enables supported low-noise reversible probes. High-impact families
+(kernel exploit, service replace, MSI, Potato, persistence, credential dump,
+host-crash, endpoint bypass) stay off unless you also pass
+`--allow-techniques`. Record every probe and artifact in the engagement log.
+
+```bash
+"$STEALTHY" --authorized enum --allow-techniques kernel-exploit,potato
+```
 
 ## 8. Automation without hidden output
 
@@ -274,7 +278,7 @@ Before closing the host, confirm:
 | No plugins matched | Run `--authorized list-plugins`; use exact OS-specific IDs. |
 | Output path error | Add `--output-path` with `--output file`; verify the parent directory is approved and writable. |
 | Sealed report will not open | Use the exact key from that run; if it was never captured, the file is unrecoverable. |
-| Binary blocked | Record the control and use an approved script fallback; do not bypass controls outside the ROE. |
+| Binary blocked | Record the control and use an approved script fallback, or `--allow-techniques endpoint-bypass` only when ROE permits. |
 | Plugin error | Preserve the error/coverage record and rerun only the affected plugin if approved. |
 
 For transport, cross-compilation, and script-only deployment, continue with the

@@ -12,6 +12,7 @@ use crate::core::term;
 use crate::core::types::{
     Finding, FindingAssessment, FindingKind, PluginCoverage, RunReport, Severity,
 };
+use crate::exploit::TechniqueAllowlist;
 use crate::plugins;
 
 pub struct Engine {
@@ -19,6 +20,7 @@ pub struct Engine {
     verbose: bool,
     delay_ms: u64,
     auto_exploit: bool,
+    allow_techniques: TechniqueAllowlist,
     only: Option<Vec<String>>,
     skip: Option<Vec<String>>,
     output: OutputOptions,
@@ -33,6 +35,7 @@ impl Engine {
     pub fn from_cli(
         cli: &Cli,
         auto_exploit: bool,
+        allow_techniques: TechniqueAllowlist,
         only: Option<Vec<String>>,
         skip: Option<Vec<String>>,
     ) -> Result<Self> {
@@ -41,6 +44,7 @@ impl Engine {
             verbose: cli.verbose,
             delay_ms: cli.delay_ms,
             auto_exploit,
+            allow_techniques,
             only,
             skip,
             fail_on: cli.fail_on.map(|m| m.to_severity()),
@@ -69,7 +73,6 @@ impl Engine {
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut run_entropy);
         let run_id = hex::encode(run_entropy);
         let mut store = EncryptedStore::new();
-        store.push(crate::exploit::kernel_exploit_blocked());
 
         for note in evasion::evasion_notes() {
             store.note(note);
@@ -83,8 +86,24 @@ impl Engine {
 
         if self.auto_exploit {
             store.note(
-                "AUTO-EXPLOIT enabled: only low-noise reversible verifications run; kernel exploits disabled.",
+                "AUTO-EXPLOIT enabled: low-noise reversible verifications run. High-impact families still require --allow-techniques.",
             );
+        }
+
+        if !self.allow_techniques.is_empty() {
+            store.note(format!(
+                "ALLOW-TECHNIQUES enabled (scaffold): {}",
+                self.allow_techniques.ids().join(", ")
+            ));
+            for technique in crate::exploit::TechniqueFamily::ALL {
+                if self.allow_techniques.allows(*technique) {
+                    store.push(crate::exploit::technique_status(
+                        "allow_techniques",
+                        *technique,
+                        true,
+                    ));
+                }
+            }
         }
 
         let registry = plugins::registry();
@@ -157,6 +176,7 @@ impl Engine {
             let mut ctx = PluginContext {
                 verbose: self.verbose,
                 auto_exploit: self.auto_exploit,
+                allow_techniques: &self.allow_techniques,
                 store: &mut store,
             };
 
@@ -213,10 +233,11 @@ impl Engine {
             }
         }
 
-        let mode = if self.auto_exploit {
-            "enumerate+limited-auto-exploit"
-        } else {
-            "enumerate-only"
+        let mode = match (self.auto_exploit, self.allow_techniques.is_empty()) {
+            (true, false) => "enumerate+auto-exploit+allow-techniques",
+            (true, true) => "enumerate+limited-auto-exploit",
+            (false, false) => "enumerate+allow-techniques",
+            (false, true) => "enumerate-only",
         };
 
         let (findings, notes) = store_into_parts(&store);

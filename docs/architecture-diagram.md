@@ -59,6 +59,6 @@ flowchart TD
 
 - Authorization is required before host enumeration.
 - Default execution is enumeration-only.
-- Kernel exploits and autonomous persistence are blocked.
+- High-impact families require `--allow-techniques` (scaffolded in this revision).
 - Reversible write probes require `--auto-exploit`.
 - Reports and keys are kept separate when evidence is persisted.

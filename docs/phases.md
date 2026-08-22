@@ -2,7 +2,8 @@
 
 This document records the implemented Phase 1 and Phase 2 scope for the
 enumeration engine. Both phases remain read-only by default; reversible probes
-are only available through the existing explicit `--auto-exploit` mode.
+are available through `--auto-exploit`, and high-impact families through
+`--allow-techniques`.
 
 ## Phase 1
 

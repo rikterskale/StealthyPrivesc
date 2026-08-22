@@ -266,7 +266,9 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
     println!("{}", term::dim(&bar));
     println!(
         "{}",
-        term::dim("Authorized use only · kernel exploits disabled · prefer --authorized enum")
+        term::dim(
+            "Authorized use only · high-impact techniques require --allow-techniques · prefer --authorized enum",
+        )
     );
 }
 
@@ -374,7 +376,9 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         }
         out.push('\n');
     }
-    out.push_str("---\n_Authorized assessments only. Kernel exploits disabled in this build._\n");
+    out.push_str(
+        "---\n_Authorized assessments only. High-impact techniques require --allow-techniques._\n",
+    );
     out
 }
 

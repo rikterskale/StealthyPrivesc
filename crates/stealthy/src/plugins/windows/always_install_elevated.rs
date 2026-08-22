@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
+use crate::exploit::{self, TechniqueFamily};
 
 pub struct AlwaysInstallElevatedPlugin;
 
@@ -19,22 +20,29 @@ impl Plugin for AlwaysInstallElevatedPlugin {
         &["windows"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
         let hklm = read_aie(true)?;
         let hkcu = read_aie(false)?;
 
         match (hklm, hkcu) {
-            (Some(1), Some(1)) => findings.push(Finding {
-                plugin: self.id().into(),
-                kind: FindingKind::Misconfiguration,
-                severity: Severity::Critical,
-                title: "AlwaysInstallElevated enabled (HKLM+HKCU)".into(),
-                detail: "Both machine and user policies are 1 — MSI installs run elevated.".into(),
-                recommendation: "Classic privesc via crafted MSI. Extremely noisy on modern EDR — operator approval required.".into(),
-                noisy: true,
-                leaves_artifacts: true,
-            }),
+            (Some(1), Some(1)) => {
+                findings.push(Finding {
+                    plugin: self.id().into(),
+                    kind: FindingKind::Misconfiguration,
+                    severity: Severity::Critical,
+                    title: "AlwaysInstallElevated enabled (HKLM+HKCU)".into(),
+                    detail: "Both machine and user policies are 1 — MSI installs run elevated.".into(),
+                    recommendation: "Classic privesc via crafted MSI. Extremely noisy on modern EDR — opt in with --allow-techniques msi when ROE permits.".into(),
+                    noisy: true,
+                    leaves_artifacts: true,
+                });
+                let msi = TechniqueFamily::Msi;
+                let allowed = ctx.allow_techniques.allows(msi);
+                if allowed || ctx.auto_exploit {
+                    findings.push(exploit::technique_status(self.id(), msi, allowed));
+                }
+            }
             _ => findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Enumeration,

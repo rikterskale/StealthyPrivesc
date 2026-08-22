@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::core::store::EncryptedStore;
 use crate::core::types::Finding;
+use crate::exploit::TechniqueAllowlist;
 
 /// Runtime context passed to each plugin.
 pub struct PluginContext<'a> {
@@ -9,6 +10,7 @@ pub struct PluginContext<'a> {
     pub verbose: bool,
     #[allow(dead_code)]
     pub auto_exploit: bool,
+    pub allow_techniques: &'a TechniqueAllowlist,
     #[allow(dead_code)]
     pub store: &'a mut EncryptedStore,
 }

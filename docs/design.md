@@ -27,11 +27,12 @@ describe the behavior users can rely on today.
 
 ### Non-Goals
 
-- Fully automated exploitation or an auto-pwn workflow.
-- Kernel exploit execution, persistence creation, or service binary replacement.
+- Fully automated exploitation or an auto-pwn workflow without operator opt-in.
 - Silent C2, autonomous multi-host operation, or background network collection.
-- Credential exfiltration, secret dumping, or bypassing endpoint controls.
 - Obfuscation that makes behavior difficult to inspect or maintain.
+- Enabling high-impact techniques (kernel exploit, persistence, Potato, MSI,
+  credential dump, service replace, host-crash, endpoint bypass) without an
+  explicit `--allow-techniques` choice.
 
 ## Key Decisions
 
@@ -42,9 +43,10 @@ describe the behavior users can rely on today.
 3. **Explicit authorization** — host-enumerating commands require
    `--authorized` or `STEALTHY_AUTHORIZED=1`. Local commands such as `doctor`,
    `guide`, `report`, and `diff` remain available without that gate.
-4. **Opt-in reversible probes** — `--auto-exploit` is a separate decision and
-   is limited to supported, reversible, low-noise checks. Kernel exploits and
-   persistence are always excluded.
+4. **Opt-in probes and high-impact families** — `--auto-exploit` enables
+   supported reversible, low-noise checks. High-impact families require a
+   separate `--allow-techniques` opt-in when ROE permits (scaffolded in the
+   current revision).
 5. **Plugin isolation** — each plugin reports `Finding` values through a common
    contract, allowing platform-specific selection and targeted reruns.
 6. **Memory-first output** — findings stay in the encrypted in-memory store by
@@ -78,7 +80,7 @@ The runtime flow is:
 | `core::output` | Human, JSON, Markdown, SARIF, memory, file, and remote rendering |
 | `core::diff` | Offline comparison of plaintext JSON reports |
 | `core::evasion` | Low-and-slow pacing and operator-facing notes |
-| `exploit` | Policy gate for the limited reversible probes |
+| `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
 | `plugins::linux/windows` | Platform-specific enumeration checks |
 
 The command surface is deliberately small:
@@ -104,8 +106,8 @@ The command surface is deliberately small:
   still control the target context, output path, and evidence custody.
 - Plugins label noisy checks and possible artifacts so operators can account
   for telemetry and cleanup.
-- Script fallbacks are intentionally documented as lower-coverage alternatives;
-  they do not bypass AppLocker, WDAC, AppArmor, or other controls by design.
+- Script fallbacks are intentionally documented as lower-coverage alternatives.
+  Endpoint-control bypass work stays behind `--allow-techniques endpoint-bypass`.
 
 ## Risks
 

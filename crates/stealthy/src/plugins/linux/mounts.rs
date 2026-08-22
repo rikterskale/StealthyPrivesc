@@ -108,7 +108,7 @@ impl Plugin for MountsPlugin {
                         "Unprivileged user namespaces expand some container/LPE research surfaces."
                             .into(),
                     recommendation:
-                        "Informational — kernel exploit use remains blocked in this tool.".into(),
+                        "Informational — opt in with --allow-techniques kernel-exploit when ROE permits.".into(),
                     noisy: false,
                     leaves_artifacts: false,
                 });

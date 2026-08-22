@@ -338,10 +338,11 @@ usable. Fix the reported condition and rerun:
 ```
 
 If the executable is blocked by SmartScreen, AppLocker, WDAC, antivirus, or a
-similar control, record the exact message, policy, and timestamp. Do not turn
-off the control, add a broad exclusion, or invent an unsigned loader. If the
-ROE permits it, continue with the documented script-only fallback and record
-the reduced coverage.
+similar control, record the exact message, policy, and timestamp. Prefer the
+documented script-only fallback and record the reduced coverage. Endpoint-control
+bypass / unsigned-loader work is available only via
+`--allow-techniques endpoint-bypass` when ROE explicitly permits it (scaffolded
+in this revision).
 
 ## Common installation problems
 

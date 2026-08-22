@@ -6,8 +6,9 @@ Contributions are welcome for authorized, defensive, and lab-safe use cases.
 
 - Read the README and `SECURITY.md`.
 - Keep the default behavior enumeration-only.
-- Do not add kernel exploits, credential exfiltration, persistence, or covert
-  execution.
+- High-impact techniques (kernel exploit, persistence, Potato, MSI, credential
+  dump, service replace, host-crash, endpoint bypass) must stay behind
+  `--allow-techniques` and document ROE expectations.
 - Add or update tests for behavior changes.
 - Run `cargo fmt --all`, `cargo test --workspace`, and
   `cargo clippy --workspace --all-targets -- -D warnings`.

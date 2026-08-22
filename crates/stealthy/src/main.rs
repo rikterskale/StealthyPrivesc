@@ -38,6 +38,7 @@ fn main() -> Result<()> {
 
     let command = cli.command.take().unwrap_or(Commands::Enum {
         auto_exploit: false,
+        allow_techniques: None,
         plugins: None,
         skip: None,
     });
@@ -68,10 +69,14 @@ fn main() -> Result<()> {
         }
         Commands::Enum {
             auto_exploit,
+            allow_techniques,
             plugins: only,
             skip,
         } => {
-            let mut engine = Engine::from_cli(&cli, auto_exploit, only, skip)?;
+            let allow = crate::exploit::TechniqueAllowlist::from_ids(
+                allow_techniques.as_deref().unwrap_or(&[]),
+            )?;
+            let mut engine = Engine::from_cli(&cli, auto_exploit, allow, only, skip)?;
             let outcome = engine.run()?;
             if outcome.fail_on_triggered {
                 std::process::exit(4);
@@ -336,7 +341,8 @@ fn print_guide() {
     println!();
     println!("{}", term::bold("Safety defaults"));
     println!("   · Enumerate + recommend");
-    println!("   · --auto-exploit = reversible probes only");
+    println!("   · --auto-exploit = reversible probes");
+    println!("   · --allow-techniques = high-impact families (ROE opt-in)");
     println!();
     println!(
         "{}",
@@ -360,8 +366,8 @@ against any system. Unauthorized privilege escalation, evasion,
 or reconnaissance is illegal and unethical.
 
 Default posture: enumeration + recommendations only.
-Auto-exploitation is opt-in, limited to low-noise reversible
-techniques, and never includes kernel exploits in this build.
+Auto-exploitation (--auto-exploit) is opt-in for reversible probes.
+High-impact families require --allow-techniques when ROE permits.
 
 The operators of this project assume no liability for misuse.
 ================================================================"#

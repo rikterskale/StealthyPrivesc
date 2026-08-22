@@ -2,7 +2,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 /// StealthyPrivesc — modular privilege-escalation enumerator for authorized assessments.
 ///
-/// Default posture: quiet enumeration + recommendations. Kernel exploits are never used.
+/// Default posture: quiet enumeration + recommendations. High-impact techniques require
+/// explicit `--allow-techniques` opt-in when ROE permits.
 #[derive(Debug, Parser)]
 #[command(name = "stealthy")]
 #[command(version, about, long_about = LONG_ABOUT)]
@@ -121,10 +122,16 @@ pub enum Commands {
     /// Enumerate privilege-escalation opportunities (default).
     #[command(visible_alias = "scan")]
     Enum {
-        /// Opt-in: attempt only low-noise, reversible verification actions.
-        /// Kernel exploits are never used.
+        /// Opt-in: attempt low-noise, reversible verification actions.
         #[arg(long)]
         auto_exploit: bool,
+
+        /// Opt-in high-impact technique families when ROE permits.
+        /// Known IDs: persistence, host-crash, potato, kernel-exploit,
+        /// service-replace, msi, credential-dump, endpoint-bypass.
+        /// Scaffolded in this revision (flags accepted; payloads land later).
+        #[arg(long, value_delimiter = ',')]
+        allow_techniques: Option<Vec<String>>,
 
         /// Comma-separated plugin IDs to run (default: all for this OS).
         #[arg(long, value_delimiter = ',')]
@@ -183,8 +190,10 @@ const LONG_ABOUT: &str = "\
 StealthyPrivesc is a modular privilege-escalation enumerator for authorized \
 red team and internal assessments only.
 
-Default mode enumerates and recommends. Auto-exploitation is opt-in, limited to \
-reversible probes, and never includes kernel exploits in this build.
+Default mode enumerates and recommends. Auto-exploitation is opt-in for \
+reversible probes. High-impact families (kernel exploits, persistence, Potato, \
+MSI, credential dump, service replace, host-crash, endpoint bypass) require \
+explicit --allow-techniques when ROE permits.
 
 Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 
@@ -196,6 +205,8 @@ Examples:
   stealthy --authorized enum
   stealthy --authorized -q enum --plugins linux.sudo,linux.groups
   stealthy --authorized enum --min-severity high
+  stealthy --authorized enum --auto-exploit
+  stealthy --authorized enum --allow-techniques kernel-exploit,potato
   stealthy --authorized --format json scan
   stealthy --authorized --format sarif -q scan > findings.sarif
   stealthy --authorized --output file --output-path /tmp/f.seal enum

