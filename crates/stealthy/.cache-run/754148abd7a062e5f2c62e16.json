@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "run_id": "754148abd7a062e5f2c62e16",
+  "entries": [
+    {
+      "run_id": "754148abd7a062e5f2c62e16",
+      "kind": "seal",
+      "path": "/tmp/.tmpR3vS1Z/findings.seal",
+      "created_at_unix": 1787492395,
+      "removable": true,
+      "notes": "enum output"
+    }
+  ]
+}
