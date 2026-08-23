@@ -29,10 +29,12 @@ pub struct PluginContext<'a> {
     #[allow(dead_code)]
     pub control_assessment: Option<ControlAssessment>,
     /// Cooperative cancel flag set on plugin timeout or operator interrupt.
+    #[allow(dead_code)]
     pub cancel: Arc<AtomicBool>,
 }
 
 impl PluginContext<'_> {
+    #[allow(dead_code)]
     pub fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
     }

@@ -124,6 +124,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
             candidates.push(dir.join(scripts_rel));
             candidates.push(dir.join("../").join(scripts_rel));
             candidates.push(dir.join("../../").join(scripts_rel));
+            candidates.push(dir.join("../../../").join(scripts_rel));
         }
     }
     let scripts_src = candidates

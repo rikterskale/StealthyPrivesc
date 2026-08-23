@@ -252,7 +252,7 @@ jobs:
           import tempfile
           from pathlib import Path
 
-          binary = str(Path("target/release/stealthy"))
+          binary = str(Path("target/release/stealthy").resolve())
 
           def run(*args, expected=0, cwd=None):
               result = subprocess.run(
