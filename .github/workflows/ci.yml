@@ -528,6 +528,7 @@ jobs:
           $stage = Join-Path $root 'stage'
           $ledger = Join-Path $root 'ledger'
           New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Add-MpPreference -ExclusionPath $root -ErrorAction SilentlyContinue
           & $bin stage --os windows --out $stage --binary $bin --ledger-dir $ledger
           $sum = (Get-Content (Join-Path $stage 'SHA256SUMS')).Split()[0]
           & $bin verify --path (Join-Path $stage 'stealthy.exe') --expect-sha256 $sum
