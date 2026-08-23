@@ -1,4 +1,4 @@
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
+use clap::{builder::BoolishValueParser, ArgAction, Parser, Subcommand, ValueEnum};
 
 use crate::core::profile::EngagementProfile;
 
@@ -19,7 +19,9 @@ pub struct Cli {
         long = "i-understand-authorized-use-only",
         visible_alias = "authorized",
         global = true,
-        env = "STEALTHY_AUTHORIZED"
+        env = "STEALTHY_AUTHORIZED",
+        value_parser = BoolishValueParser::new(),
+        action = ArgAction::SetTrue
     )]
     pub i_understand_authorized_use_only: bool,
 
