@@ -284,7 +284,9 @@ pub enum Commands {
         /// Opt-in high-impact technique families when ROE permits.
         /// Known IDs: persistence, host-crash, potato, kernel-exploit,
         /// service-replace, msi, credential-dump, endpoint-bypass.
-        /// Scaffolded in this revision (flags accepted; payloads land later).
+        /// Most families are scaffold-only in this revision. `endpoint-bypass`
+        /// means alternate-path + approved-fixture validation (never disable/
+        /// unhook/kill AMSI, ETW, EDR, AppLocker, or WDAC). See docs/techniques.md.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
 
@@ -359,8 +361,9 @@ red team and internal assessments only.
 
 Default mode enumerates and recommends. Auto-exploitation is opt-in for \
 reversible probes. High-impact families (kernel exploits, persistence, Potato, \
-MSI, credential dump, service replace, host-crash, endpoint bypass) require \
-explicit --allow-techniques when ROE permits.
+MSI, credential dump, service replace, host-crash, endpoint-bypass) require \
+explicit --allow-techniques when ROE permits. endpoint-bypass means \
+alternate-path + approved-fixture validation only (never AMSI/ETW/EDR disable).
 
 Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 

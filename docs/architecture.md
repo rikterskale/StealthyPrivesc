@@ -43,9 +43,12 @@ Plugins should prefer direct filesystem/registry reads. When a noisy helper is r
 
 Endpoint-control plugins (`linux.endpoint_controls`, `windows.endpoint_controls`)
 enumerate host policy that can block custom binaries. They recommend approved
-script fallbacks and may emit `endpoint-bypass` scaffold findings when that
-family is opted in. They do not disable AppLocker, WDAC, SmartScreen, AMSI,
-AppArmor, antivirus, or EDR.
+script fallbacks and, when `--allow-techniques endpoint-bypass` is opted in,
+record alternate-path intent and wire What's next / `next_command` to
+`--artifact` trust prediction (`live-controls`) and benign fixture validation
+(`controls --execute`). They do not disable, unhook, or kill AppLocker, WDAC,
+SmartScreen, AMSI, ETW providers, AppArmor, antivirus, or EDR. See
+`docs/techniques.md` for the authoritative contract.
 
 ## Script fallbacks
 

@@ -342,9 +342,11 @@ If the executable is blocked by SmartScreen, AppLocker, WDAC, antivirus, AppArmo
 Prefer the documented script-only fallback and record the reduced coverage.
 
 This product **detects** those controls (`linux.endpoint_controls` /
-`windows.endpoint_controls` and the script fallbacks). It does **not** disable
-or evade them. `--allow-techniques endpoint-bypass` only records scaffold
-findings when ROE explicitly permits alternate-path tracking.
+`windows.endpoint_controls` and the script fallbacks). It does **not** disable,
+unhook, or kill them. `--allow-techniques endpoint-bypass` records
+alternate-path intent and approved-fixture validation guidance when ROE
+permits (use `--artifact` and/or `controls --execute` for benign allow/block
+observation). See `docs/techniques.md`.
 
 ### Approved paths when a custom binary cannot run
 
@@ -397,7 +399,7 @@ If you need the shortest possible recovery path:
 5. Re-run the local verification checks before using `--authorized`.
 6. If still blocked, preserve the diagnostics, switch to the approved
    script fallback, and optionally record `--allow-techniques endpoint-bypass`
-   scaffold intent when ROE permits.
+   (alternate-path + approved-fixture validation) when ROE permits.
 
 Never treat a successful download, a zero-byte report, or a process that exits
 without a visible error as proof that installation is complete. The final

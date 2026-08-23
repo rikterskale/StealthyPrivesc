@@ -225,17 +225,31 @@ impl Engine {
         }
 
         if !self.allow_techniques.is_empty() {
-            store.note(format!(
-                "ALLOW-TECHNIQUES enabled (scaffold): {}",
-                self.allow_techniques.ids().join(", ")
-            ));
+            let note = if self
+                .allow_techniques
+                .allows(crate::exploit::TechniqueFamily::EndpointBypass)
+            {
+                format!(
+                    "ALLOW-TECHNIQUES enabled: {} (endpoint-bypass wires What's next / next_command to live-controls --artifact and controls --execute; other families remain scaffold)",
+                    self.allow_techniques.ids().join(", ")
+                )
+            } else {
+                format!(
+                    "ALLOW-TECHNIQUES enabled (scaffold): {}",
+                    self.allow_techniques.ids().join(", ")
+                )
+            };
+            store.note(note);
             for technique in crate::exploit::TechniqueFamily::ALL {
                 if self.allow_techniques.allows(*technique) {
-                    store.push(finalize_finding(crate::exploit::technique_status(
-                        "allow_techniques",
-                        *technique,
-                        true,
-                    )));
+                    store.push(finalize_finding(
+                        crate::exploit::technique_status_with_artifact(
+                            "allow_techniques",
+                            *technique,
+                            true,
+                            self.artifact.as_deref(),
+                        ),
+                    ));
                 }
             }
         }

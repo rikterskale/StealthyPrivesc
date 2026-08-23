@@ -107,7 +107,9 @@ The command surface is deliberately small:
 - Plugins label noisy checks and possible artifacts so operators can account
   for telemetry and cleanup.
 - Script fallbacks are intentionally documented as lower-coverage alternatives.
-  Endpoint-control bypass work stays behind `--allow-techniques endpoint-bypass`.
+  Endpoint alternate-path / approved-fixture validation stays behind
+  `--allow-techniques endpoint-bypass` (never control disable/evasion; see
+  `docs/techniques.md`).
 
 ## Risks
 

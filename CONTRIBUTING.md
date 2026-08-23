@@ -7,8 +7,10 @@ Contributions are welcome for authorized, defensive, and lab-safe use cases.
 - Read the README and `SECURITY.md`.
 - Keep the default behavior enumeration-only.
 - High-impact techniques (kernel exploit, persistence, Potato, MSI, credential
-  dump, service replace, host-crash, endpoint bypass) must stay behind
-  `--allow-techniques` and document ROE expectations.
+  dump, service replace, host-crash, endpoint-bypass) must stay behind
+  `--allow-techniques` and document ROE expectations. `endpoint-bypass` is
+  alternate-path + approved-fixture validation only — never AMSI/ETW/EDR/
+  AppLocker/WDAC disable, unhook, or kill payloads (see `docs/techniques.md`).
 - Add or update tests for behavior changes.
 - Run `cargo fmt --all`, `cargo test --workspace`, and
   `cargo clippy --workspace --all-targets -- -D warnings`.

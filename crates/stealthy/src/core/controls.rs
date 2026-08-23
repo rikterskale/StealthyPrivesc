@@ -1781,12 +1781,6 @@ pub fn validation_cases_for(platform: &str) -> Vec<ValidationCase> {
                 "read lockdown and module-signing state",
                 "No module load is attempted.",
             ),
-            (
-                "av-test-marker",
-                "Validate antivirus detection using the industry-standard benign test marker.",
-                "write the EICAR test string into a disposable fixture; never execute it",
-                "Detection, quarantine, or alert events are correlated from audit sources.",
-            ),
         ]
     };
     common

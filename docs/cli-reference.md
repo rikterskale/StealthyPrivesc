@@ -99,7 +99,12 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 - `--allow-techniques`: comma-separated high-impact families when ROE permits.
   Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,
   `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`.
-  This revision accepts the flag and records scaffold findings; payloads land later.
+  Most families record scaffold findings only in this revision.
+  `endpoint-bypass` means alternate-path tracking + approved-fixture validation
+  (pair with `--artifact` and/or `controls --execute`); it never disables,
+  unhooks, or kills AMSI, ETW, EDR, AppLocker, or WDAC. When opted in, findings
+  set `technique_id=endpoint-bypass` and wire `next_command` / What's next to
+  `live-controls --artifact` and `controls --execute`. See `docs/techniques.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
@@ -117,7 +122,6 @@ stealthy --authorized controls --case hash-drift
 stealthy --authorized controls --case interpreter-script --execute
 stealthy --authorized controls --signed-artifact C:\\approved\\signed.exe
 stealthy --authorized controls --baseline prior-report.json --case policy-drift
-stealthy --authorized controls --case av-test-marker
 stealthy --authorized controls --case user-path-exec --execute
 stealthy --authorized controls --root C:\\temp\\stealthy-controls --keep-fixtures
 ```

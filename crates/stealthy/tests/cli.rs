@@ -471,6 +471,60 @@ fn allow_techniques_records_scaffold_findings() {
 }
 
 #[test]
+fn endpoint_bypass_wires_next_command_to_validation() {
+    let artifact = tempfile::NamedTempFile::new().unwrap();
+    let artifact_path = artifact.path().display().to_string();
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--artifact",
+            &artifact_path,
+            "enum",
+            "--allow-techniques",
+            "endpoint-bypass",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let notes = value["notes"].as_array().unwrap();
+    assert!(notes.iter().any(|n| n
+        .as_str()
+        .unwrap_or_default()
+        .contains("endpoint-bypass wires")));
+    let findings = value["findings"].as_array().unwrap();
+    let bypass = findings
+        .iter()
+        .find(|f| {
+            f["plugin"] == "allow_techniques"
+                && f["technique_id"].as_str() == Some("endpoint-bypass")
+        })
+        .expect("endpoint-bypass allow_techniques finding");
+    assert_eq!(bypass["object"].as_str(), Some(artifact_path.as_str()));
+    let next = bypass["next_command"].as_str().unwrap_or_default();
+    assert!(
+        next.contains("live-controls") && next.contains(&artifact_path),
+        "next_command={next}"
+    );
+    let what_next = bypass["what_next"].as_str().unwrap_or_default();
+    assert!(what_next.contains("controls --execute"));
+    assert!(
+        what_next.contains("Never disable")
+            || what_next.contains("never disable")
+            || what_next.contains("Never disable/unhook")
+    );
+}
+
+#[test]
 fn profile_ci_emits_json_with_finding_ids_and_attack_paths() {
     let output = stealthy()
         .args([

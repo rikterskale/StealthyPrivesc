@@ -178,7 +178,7 @@ Choose one primary outcome and one fallback before touching the host:
 | One suspected path | `--plugins` for the relevant IDs | Read-only manual verification |
 | Repeatability / drift | Same plugin set and output format as baseline | Compare only common coverage |
 | CI or fleet gate | `--quiet --format json --fail-on ...` | Preserve JSON and inspect coverage errors |
-| Host policy compatibility | `doctor`, `list-plugins`, then baseline | Prefer script fallback; use `--allow-techniques endpoint-bypass` only with approval |
+| Host policy compatibility | `doctor`, `list-plugins`, then baseline | Prefer script fallback; use `--allow-techniques endpoint-bypass` only with approval (alternate-path + approved-fixture validation) |
 
 An empty finding list is not proof of a clean host. A valid conclusion requires
 the expected OS build, plugin coverage with no material errors, and a recorded
@@ -649,7 +649,8 @@ done
 ### 2.12 Script-only deploy (no custom ELF)
 
 When AppArmor/`noexec`/policy blocks the binary. The script fallbacks now also
-print AppArmor/SELinux/`noexec` inventory. They do not disable those controls.
+print AppArmor/SELinux/`noexec` inventory. They do not disable those controls
+(see `docs/techniques.md` for the `endpoint-bypass` alternate-path / approved-fixture contract).
 
 ```bash
 scp scripts/linux/enum.sh scripts/linux/enum.py "$TARGET:$REMOTE_DIR/"
@@ -795,8 +796,10 @@ STEALTHY_AUTHORIZED=1 "$BIN" enum --auto-exploit \
   --allow-techniques kernel-exploit,service-replace,persistence
 ```
 
-In this revision those IDs are scaffolded (flag accepted + findings recorded);
-payload execution lands in follow-up work.
+In this revision most of those IDs are scaffolded (flag accepted + findings
+recorded); payload execution lands in follow-up work. `endpoint-bypass` is the
+documented exception: alternate-path + approved-fixture validation only — never
+AMSI/ETW/EDR/AppLocker/WDAC disable (see `docs/techniques.md`).
 
 ### 3.7 Script fallback execution
 
@@ -1333,7 +1336,8 @@ copy /Y W:\engagement\stealthy.exe C:\Users\Public\Documents\cache-update\stealt
 ### 4.10 Script-only deploy (custom `.exe` blocked)
 
 Drop scripts without the PE. `enum.ps1` / `enum.js` inventory AppLocker, WDAC/CI,
-SmartScreen, and AMSI signals. They do not disable those controls.
+SmartScreen, and AMSI signals. They do not disable those controls; see
+`docs/techniques.md` for the `endpoint-bypass` contract.
 
 ```powershell
 $Dir = 'C:\Users\Public\Documents\cache-update'
@@ -1382,7 +1386,7 @@ where msbuild
 msbuild C:\Users\Public\Documents\cache-update\EnumTasks.csproj
 ```
 
-If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, escalate within ROE or use `--allow-techniques endpoint-bypass` only when approved (scaffold in this revision).
+If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, escalate within ROE or use `--allow-techniques endpoint-bypass` only when approved (alternate-path + approved-fixture validation; never control disable — see `docs/techniques.md`).
 
 ### 4.11 Post-deploy verify (Windows)
 
@@ -1542,7 +1546,9 @@ Before cleanup, confirm:
 - The expected Windows plugins ran and material coverage errors are explained.
 - SmartScreen, AppLocker, WDAC, AMSI, or EDR signals are recorded via
   `windows.endpoint_controls` or script fallbacks; use approved script paths
-  when the PE is blocked. `--allow-techniques endpoint-bypass` is scaffold-only.
+  when the PE is blocked. `--allow-techniques endpoint-bypass` means
+  alternate-path + approved-fixture validation (never AMSI/ETW/EDR/AppLocker/WDAC
+  disable); see `docs/techniques.md`.
 - Any service, task, registry, or file write is attributable to an approved
   action and has a recorded rollback or cleanup result.
 - The sealed-file hash, report run ID, and key custody are recorded off-host.
@@ -1805,8 +1811,10 @@ name or directory. Resolve the exact artifact against the run log first.
 
 Remember: Linux builds do not contain Windows plugins and vice versa.
 Endpoint-control plugins detect constraints and recommend approved script
-fallbacks; they do not disable AppLocker, WDAC, SmartScreen, AMSI, AppArmor,
-or AV/EDR.
+fallbacks; with `--allow-techniques endpoint-bypass` they also record
+alternate-path / approved-fixture validation intent. They do not disable,
+unhook, or kill AppLocker, WDAC, SmartScreen, AMSI, ETW providers, AppArmor,
+or AV/EDR (see `docs/techniques.md`).
 
 ---
 

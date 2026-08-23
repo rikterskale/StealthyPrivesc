@@ -26,7 +26,7 @@ The authors and distributors assume **no liability** for misuse.
 | --- | --- |
 | Mode | Enumeration + recommendations only |
 | Auto-exploit | Opt-in (`--auto-exploit`), low-noise reversible probes |
-| High-impact techniques | Opt-in (`--allow-techniques`); scaffolded in this build |
+| High-impact techniques | Opt-in (`--allow-techniques`); most scaffolded; `endpoint-bypass` = alternate-path + approved-fixture validation |
 | Disk writes | Off by default (encrypted in-memory results) |
 | Script fallbacks | Provided when a custom binary cannot run |
 
@@ -118,7 +118,8 @@ bash ./drop/scripts/run.sh --profile balanced enum
 # Limited reversible probes
 ./target/release/stealthy --authorized enum --auto-exploit
 
-# High-impact families (scaffold; payloads land in follow-up work)
+# High-impact families (most are scaffold; endpoint-bypass = alternate-path +
+# approved-fixture validation — never AMSI/ETW/EDR disable; see docs/techniques.md)
 ./target/release/stealthy --authorized enum \
   --allow-techniques kernel-exploit,potato,msi
 ```
@@ -182,7 +183,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `list-plugins` / `plugins` | Table of compiled plugin IDs |
 | `controls` / `validate-controls` | Run disposable application-control validation cases |
 | `enum --auto-exploit` | Opt-in reversible probes |
-| `enum --allow-techniques a,b` | Opt-in high-impact families (scaffold) |
+| `enum --allow-techniques a,b` | Opt-in high-impact families (`endpoint-bypass` documented in `docs/techniques.md`) |
 | `enum --plugins a,b` | Enable listed plugins |
 | `enum --skip a,b` | Skip listed plugins |
 
@@ -227,6 +228,6 @@ Environment variables:
 
 1. Refuses to run without authorization acknowledgment
 2. Default = enumerate + recommend
-3. High-impact families require `--allow-techniques` (scaffolded; not hard-refused)
+3. High-impact families require `--allow-techniques` (not hard-refused; see `docs/techniques.md`)
 4. Results stay in memory unless you explicitly request file/remote output
 5. Comments warn where techniques create artifacts or EDR telemetry

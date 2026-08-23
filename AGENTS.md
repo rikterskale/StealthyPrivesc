@@ -11,6 +11,8 @@ StealthyPrivesc is a modular, cross-platform privilege-escalation **enumeration*
 - Refuses to run without `--authorized` / `STEALTHY_AUTHORIZED=1`
 - Default = enumeration + recommendations only
 - High-impact techniques require explicit `--allow-techniques` opt-in
+- `endpoint-bypass` means alternate-path + approved-fixture validation only —
+  never AMSI/ETW/EDR/AppLocker/WDAC disable, unhook, or kill (see `docs/techniques.md`)
 - Results stay in memory unless file/remote output is explicitly requested
 
 ## Layout

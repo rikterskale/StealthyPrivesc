@@ -1,8 +1,9 @@
 //! Enumerate Linux host controls that affect binary/script execution.
 //!
 //! Detection only: AppArmor, SELinux, noexec drop mounts, audit/Yama signals.
-//! Does not disable or evade controls. When ROE permits, operators may pass
-//! `--allow-techniques endpoint-bypass` for scaffold tracking (no payloads).
+//! Does not disable or evade controls. When ROE permits, `--allow-techniques
+//! endpoint-bypass` records alternate-path intent and approved-fixture
+//! validation (see docs/techniques.md).
 
 use anyhow::Result;
 use std::fs;
@@ -54,23 +55,39 @@ impl Plugin for EndpointControlsPlugin {
         if blocking {
             let tech = TechniqueFamily::EndpointBypass;
             let allowed = ctx.allow_techniques.allows(tech);
+            let artifact = ctx.artifact_path.as_deref();
+            let artifact_text = artifact.map(|p| p.display().to_string());
             findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Recommendation,
                 severity: Severity::Medium,
                 title: "Execution may be constrained by host controls".into(),
                 detail: "One or more AppArmor-enforce or noexec conditions were observed on common drop paths.".into(),
-                recommendation: if allowed {
-                    "endpoint-bypass is opted in (scaffold only). Prefer approved script fallbacks under scripts/linux/ and ROE-approved signed packaging.".into()
-                } else {
-                    "Prefer scripts/linux/enum.sh or enum.py. Pass --allow-techniques endpoint-bypass only when ROE explicitly permits scaffold tracking (no bypass payloads in this build).".into()
-                },
+                recommendation: exploit::endpoint_bypass_what_next(
+                    allowed,
+                    artifact_text.as_deref(),
+                    false,
+                ),
                 noisy: false,
                 leaves_artifacts: false,
+                object: artifact_text
+                    .clone()
+                    .unwrap_or_else(|| "none".into()),
+                condition: if allowed {
+                    "endpoint-bypass-opted-in".into()
+                } else {
+                    "endpoint-bypass-available".into()
+                },
+                technique_id: tech.id().into(),
                 ..Default::default()
             });
             if allowed || ctx.auto_exploit {
-                findings.push(exploit::technique_status(self.id(), tech, allowed));
+                findings.push(exploit::technique_status_with_artifact(
+                    self.id(),
+                    tech,
+                    allowed,
+                    artifact,
+                ));
             }
         }
 

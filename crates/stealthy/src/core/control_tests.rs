@@ -20,21 +20,6 @@ use crate::core::types::{
     ArtifactAssessment, ControlAssessment, ControlValidationReport, ValidationResult,
 };
 
-/// Build the vendor-sanctioned EICAR antivirus test marker at runtime.
-/// XOR-encoded so release `.rodata` does not contain a contiguous EICAR IOC.
-fn eicar_test_marker() -> String {
-    // Standard EICAR test string (never executable content), key = 0xA5.
-    const KEY: u8 = 0xA5;
-    const ENC: &[u8] = &[
-        0xfd, 0x90, 0xea, 0x84, 0xf5, 0x80, 0xe5, 0xe4, 0xf5, 0xfe, 0x91, 0xf9, 0xf5, 0xff, 0xfd,
-        0x90, 0x91, 0x8d, 0xf5, 0xfb, 0x8c, 0x92, 0xe6, 0xe6, 0x8c, 0x92, 0xd8, 0x81, 0xe0, 0xec,
-        0xe6, 0xe4, 0xf7, 0x88, 0xf6, 0xf1, 0xe4, 0xeb, 0xe1, 0xe4, 0xf7, 0xe1, 0x88, 0xe4, 0xeb,
-        0xf1, 0xec, 0xf3, 0xec, 0xf7, 0xf0, 0xf6, 0x88, 0xf1, 0xe0, 0xf6, 0xf1, 0x88, 0xe3, 0xec,
-        0xe9, 0xe0, 0x84, 0x81, 0xed, 0x8e, 0xed, 0x8f,
-    ];
-    ENC.iter().map(|b| (b ^ KEY) as char).collect()
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub platform: String,
@@ -60,7 +45,6 @@ struct Fixtures {
     batch: PathBuf,
     library: PathBuf,
     installer: PathBuf,
-    av_marker: PathBuf,
     user_path: PathBuf,
     admin_path: PathBuf,
 }
@@ -397,11 +381,6 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
         b"disposable installer metadata fixture; never installed\n",
     )?;
 
-    // Industry-standard EICAR antivirus test string; vendor-sanctioned benign
-    // detection marker written to a disposable fixture and never executed.
-    let av_marker = root.join("eicar-test-marker.txt");
-    write_fixture(&av_marker, eicar_test_marker().as_bytes())?;
-
     let user_path = root.join("user-writable");
     let admin_path = root.join("administrator-controlled");
     fs::create_dir_all(&user_path)?;
@@ -423,7 +402,6 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
         batch,
         library,
         installer,
-        av_marker,
         user_path,
         admin_path,
     })
@@ -715,31 +693,6 @@ fn run_case(
                     "Provide --baseline with a prior JSON control assessment or report.".into();
             }
         }
-        "av-test-marker" => {
-            let marker = &fixtures.av_marker;
-            let still_present = marker.is_file();
-            result
-                .observations
-                .push(format!("marker_path={}", marker.display()));
-            if still_present {
-                if let Ok(meta) = fs::metadata(marker) {
-                    result
-                        .observations
-                        .push(format!("marker_size={}; not_quarantined", meta.len()));
-                }
-                result.status = "marker_written_not_detected".into();
-                result.stop_reason = "The test marker remained on disk; the local antivirus did not quarantine it. Correlate audit/event sources for detection coverage gaps.".into();
-            } else {
-                result.status = "marker_removed_or_quarantined".into();
-                result.observations.push(
-                    "The test marker was removed or quarantined after write; detection is active."
-                        .into(),
-                );
-            }
-            result
-                .evidence
-                .push("eicar-standard-antivirus-test-file".into());
-        }
         "user-path-exec" => {
             let staged = fixtures.user_path.join(
                 fixtures
@@ -790,9 +743,6 @@ fn expected_telemetry(case_id: &str) -> Vec<String> {
             vec!["driver/module identity, signature, lockdown state, and loading result".into()]
         }
         "container-host" => vec!["host/container identity, policy scope, and audit source".into()],
-        "av-test-marker" => {
-            vec!["file-write detection, quarantine event, scan action, and alert channel".into()]
-        }
         "user-path-exec" => {
             vec![
                 "process creation, path, policy rule, block/audit decision, and parent lineage"

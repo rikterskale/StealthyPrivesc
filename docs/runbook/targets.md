@@ -49,7 +49,8 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
    WDAC, or another policy blocks the executable, the dispatcher records the
    launch failure and invokes the manifest-approved PowerShell fallback. Use
    `--allow-techniques endpoint-bypass` only when ROE explicitly permits
-   scaffold tracking — this tool does not disable those controls.
+   alternate-path tracking and approved-fixture validation — this tool does
+   not disable, unhook, or kill those controls (see `docs/techniques.md`).
 
 ## Follow-up choices
 

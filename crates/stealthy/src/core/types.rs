@@ -128,6 +128,14 @@ impl Finding {
     /// These commands validate or collect context for a finding. They do not
     /// perform privilege escalation, write persistence, or modify the host.
     pub fn next_command(&self) -> String {
+        if self.technique_id == "endpoint-bypass" || self.condition.starts_with("endpoint-bypass") {
+            let allowed =
+                self.condition == "endpoint-bypass-opted-in" || self.title.contains("opted in");
+            let artifact =
+                (!self.object.is_empty() && self.object != "none").then_some(self.object.as_str());
+            let windows = self.plugin.contains("windows");
+            return crate::exploit::endpoint_bypass_next_command(allowed, artifact, windows);
+        }
         let command = match self.plugin.as_str() {
             "linux.sudo" => "sudo -n -l",
             "linux.suid" => {
@@ -194,6 +202,16 @@ impl Finding {
                 "stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved\\test\\artifact.exe"
             }
             "allow_techniques" => {
+                if self.technique_id == "endpoint-bypass"
+                    || self.condition.starts_with("endpoint-bypass")
+                    || self.title.contains("endpoint-bypass")
+                {
+                    let allowed = self.condition == "endpoint-bypass-opted-in"
+                        || self.title.contains("opted in");
+                    let artifact = (!self.object.is_empty() && self.object != "none")
+                        .then_some(self.object.as_str());
+                    return crate::exploit::endpoint_bypass_next_command(allowed, artifact, false);
+                }
                 return self
                     .recommendation
                     .split("--allow-techniques")

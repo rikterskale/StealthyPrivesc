@@ -5,8 +5,9 @@
 This document describes the implemented product on the current `main` revision.
 The Rust core, Linux/Windows plugins, reversible-probe gate, evidence outputs,
 and script fallbacks are present in this repository. The command surface below
-is implemented, not a future roadmap; historical design notes belong in
-[`docs/design.md`](design.md) or the project history.
+is implemented. Deferred and contract-gated ideas live in **Planned future
+enhancements** below and in [`docs/techniques.md`](techniques.md); historical
+design notes belong in [`docs/design.md`](design.md) or the project history.
 
 Source design: [`docs/design.md`](design.md)
 
@@ -29,7 +30,7 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Application-control / EDR assessment | Done (`linux.app_control`, `windows.app_control`; read-only policy, provenance, sensor, audit, fixture validation, baseline drift, and detection-exposure inventory) |
 | Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
-| `--allow-techniques` scaffolding | Done (flags + findings; no disable/evasion payloads) |
+| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation contract; never AMSI/ETW/EDR disable) |
 | Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
@@ -62,7 +63,7 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
 | `stealthy enum` / `stealthy scan` | Run enumeration (default mode) |
 | `stealthy enum --auto-exploit` | Add reversible probes |
-| `stealthy enum --allow-techniques ...` | Opt into high-impact families (scaffold) |
+| `stealthy enum --allow-techniques ...` | Opt into high-impact families (`endpoint-bypass` = alternate-path + approved-fixture validation; others mostly scaffold) |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
 | `stealthy report PATH --key-hex KEY` | Decode a sealed report locally (no host access) |
@@ -130,6 +131,25 @@ Optional:
 
 ## Explicitly out of scope for v1
 - Fully autonomous multi-host C2 without operator-driven orchestration
+- AMSI / ETW / EDR / AppLocker / WDAC **disable, unhook, kill, or evasion payloads**
+  under the current `endpoint-bypass` contract (see `docs/techniques.md`)
+
+## Planned future enhancements
+
+Intentional backlog. Items that change host protections require a **new**
+technique-family ID, ROE gate, and contract revision — they must not ship under
+today's `endpoint-bypass` meaning (alternate-path + approved-fixture validation).
+
+| Enhancement | Status | Gate / notes |
+| --- | --- | --- |
+| Silent in-process HTTPS exfil client | Deferred | Operator-printed sealed blob today |
+| AMSI bypass / patching / blinding | Planned (contract change required) | New `--allow-techniques` family; not `endpoint-bypass` |
+| ETW unhooking / patching / provider disablement | Planned (contract change required) | New family; not `endpoint-bypass` |
+| AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
+| AV / EDR service stop, quarantine tamper, or sensor unload | Planned (contract change required) | New family; tamper ≠ alternate-path |
+| Generic control-disable / “hide from sensor” payloads | Planned (contract change required) | Rejected by current product policy until rewritten |
+| Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still no disable payloads |
+| Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Scaffold today | Existing allowlist IDs; follow-up revisions |
 
 ## Phase 2 coverage (implemented)
 
