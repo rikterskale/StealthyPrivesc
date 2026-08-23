@@ -946,10 +946,20 @@ EXPECTED_SHA256='REPLACE_WITH_sha256sum_OUTPUT'
 
 | Drop path | Pros | Cons |
 | --- | --- | --- |
-| `C:\Users\Public\Documents\...` | Usually writable for standard users | Shared; other users may see it |
-| `%TEMP%\...` / `C:\Users\<you>\AppData\Local\Temp\...` | Common for tools | Cleaners / EDR may scrutinize |
+| `C:\Users\Public\Documents\...` | Usually writable for standard users; quieter than TEMP for fresh PEs | Shared; other users may see it |
+| `%TEMP%\...` / `C:\Users\<you>\AppData\Local\Temp\...` | Common for tools | **Avoid for PE kits** — Defender real-time scanning often quarantines freshly copied unsigned executables here |
 | `%LOCALAPPDATA%\...` | User-scoped | Persists until removed |
 | Admin share `\\HOST\C$\...` | Convenient from Windows ops host | Needs admin rights; very visible in logs |
+
+#### Lab AV / Defender posture (authorized labs)
+
+When Defender is on and the kit PE is unsigned or newly written:
+
+1. Stage under an approved non-`TEMP` path (for example `Public\Documents\<name>`).
+2. Optionally add a **lab** path exclusion for that kit directory (`Add-MpPreference -ExclusionPath …`) when ROE and local policy allow. Automated exclusion helpers are Planned as a separate technique family — do not fold them into `endpoint-bypass`.
+3. Prefer an **org-signed** PE from your normal Authenticode workflow before staging (`Get-AuthenticodeSignature` should be `Valid`). The tool does not create certificates.
+4. Use `stage --name` with a bland basename when ROE wants lower static-string noise.
+5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (PowerShell → JScript → MSBuild). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
 
 **Method chooser**
 

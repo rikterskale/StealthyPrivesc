@@ -1,15 +1,50 @@
 <!--
-  StealthyPrivesc MSBuild / LOLBAS-friendly fallback stub.
+  StealthyPrivesc MSBuild host fallback.
   Build with: msbuild EnumTasks.csproj
-  Or inline-task style hosts that compile C# without dropping a custom .exe first.
+           or: msbuild EnumTasks.csproj /p:StealthyJson=true
 
-  AUTHORIZED USE ONLY. This project file itself is not a payload; it documents
-  how operators can host enumeration inside allowlisted toolchains.
+  This target does not compile or drop a custom .exe. It emits a reduced
+  schema v2 JSON inventory (host availability + identity) for dispatcher use
+  when PE and PowerShell/JScript tiers are unavailable.
+
+  AUTHORIZED USE ONLY. Requires STEALTHY_AUTHORIZED=1 in the environment
+  (the dispatcher sets this after a fresh operator acknowledgment).
 -->
-<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Enum">
+  <PropertyGroup>
+    <StealthyJson Condition="'$(StealthyJson)' == ''">false</StealthyJson>
+    <StealthyAuthorized>$([System.Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED'))</StealthyAuthorized>
+    <StealthyExecutionPath>$([System.Environment]::GetEnvironmentVariable('STEALTHY_EXECUTION_PATH'))</StealthyExecutionPath>
+    <StealthyPrimaryLaunch>$([System.Environment]::GetEnvironmentVariable('STEALTHY_PRIMARY_LAUNCH'))</StealthyPrimaryLaunch>
+    <StealthyRoeRef>$([System.Environment]::GetEnvironmentVariable('STEALTHY_MANIFEST_ROE_REF'))</StealthyRoeRef>
+    <StealthyUser>$([System.Environment]::GetEnvironmentVariable('USERNAME'))</StealthyUser>
+    <StealthyHost>$([System.Environment]::GetEnvironmentVariable('COMPUTERNAME'))</StealthyHost>
+    <StealthyArch>$([System.Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE'))</StealthyArch>
+    <StealthyRunId>$([System.Guid]::NewGuid().ToString('N').Substring(0, 24))</StealthyRunId>
+    <StealthyStarted>$([System.Convert]::ToInt64([System.DateTime]::UtcNow.Subtract([System.DateTime]::new(1970, 1, 1)).TotalSeconds))</StealthyStarted>
+  </PropertyGroup>
+
   <Target Name="Enum">
-    <Message Text="StealthyPrivesc MSBuild host — authorized assessments only" Importance="high" />
-    <Message Text="Prefer scripts/windows/enum.ps1 or the stealthy Rust core when executable." Importance="high" />
-    <Message Text="Kernel exploits and silent disk drops are out of policy." Importance="high" />
+    <Error
+      Text="Authorization required: set STEALTHY_AUTHORIZED=1 (dispatcher passes --authorized first)"
+      Condition="'$(StealthyAuthorized)' != '1'" />
+
+    <PropertyGroup>
+      <ExecPath Condition="'$(StealthyExecutionPath)' != ''">$(StealthyExecutionPath)</ExecPath>
+      <ExecPath Condition="'$(ExecPath)' == ''">msbuild-fallback</ExecPath>
+      <PrimaryLaunch Condition="'$(StealthyPrimaryLaunch)' != ''">$(StealthyPrimaryLaunch)</PrimaryLaunch>
+      <PrimaryLaunch Condition="'$(PrimaryLaunch)' == ''">blocked</PrimaryLaunch>
+      <RoeRef>$(StealthyRoeRef)</RoeRef>
+    </PropertyGroup>
+
+    <Message Text="StealthyPrivesc MSBuild host — authorized assessments only" Importance="high" Condition="'$(StealthyJson)' != 'true'" />
+    <Message Text="Reduced coverage: host-probe inventory only (no custom PE compile)." Importance="high" Condition="'$(StealthyJson)' != 'true'" />
+    <Message Text="Prefer enum.ps1 / enum.js when those hosts are allowlisted." Importance="high" Condition="'$(StealthyJson)' != 'true'" />
+
+    <!-- Honest delta: MSBuild tier does not mirror native Windows plugins. -->
+    <PropertyGroup Condition="'$(StealthyJson)' == 'true'">
+      <StealthyReport>{&quot;schema_version&quot;:&quot;2&quot;,&quot;run_id&quot;:&quot;$(StealthyRunId)&quot;,&quot;started_at_unix&quot;:$(StealthyStarted),&quot;tool&quot;:&quot;stealthy-script&quot;,&quot;version&quot;:&quot;0.1.0&quot;,&quot;authorized_use_ack&quot;:true,&quot;mode&quot;:&quot;enumerate-only&quot;,&quot;execution_path&quot;:&quot;$(ExecPath)&quot;,&quot;primary_launch&quot;:&quot;$(PrimaryLaunch)&quot;,&quot;roe_ref&quot;:&quot;$(RoeRef)&quot;,&quot;profile&quot;:&quot;script&quot;,&quot;coverage_mode&quot;:&quot;script&quot;,&quot;capability_delta&quot;:[&quot;windows.services&quot;,&quot;windows.scheduled_tasks&quot;,&quot;windows.always_install_elevated&quot;,&quot;windows.uac&quot;,&quot;windows.dll_hijack&quot;,&quot;windows.credentials&quot;,&quot;windows.admin_sessions&quot;,&quot;windows.env_path&quot;,&quot;windows.autoruns&quot;,&quot;windows.endpoint_controls&quot;,&quot;windows.app_control&quot;,&quot;windows.privileges&quot;],&quot;os&quot;:{&quot;family&quot;:&quot;windows&quot;,&quot;os&quot;:&quot;windows&quot;,&quot;arch&quot;:&quot;$(StealthyArch)&quot;,&quot;version_hint&quot;:&quot;&quot;},&quot;identity&quot;:{&quot;username&quot;:&quot;$(StealthyUser)&quot;,&quot;uid&quot;:null,&quot;gid&quot;:null,&quot;groups&quot;:[],&quot;is_elevated&quot;:false,&quot;elevation_source&quot;:&quot;msbuild&quot;,&quot;token_context&quot;:&quot;&quot;,&quot;hostname&quot;:&quot;$(StealthyHost)&quot;},&quot;findings&quot;:[{&quot;plugin&quot;:&quot;windows.endpoint_controls&quot;,&quot;kind&quot;:&quot;control&quot;,&quot;severity&quot;:&quot;info&quot;,&quot;title&quot;:&quot;MSBuild host available&quot;,&quot;detail&quot;:&quot;EnumTasks.csproj host-probe fallback ran without compiling a custom PE&quot;,&quot;recommendation&quot;:&quot;Prefer powershell/jscript tiers when allowlisted; record reduced coverage&quot;,&quot;noisy&quot;:false,&quot;leaves_artifacts&quot;:false}],&quot;assessments&quot;:[],&quot;attack_paths&quot;:[],&quot;triage_decisions&quot;:[],&quot;plugins_run&quot;:[&quot;windows.endpoint_controls&quot;],&quot;coverage&quot;:[{&quot;id&quot;:&quot;windows.endpoint_controls&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;findings&quot;:1,&quot;error&quot;:null,&quot;duration_ms&quot;:0}],&quot;notes&quot;:[&quot;MSBuild tier emits host-probe schema v2 only.&quot;]}</StealthyReport>
+    </PropertyGroup>
+    <Message Text="$(StealthyReport)" Importance="high" Condition="'$(StealthyJson)' == 'true'" />
   </Target>
 </Project>

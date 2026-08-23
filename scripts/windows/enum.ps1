@@ -219,7 +219,7 @@ try {
   Write-Host "Defender DisableAntiSpyware=$das"
 } catch {}
 Write-Host 'NOTE: if custom .exe is blocked, prefer enum.ps1 / enum.js / EnumTasks.csproj (approved fallbacks).'
-Write-Host 'NOTE: this script does not disable AppLocker, WDAC, SmartScreen, AMSI, or AV/EDR.'
+Write-Host 'NOTE: endpoint-bypass is alternate-path + validation; stronger AV interference is Planned as separate gated families.'
 Write-Host ""
 
 Write-Host "Done. Enumeration only - no auto-exploit."

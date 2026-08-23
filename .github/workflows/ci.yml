@@ -509,10 +509,16 @@ jobs:
       - name: Native Windows ACL validation
         run: cargo test --locked --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
 
+      - name: Exclude staging paths from Windows Defender
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath $env:TEMP, (Resolve-Path .\target\release).Path
+
       - name: Windows CLI, PowerShell fallback, and bundle smoke
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $bin = (Resolve-Path .\target\release\stealthy.exe).Path
           $doctor = & $bin doctor --json | ConvertFrom-Json
           if ($doctor.schema_version -ne '1' -or -not $doctor.healthy) { throw 'doctor smoke failed' }
@@ -524,14 +530,37 @@ jobs:
           if ($fallback.coverage_mode -ne 'script') { throw 'PowerShell fallback coverage mode mismatch' }
           if ($fallback.capability_delta.Count -ne 11) { throw 'PowerShell fallback capability delta mismatch' }
 
-          $root = Join-Path $env:TEMP ('stealthy-smoke-' + [guid]::NewGuid().ToString('N'))
+          # Stage under the workspace, not %TEMP%: Defender real-time scanning
+          # often quarantines freshly copied unsigned PEs in TEMP before verify.
+          $root = Join-Path $PWD ('stealthy-smoke-' + [guid]::NewGuid().ToString('N'))
           $stage = Join-Path $root 'stage'
           $ledger = Join-Path $root 'ledger'
           New-Item -ItemType Directory -Force -Path $root | Out-Null
-          Add-MpPreference -ExclusionPath $root -ErrorAction SilentlyContinue
+          try {
+            Add-MpPreference -ExclusionPath $root
+            $prefs = Get-MpPreference
+            if ($prefs.ExclusionPath -notcontains $root) {
+              throw "Defender ExclusionPath did not include $root after Add-MpPreference"
+            }
+          } catch {
+            Write-Warning "Could not assert Defender path exclusion for $root : $_"
+          }
+
           & $bin stage --os windows --out $stage --binary $bin --ledger-dir $ledger
+          $stagedExe = Join-Path $stage 'stealthy.exe'
+          if (-not (Test-Path -LiteralPath $stagedExe -PathType Leaf)) {
+            throw @"
+Staged binary missing after stage: $stagedExe
+Likely Windows Defender (or other AV) quarantined the freshly copied PE.
+Prefer workspace staging + path exclusion / org-signed PE; use dispatcher script fallbacks.
+"@
+          }
           $sum = (Get-Content (Join-Path $stage 'SHA256SUMS')).Split()[0]
-          & $bin verify --path (Join-Path $stage 'stealthy.exe') --expect-sha256 $sum
+          & $bin verify --path $stagedExe --expect-sha256 $sum
+          $manifest = Get-Content -Raw (Join-Path $stage 'scripts\stealthy-run.conf')
+          if ($manifest -notmatch 'windows_fallbacks=powershell,jscript,msbuild') {
+            throw 'staged manifest missing ordered windows_fallbacks default'
+          }
           $native = & (Join-Path $stage 'scripts\run.ps1') --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
           if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
           & $bin --ledger-dir $ledger cleanup --latest
@@ -542,6 +571,24 @@ jobs:
           $reduced = & (Join-Path $fallbackRoot 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
           if ($reduced.coverage_mode -ne 'script') { throw 'dispatcher fallback coverage mode mismatch' }
           & $bin --ledger-dir $fallbackLedger cleanup --latest
+
+          # Simulate AV quarantine: stage a real PE, delete it, expect script fallback.
+          $qRoot = Join-Path $root 'quarantine-sim'
+          $qLedger = Join-Path $root 'quarantine-ledger'
+          & $bin stage --os windows --out $qRoot --binary $bin --ledger-dir $qLedger
+          $qExe = Join-Path $qRoot 'stealthy.exe'
+          if (-not (Test-Path -LiteralPath $qExe -PathType Leaf)) { throw "quarantine-sim missing staged PE: $qExe" }
+          Remove-Item -LiteralPath $qExe -Force
+          $quarantined = & (Join-Path $qRoot 'scripts\run.ps1') --authorized --format=json enum 2>$null | ConvertFrom-Json
+          if ($quarantined.coverage_mode -ne 'script') { throw 'quarantine-sim coverage_mode mismatch' }
+          if ($quarantined.primary_launch -ne 'blocked') { throw 'quarantine-sim primary_launch should be blocked' }
+          if ($quarantined.execution_path -ne 'powershell-fallback') { throw 'quarantine-sim expected powershell-fallback' }
+          & $bin --ledger-dir $qLedger cleanup --latest
+
+          $js = & cscript.exe //nologo .\scripts\windows\enum.js --authorized --json | ConvertFrom-Json
+          if ($js.coverage_mode -ne 'script') { throw 'jscript --json coverage_mode mismatch' }
+          if ($js.identity.elevation_source -ne 'jscript') { throw 'jscript elevation_source mismatch' }
+
           Remove-Item -LiteralPath $root -Recurse -Force
 
   agents:

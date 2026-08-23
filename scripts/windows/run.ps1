@@ -1,7 +1,8 @@
 # StealthyPrivesc policy-bound dispatcher — authorized assessments only.
 # The launcher may select an approved script fallback when the primary PE
-# cannot start. It never disables or bypasses host controls.
-[CmdletBinding()]
+# cannot start. Under today's endpoint-bypass contract it does not disable
+# or bypass host controls (see docs/techniques.md for Planned families).
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [string]$Manifest = $(if ($env:STEALTHY_MANIFEST) { $env:STEALTHY_MANIFEST } else { Join-Path $PSScriptRoot 'stealthy-run.conf' }),
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -9,7 +10,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$bundleDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+# Staged bundle: scripts/run.ps1 + adjacent stealthy-run.conf → bundle is parent.
+# Repo checkout: scripts/windows/run.ps1 → bundle is repo root.
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'stealthy-run.conf')) {
+  $bundleDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+  if (-not $PSBoundParameters.ContainsKey('Manifest') -and -not $env:STEALTHY_MANIFEST) {
+    $Manifest = Join-Path $PSScriptRoot 'stealthy-run.conf'
+  }
+} else {
+  $bundleDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+}
 
 function Read-Manifest([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { throw "dispatcher: manifest not found: $Path" }
@@ -23,7 +34,7 @@ function Read-Manifest([string]$Path) {
 }
 
 $cfg = Read-Manifest $Manifest
-foreach ($required in @('manifest_version','authorization_ack','allow_fallback','roe_ref','target_hostname')) {
+foreach ($required in @('manifest_version', 'authorization_ack', 'allow_fallback', 'roe_ref', 'target_hostname')) {
   if (-not $cfg.ContainsKey($required) -or [string]::IsNullOrWhiteSpace($cfg[$required])) {
     throw "dispatcher: manifest missing $required"
   }
@@ -47,53 +58,163 @@ if ($cfg.ContainsKey('target_username') -and $cfg.target_username -and $cfg.targ
 $authorizedArg = ($Arguments -contains '--authorized') -or ($Arguments -contains '--i-understand-authorized-use-only')
 $authorizedEnv = $env:STEALTHY_AUTHORIZED -eq '1'
 if (-not ($authorizedArg -or $authorizedEnv)) {
-  Write-Error 'Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1'
+  [Console]::Error.WriteLine('Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1')
   exit 2
 }
 $env:STEALTHY_AUTHORIZED = '1'
 
-$dropDir = if ($cfg.drop_dir) { $cfg.drop_dir } else { Join-Path $bundleDir '.run-cache' }
-New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
 $primaryName = if ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
 $primarySrc = Join-Path $bundleDir $primaryName
-$primary = Join-Path $dropDir $primaryName
-if ((Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
-  Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
-}
-foreach ($file in @('enum.ps1','enum.js')) {
-  $source = Join-Path $PSScriptRoot $file
-  if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $dropDir $file) -Force }
+
+# Empty drop_dir (staged default) → run PE in place to avoid a second AV scan event.
+$useInPlace = -not $cfg.ContainsKey('drop_dir') -or [string]::IsNullOrWhiteSpace($cfg.drop_dir)
+if ($useInPlace) {
+  $dropDir = $bundleDir
+  $primary = $primarySrc
+} else {
+  $dropDir = $cfg.drop_dir
+  New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
+  $primary = Join-Path $dropDir $primaryName
+  if ((Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
+    try {
+      Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
+      if (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
+        [Console]::Error.WriteLine("dispatcher: primary copy vanished after write (possible AV quarantine): $primary")
+        $primary = $null
+      }
+    } catch {
+      [Console]::Error.WriteLine("dispatcher: primary copy failed (possible AV block): $($_.Exception.Message)")
+      $primary = $null
+    }
+  }
 }
 
-$argsToRun = if ($Arguments) { $Arguments } else { @('--profile','balanced','enum') }
+$scriptSourceDir = $PSScriptRoot
+foreach ($file in @('enum.ps1', 'enum.js', 'EnumTasks.csproj')) {
+  $source = Join-Path $scriptSourceDir $file
+  if (-not (Test-Path -LiteralPath $source)) {
+    $alt = Join-Path $bundleDir (Join-Path 'scripts\windows' $file)
+    if (Test-Path -LiteralPath $alt) { $source = $alt }
+  }
+  if ((Test-Path -LiteralPath $source) -and ($dropDir -ne $scriptSourceDir)) {
+    $dest = Join-Path $dropDir $file
+    if ($source -ne $dest) {
+      try { Copy-Item -LiteralPath $source -Destination $dest -Force } catch { }
+    }
+  }
+}
+
+$argsToRun = if ($Arguments) { @($Arguments) } else { @('--profile', 'balanced', 'enum') }
 $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
 $env:STEALTHY_EXECUTION_PATH = 'binary'
 $env:STEALTHY_PRIMARY_LAUNCH = 'ok'
 $isJson = ($argsToRun -contains '--json') -or ($argsToRun -contains '--format=json') -or (($argsToRun -contains '--format') -and ($argsToRun -contains 'json'))
-$approvedFallbacks = if ($cfg.windows_fallbacks) { $cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } } else { @('powershell') }
-
-function Invoke-PowerShellFallback {
-  if ($approvedFallbacks -notcontains 'powershell') { throw 'dispatcher: PowerShell fallback is not approved by the manifest' }
-  $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
-  $env:STEALTHY_PRIMARY_LAUNCH = 'blocked'
-  $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
-  Write-Error 'dispatcher: primary executable blocked; using approved PowerShell fallback'
-  $script = Join-Path $dropDir 'enum.ps1'
-  if (-not (Test-Path -LiteralPath $script)) { throw 'dispatcher: PowerShell fallback script is missing' }
-  if ($isJson) { & powershell.exe -NoProfile -File $script -Json } else { & powershell.exe -NoProfile -File $script }
-  exit $LASTEXITCODE
+$approvedFallbacks = if ($cfg.windows_fallbacks) {
+  @($cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+} else {
+  @('powershell', 'jscript', 'msbuild')
 }
 
-if (Test-Path -LiteralPath $primary -PathType Leaf) {
+function Resolve-FallbackPath([string]$Name) {
+  foreach ($candidate in @(
+      (Join-Path $dropDir $Name),
+      (Join-Path $scriptSourceDir $Name),
+      (Join-Path $bundleDir (Join-Path 'scripts\windows' $Name)),
+      (Join-Path $bundleDir (Join-Path 'scripts' $Name))
+    )) {
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+  }
+  return $null
+}
+
+function Invoke-ApprovedFallbacks {
+  $env:STEALTHY_PRIMARY_LAUNCH = 'blocked'
+  $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
+  foreach ($fallback in $approvedFallbacks) {
+    switch ($fallback) {
+      'powershell' {
+        $script = Resolve-FallbackPath 'enum.ps1'
+        if (-not $script) {
+          [Console]::Error.WriteLine('dispatcher: skipping powershell fallback (enum.ps1 missing)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved powershell fallback')
+        if ($isJson) {
+          & powershell.exe -NoProfile -File $script -Json
+        } else {
+          & powershell.exe -NoProfile -File $script
+        }
+        exit $LASTEXITCODE
+      }
+      'jscript' {
+        $script = Resolve-FallbackPath 'enum.js'
+        if (-not $script) {
+          [Console]::Error.WriteLine('dispatcher: skipping jscript fallback (enum.js missing)')
+          break
+        }
+        $cscript = Get-Command cscript.exe -ErrorAction SilentlyContinue
+        if (-not $cscript) {
+          [Console]::Error.WriteLine('dispatcher: skipping jscript fallback (cscript.exe unavailable)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'jscript-fallback'
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved jscript fallback')
+        $jsArgs = @('//nologo', $script, '--authorized')
+        if ($isJson) { $jsArgs += '--json' }
+        & cscript.exe @jsArgs
+        exit $LASTEXITCODE
+      }
+      'msbuild' {
+        $project = Resolve-FallbackPath 'EnumTasks.csproj'
+        if (-not $project) {
+          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (EnumTasks.csproj missing)')
+          break
+        }
+        $msbuild = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+        if (-not $msbuild) {
+          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (msbuild.exe unavailable)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved msbuild fallback')
+        if ($isJson) {
+          & msbuild.exe $project /nologo /v:minimal /p:StealthyJson=true
+        } else {
+          & msbuild.exe $project /nologo /v:minimal
+        }
+        exit $LASTEXITCODE
+      }
+      default {
+        [Console]::Error.WriteLine("dispatcher: ignoring unknown fallback '$fallback'")
+      }
+    }
+  }
+  [Console]::Error.WriteLine('dispatcher: no approved executable or fallback is available')
+  exit 126
+}
+
+$primaryBlocked = $false
+if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
   try {
     & $primary @argsToRun
     $status = $LASTEXITCODE
-    if ($status -notin @(126,127)) { exit $status }
+    if ($null -eq $status) { $status = 0 }
+    if ($status -in @(126, 127)) {
+      $primaryBlocked = $true
+    } else {
+      exit $status
+    }
   } catch {
-    Invoke-PowerShellFallback
+    [Console]::Error.WriteLine("dispatcher: primary launch failed: $($_.Exception.Message)")
+    $primaryBlocked = $true
   }
 } else {
-  Invoke-PowerShellFallback
+  $primaryBlocked = $true
 }
 
-Invoke-PowerShellFallback
+if ($primaryBlocked) {
+  Invoke-ApprovedFallbacks
+}
+
+Invoke-ApprovedFallbacks

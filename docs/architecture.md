@@ -46,16 +46,20 @@ enumerate host policy that can block custom binaries. They recommend approved
 script fallbacks and, when `--allow-techniques endpoint-bypass` is opted in,
 record alternate-path intent and wire What's next / `next_command` to
 `--artifact` trust prediction (`live-controls`) and benign fixture validation
-(`controls --execute`). They do not disable, unhook, or kill AppLocker, WDAC,
-SmartScreen, AMSI, ETW providers, AppArmor, antivirus, or EDR. See
-`docs/techniques.md` for the authoritative contract.
+(`controls --execute`). Under today's `endpoint-bypass` contract they do not
+disable, unhook, or kill AppLocker, WDAC, SmartScreen, AMSI, ETW providers,
+AppArmor, antivirus, or EDR — those interference capabilities are Planned as
+separate gated technique families. See `docs/techniques.md`.
 
 ## Script fallbacks
 
-Under AppLocker/WDAC/SmartScreen/`noexec`/AppArmor or missing binary execution:
+Under AppLocker/WDAC/SmartScreen/AV/`noexec`/AppArmor or missing binary execution,
+the staged dispatcher walks an ordered, manifest-approved host list:
 
-- Linux: `scripts/linux/enum.sh`, `scripts/linux/enum.py` (include endpoint-control checks)
-- Windows: `scripts/windows/enum.ps1`, `enum.js`, MSBuild `EnumTasks.csproj` host stub
+- Linux (`run.sh`): `python,bash` → `enum.py` / `enum.sh`
+- Windows (`run.ps1`): `powershell,jscript,msbuild` → `enum.ps1` / `enum.js` / `EnumTasks.csproj`
 
 These mirror the highest-value checks — including endpoint-control inventory —
-without shipping a custom `.exe` and without attempting to turn controls off.
+without shipping a custom `.exe`. Weaker tiers declare honest reduced
+`capability_delta`. Stronger AV interference is Planned under separate gated
+technique families (see `docs/techniques.md`).

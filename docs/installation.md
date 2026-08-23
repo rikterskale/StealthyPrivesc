@@ -342,11 +342,12 @@ If the executable is blocked by SmartScreen, AppLocker, WDAC, antivirus, AppArmo
 Prefer the documented script-only fallback and record the reduced coverage.
 
 This product **detects** those controls (`linux.endpoint_controls` /
-`windows.endpoint_controls` and the script fallbacks). It does **not** disable,
-unhook, or kill them. `--allow-techniques endpoint-bypass` records
-alternate-path intent and approved-fixture validation guidance when ROE
-permits (use `--artifact` and/or `controls --execute` for benign allow/block
-observation). See `docs/techniques.md`.
+`windows.endpoint_controls` and the script fallbacks). `--allow-techniques
+endpoint-bypass` records alternate-path intent and approved-fixture validation
+guidance when ROE permits (use `--artifact` and/or `controls --execute` for
+benign allow/block observation). Disabling or tampering with those controls is
+**not** part of `endpoint-bypass`; it is Planned under separate gated technique
+families. See `docs/techniques.md`.
 
 ### Approved paths when a custom binary cannot run
 
@@ -357,13 +358,22 @@ bash scripts/linux/enum.sh --authorized | tee enum-shell.txt
 python3 scripts/linux/enum.py --authorized | tee enum-python.txt
 ```
 
-**Windows** (PE blocked by AppLocker/WDAC/SmartScreen; prefer allowlisted hosts):
+**Windows** (PE blocked by AppLocker/WDAC/SmartScreen/AV; prefer allowlisted hosts):
 
 ```powershell
+# Prefer the staged dispatcher when a stage bundle exists (ordered fallbacks)
+& .\scripts\run.ps1 --authorized --profile balanced enum
+
+# Or invoke script hosts directly
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
 cscript //nologo scripts\windows\enum.js --authorized
 msbuild scripts\windows\EnumTasks.csproj
 ```
+
+On Defender-on lab laptops, keep the kit out of `%TEMP%`, prefer an org-signed
+PE when available, and use a lab path exclusion for the kit directory when ROE
+allows. See the Windows drop-path section in the
+[Operator Runbook](operator-runbook.md).
 
 After a successful PE run on Windows/Linux, still collect control inventory:
 
@@ -384,7 +394,7 @@ After a successful PE run on Windows/Linux, still collect control inventory:
 | SHA-256 mismatch | Stop. Do not run the artifact; preserve the error and obtain a trusted artifact. |
 | `doctor` reports unsupported OS | Stop and use an approved matching build or script fallback; do not bypass the platform check. |
 | `doctor` reports no plugins | Confirm that the binary matches the target OS and architecture, then use `list-plugins` only after authorization. |
-| Windows executable is blocked | Record SmartScreen/AppLocker/WDAC; run `enum.ps1` / `enum.js` / `EnumTasks.csproj` if ROE permits. |
+| Windows executable is blocked or quarantined | Record SmartScreen/AppLocker/WDAC/AV; prefer non-`TEMP` drop + lab exclusion/org signing; run `scripts\run.ps1` or `enum.ps1` / `enum.js` / `EnumTasks.csproj` if ROE permits. |
 | Linux ELF fails with `Permission denied` on `noexec` | Record the mount; run `enum.sh` / `enum.py` from an executable path. |
 | Build fails with a locked dependency error | Run from the reviewed repository with the existing `Cargo.lock`; do not silently update dependencies during an engagement build. |
 

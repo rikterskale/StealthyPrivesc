@@ -21,25 +21,25 @@ EDR sensors, AppArmor, SELinux, fapolicyd, and `noexec` mounts.
 | Opt-in tracking | Record that endpoint alternate-path work is ROE-approved for this run | `--allow-techniques endpoint-bypass` |
 | Approved-fixture validation | Predict trust/policy outcome for an operator-supplied artifact, and optionally run **benign, disposable fixture probes** to observe allow / audit / block telemetry | `--artifact` (read-only prediction); `controls` / `validate-controls --execute` for opt-in probes; pair with `endpoint-bypass` when ROE covers validation |
 
-### Out of scope (hard contract)
+### Not under `endpoint-bypass` (current contract)
 
-Stealthy **does not** and **must not** ship or execute:
+`--allow-techniques endpoint-bypass` means **alternate-path + approved validation**
+only. It does **not** authorize control disable, unhook, kill, quarantine
+tamper, or evasion. Those behaviors are tracked as **planned, separately gated
+technique families** below — they require new `--allow-techniques` IDs, an
+explicit ROE gate, tests, and a contract rewrite before shipping.
 
-- AMSI bypass, patching, or blinding
-- ETW unhooking, patching, or provider disablement
-- AppLocker / WDAC / SmartScreen policy weakening or removal
-- AV / EDR service stop, quarantine tamper, or sensor unload
-- Any “disable the control so the tool can hide” payload
-
-`--allow-techniques endpoint-bypass` means **alternate-path + approved validation**,
-not **control disable / evasion**.
+Until those families ship, the supported response when a custom binary is
+blocked is detect → recommend → script/dispatcher fallback (and optional
+approved-fixture validation).
 
 ### Operator workflow when a binary is constrained
 
-| Constraint | Approved path |
+| Constraint | Approved path (today) |
 | --- | --- |
 | Linux ELF blocked / `noexec` / AppArmor | `scripts/linux/enum.sh` or `enum.py` |
-| Windows PE blocked (AppLocker/WDAC/SmartScreen) | `scripts/windows/enum.ps1`, `enum.js`, or `EnumTasks.csproj` |
+| Windows PE blocked (AppLocker/WDAC/SmartScreen/AV) | Dispatcher `run.ps1` chain, or `enum.ps1` / `enum.js` / `EnumTasks.csproj` |
+| Defender/AV quarantines the staged PE | Prefer non-`TEMP` drop path + lab exclusion/signing; use dispatcher fallback. Stronger interference is Planned (separate family) |
 | PowerShell constrained but `cscript` allowed | `enum.js` |
 | ROE permits alternate-path tracking | `--allow-techniques endpoint-bypass` |
 | ROE permits policy outcome validation | `--artifact PATH` and/or `stealthy --authorized controls --execute` with disposable fixtures |
@@ -68,27 +68,29 @@ with concrete validation steps:
 | Not opted in | `stealthy --authorized enum --allow-techniques endpoint-bypass --plugins …endpoint_controls,…app_control` |
 
 What's-next text also lists the secondary step (artifact prediction ↔ fixture
-`--execute`) and repeats the hard out-of-scope boundary.
+`--execute`) and reminds operators that `endpoint-bypass` is alternate-path +
+validation only.
 
 ---
 
 ## Planned future enhancements
 
-Tracked here so the current hard boundary is intentional. These items are
-**not** part of today's `endpoint-bypass` contract. Shipping any of them would
-require a **new** `--allow-techniques` family ID (or IDs), an explicit ROE gate,
-tests, and a contract rewrite — they must not silently land under
-`endpoint-bypass`.
+These items are **roadmap work for this repository** and are **not** part of
+today's `endpoint-bypass` contract. Shipping any of them requires a **new**
+`--allow-techniques` family ID (or IDs), an explicit ROE gate, tests, and a
+contract rewrite — they must not silently land under `endpoint-bypass`.
 
 | Enhancement | Notes |
 | --- | --- |
 | AMSI bypass / patching / blinding | New family; never under `endpoint-bypass` |
 | ETW unhooking / patching / provider disablement | New family; never under `endpoint-bypass` |
 | AppLocker / WDAC / SmartScreen policy weakening or removal | New family; policy-change is not validation |
-| AV / EDR service stop, quarantine tamper, or sensor unload | New family; tamper ≠ alternate-path |
-| Generic “disable the control so the tool can hide” payloads | Explicitly rejected by current product policy |
+| AV / EDR service stop or sensor unload | New family; opt-in interference when ROE allows |
+| Quarantine restore / quarantine-tamper helpers | New family; recover or inspect quarantined delivery artifacts |
+| Automated path-exclusion helpers | New family; lab/kit path exclusions distinct from disabling realtime |
+| Generic control-disable / “hide from sensor” payloads | New family; ROE-gated product decision |
 | Silent in-process HTTPS exfil client | Separate deferred item (see `docs/capabilities.md`) |
-| Tighter enum→validation automation (auto-chain `controls --execute` when allowlisted + artifact present) | Optional UX; still no disable payloads |
+| Tighter enum→validation automation (auto-chain `controls --execute` when allowlisted + artifact present) | Optional UX; still alternate-path only under `endpoint-bypass` |
 
 ---
 
@@ -137,8 +139,9 @@ permits. Most families still record scaffold findings only in this revision;
 payload execution for those families lands in follow-up work.
 
 **Exception — `endpoint-bypass`:** the contract is fully defined here as
-detect + alternate-path + approved-fixture validation. It never includes
-control disable, unhook, kill, or evasion payloads.
+detect + alternate-path + approved-fixture validation. Control disable,
+quarantine tamper, and related interference are **planned separate families**
+(see above), not part of this ID.
 
 | ID | Family | Contract in this build |
 | --- | --- | --- |
@@ -149,7 +152,7 @@ control disable, unhook, kill, or evasion payloads.
 | `service-replace` | Service binary replacement | Scaffold findings only |
 | `msi` | MSI payload construction/execution | Scaffold findings only |
 | `credential-dump` | Credential dumping/exfiltration | Scaffold findings only |
-| `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. **No** AMSI/ETW/EDR/AppLocker/WDAC disable or evasion |
+| `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. Does not include AMSI/ETW/EDR/AppLocker/WDAC disable or quarantine tamper (those are Planned separate families) |
 
 Example:
 

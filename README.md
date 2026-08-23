@@ -168,10 +168,16 @@ not an approved execution path.
 bash scripts/linux/enum.sh --authorized
 python3 scripts/linux/enum.py --authorized
 
-# Windows (examples)
+# Windows — prefer staged dispatcher (PE → powershell → jscript → msbuild)
+# & .\drop\scripts\run.ps1 --authorized enum
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
-cscript //nologo scripts\windows\enum.js --authorized
+cscript //nologo scripts\windows\enum.js --authorized --json
 ```
+
+On Defender-on hosts, keep kits out of `%TEMP%`, prefer an org-signed PE when
+available, and rely on `run.ps1` fallbacks if the PE is quarantined. See
+[`docs/operator-runbook.md`](docs/operator-runbook.md) and
+[`docs/techniques.md`](docs/techniques.md).
 
 ## CLI flags
 

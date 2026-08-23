@@ -110,9 +110,10 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
   `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`.
   Most families record scaffold findings only in this revision.
   `endpoint-bypass` means alternate-path tracking + approved-fixture validation
-  (pair with `--artifact` and/or `controls --execute`); it never disables,
-  unhooks, or kills AMSI, ETW, EDR, AppLocker, or WDAC. When opted in, findings
-  set `technique_id=endpoint-bypass` and wire `next_command` / What's next to
+  (pair with `--artifact` and/or `controls --execute`). AMSI/ETW/EDR/AppLocker/WDAC
+  disable and quarantine tamper are **not** part of this ID — they are Planned
+  as separate gated families. When opted in, findings set
+  `technique_id=endpoint-bypass` and wire `next_command` / What's next to
   `live-controls --artifact` and `controls --execute`. See `docs/techniques.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
@@ -249,12 +250,17 @@ Operator-workstation delivery helpers (no host enumeration; no auth gate).
 `stealthy-run.conf` dispatcher manifest describing the approved fallback path.
 The manifest is not authorization evidence: the dispatcher requires a fresh
 `--authorized` flag or `STEALTHY_AUTHORIZED=1` at execution time. It binds to
-the current host, stages the bundle, tries the primary executable, and selects
-only the manifest-approved fallback after a launch failure.
+the current host, tries the primary executable, and walks only the
+manifest-approved fallback list after a launch failure (Windows default:
+`powershell,jscript,msbuild`; Linux default: `python,bash`).
 
-The dispatcher does not approve or bypass AppLocker, WDAC, SmartScreen,
-AppArmor, SELinux, or `noexec`. If the selected interpreter is not already
-allowed, the run stops.
+On Windows, prefer staging outside `%TEMP%` — Defender often quarantines freshly
+copied unsigned PEs there. Org Authenticode signing (external to this tool)
+reduces SmartScreen/reputation friction; stage the signed binary with
+`--binary`. If the PE is missing or blocked, `run.ps1` selects the next approved
+script host. The dispatcher does not itself approve AppLocker, WDAC,
+SmartScreen, AppArmor, SELinux, or `noexec`; if the selected interpreter is not
+already allowed, that tier is skipped.
 
 ## `report`
 

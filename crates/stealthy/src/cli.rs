@@ -292,8 +292,9 @@ pub enum Commands {
         /// Known IDs: persistence, host-crash, potato, kernel-exploit,
         /// service-replace, msi, credential-dump, endpoint-bypass.
         /// Most families are scaffold-only in this revision. `endpoint-bypass`
-        /// means alternate-path + approved-fixture validation (never disable/
-        /// unhook/kill AMSI, ETW, EDR, AppLocker, or WDAC). See docs/techniques.md.
+        /// means alternate-path + approved-fixture validation only (AMSI/ETW/EDR
+        /// disable and quarantine tamper are Planned separate families). See
+        /// docs/techniques.md.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
 

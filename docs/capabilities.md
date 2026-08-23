@@ -32,7 +32,7 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Application-control / EDR assessment | Done (`linux.app_control`, `windows.app_control`; read-only policy, provenance, sensor, audit, fixture validation, baseline drift, and detection-exposure inventory) |
 | Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
-| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation contract; never AMSI/ETW/EDR disable) |
+| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; AMSI/ETW/EDR disable and quarantine tamper are Planned separate families) |
 | Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
@@ -149,8 +149,8 @@ Optional:
 
 ## Explicitly out of scope for v1
 - Fully autonomous multi-host C2 without operator-driven orchestration
-- AMSI / ETW / EDR / AppLocker / WDAC **disable, unhook, kill, or evasion payloads**
-  under the current `endpoint-bypass` contract (see `docs/techniques.md`)
+- Folding AMSI / ETW / EDR / AppLocker / WDAC disable, quarantine tamper, or
+  evasion payloads into the current `endpoint-bypass` ID (see `docs/techniques.md`)
 
 ## Planned future enhancements
 
@@ -164,9 +164,11 @@ today's `endpoint-bypass` meaning (alternate-path + approved-fixture validation)
 | AMSI bypass / patching / blinding | Planned (contract change required) | New `--allow-techniques` family; not `endpoint-bypass` |
 | ETW unhooking / patching / provider disablement | Planned (contract change required) | New family; not `endpoint-bypass` |
 | AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
-| AV / EDR service stop, quarantine tamper, or sensor unload | Planned (contract change required) | New family; tamper ≠ alternate-path |
-| Generic control-disable / “hide from sensor” payloads | Planned (contract change required) | Rejected by current product policy until rewritten |
-| Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still no disable payloads |
+| AV / EDR service stop or sensor unload | Planned (contract change required) | New family; ROE-gated interference |
+| Quarantine restore / quarantine-tamper helpers | Planned (contract change required) | New family; delivery-PE recovery / inspection |
+| Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |
+| Generic control-disable / “hide from sensor” payloads | Planned (contract change required) | New family; ROE-gated product decision |
+| Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still alternate-path only under `endpoint-bypass` |
 | Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Scaffold today | Existing allowlist IDs; follow-up revisions |
 
 ## Phase 2 coverage (implemented)
