@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stealthyprivesc Exhaustive Review"
+  short_description: "Exhaustive local StealthyPrivesc review"
+  default_prompt: "Use $stealthyprivesc-exhaustive-review to perform a complete local repository review with coverage ledgers and verified findings."
