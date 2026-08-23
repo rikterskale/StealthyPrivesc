@@ -512,7 +512,7 @@ jobs:
       - name: Exclude staging paths from Windows Defender
         shell: pwsh
         run: |
-          Add-MpPreference -ExclusionPath $env:TEMP, (Resolve-Path .\target\release).Path
+          Add-MpPreference -ExclusionPath $env:TEMP, (Resolve-Path .\target\release).Path, $PWD
 
       - name: Windows CLI, PowerShell fallback, and bundle smoke
         shell: pwsh
