@@ -549,11 +549,9 @@ jobs:
           & $bin stage --os windows --out $stage --binary $bin --ledger-dir $ledger
           $stagedExe = Join-Path $stage 'stealthy.exe'
           if (-not (Test-Path -LiteralPath $stagedExe -PathType Leaf)) {
-            throw @"
-Staged binary missing after stage: $stagedExe
-Likely Windows Defender (or other AV) quarantined the freshly copied PE.
-Prefer workspace staging + path exclusion / org-signed PE; use dispatcher script fallbacks.
-"@
+            throw ("Staged binary missing after stage: $stagedExe — " +
+              "likely Windows Defender quarantined the freshly copied PE. " +
+              "Prefer workspace staging + path exclusion; use dispatcher script fallbacks.")
           }
           $sum = (Get-Content (Join-Path $stage 'SHA256SUMS')).Split()[0]
           & $bin verify --path $stagedExe --expect-sha256 $sum
