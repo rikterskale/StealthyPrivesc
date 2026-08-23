@@ -23,10 +23,13 @@ impl Plugin for AppControlPlugin {
     }
 
     fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
-        let assessment = ctx
-            .control_assessment
-            .clone()
-            .unwrap_or_else(|| controls::collect("windows", ctx.artifact_path.as_deref()));
+        let assessment = ctx.control_assessment.clone().unwrap_or_else(|| {
+            controls::collect_with(controls::CollectOptions {
+                platform: "windows",
+                artifact: ctx.artifact_path.as_deref(),
+                quiet: ctx.prefer_quiet,
+            })
+        });
         Ok(controls::findings(&assessment, self.id()))
     }
 }

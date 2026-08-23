@@ -23,10 +23,11 @@ impl Plugin for ServicesPlugin {
         &["linux"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
         let euid = util::euid();
         let gids = util::current_gids();
+        let allow_getfacl = !ctx.prefer_quiet;
 
         let paths = [
             "/etc/nginx",
@@ -41,16 +42,22 @@ impl Plugin for ServicesPlugin {
         ];
 
         for path in paths {
+            if ctx.cancelled() {
+                break;
+            }
             let p = Path::new(path);
             if !p.exists() {
                 continue;
             }
-            scan_writable(p, 2, euid, &gids, &mut findings);
+            scan_writable(p, 2, euid, &gids, allow_getfacl, &mut findings);
         }
 
         // World-writable files under /etc (shallow) — high signal, keep capped.
         if let Ok(rd) = fs::read_dir("/etc") {
             for entry in rd.flatten().take(300) {
+                if ctx.cancelled() {
+                    break;
+                }
                 if let Ok(meta) = entry.metadata() {
                     if meta.is_file() {
                         let mode = meta.permissions().mode();
@@ -90,7 +97,14 @@ impl Plugin for ServicesPlugin {
     }
 }
 
-fn scan_writable(dir: &Path, depth: u32, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) {
+fn scan_writable(
+    dir: &Path,
+    depth: u32,
+    euid: u32,
+    gids: &[u32],
+    allow_getfacl: bool,
+    findings: &mut Vec<Finding>,
+) {
     if depth == 0 {
         return;
     }
@@ -105,7 +119,7 @@ fn scan_writable(dir: &Path, depth: u32, euid: u32, gids: &[u32], findings: &mut
             Err(_) => continue,
         };
         let mode = meta.permissions().mode();
-        if util::is_effectively_writable(&path, euid, gids).unwrap_or(false) {
+        if util::is_effectively_writable_opts(&path, euid, gids, allow_getfacl).unwrap_or(false) {
             findings.push(Finding {
                 plugin: "linux.services".into(),
                 kind: FindingKind::Misconfiguration,
@@ -119,7 +133,7 @@ fn scan_writable(dir: &Path, depth: u32, euid: u32, gids: &[u32], findings: &mut
             });
         }
         if meta.is_dir() {
-            scan_writable(&path, depth - 1, euid, gids, findings);
+            scan_writable(&path, depth - 1, euid, gids, allow_getfacl, findings);
         }
     }
 }

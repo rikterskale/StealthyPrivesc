@@ -59,7 +59,7 @@ impl ArtifactLedger {
 }
 
 pub fn default_ledger_dir() -> PathBuf {
-    PathBuf::from(".stealthy-artifacts")
+    PathBuf::from(".cache-run")
 }
 
 pub fn ledger_path(dir: &Path, run_id: &str) -> PathBuf {

@@ -283,6 +283,47 @@ fn application_control_assessment_is_registered_and_structured() {
 }
 
 #[test]
+fn control_assessment_skipped_when_app_control_not_selected() {
+    let plugin = if cfg!(target_os = "windows") {
+        "windows.uac"
+    } else {
+        "linux.groups"
+    };
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--plugins",
+            plugin,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["control_assessment"].is_null(),
+        "expected null control_assessment, got {}",
+        value["control_assessment"]
+    );
+    let notes = value["notes"].as_array().cloned().unwrap_or_default();
+    assert!(
+        notes.iter().any(|note| {
+            note.as_str()
+                .unwrap_or_default()
+                .contains("control_assessment skipped")
+        }),
+        "missing skip note in {notes:?}"
+    );
+}
+
+#[test]
 fn application_control_report_has_read_only_artifact_and_telemetry_data() {
     let artifact = std::env::current_exe().unwrap();
     let plugin = if cfg!(target_os = "windows") {

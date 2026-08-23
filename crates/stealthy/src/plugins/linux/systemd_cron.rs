@@ -84,7 +84,7 @@ impl Plugin for SystemdCronPlugin {
                                     kind: FindingKind::ExploitAttempt,
                                     severity: Severity::High,
                                     title: format!("Confirmed writable via probe: {}", path.display()),
-                                    detail: "Created and deleted .stealthy_probe_marker successfully.".into(),
+                                    detail: "Created and deleted reversible writability marker successfully.".into(),
                                     recommendation: "Persistence via cron/systemd is noisy; obtain explicit approval first.".into(),
                                     noisy: true,
                                     leaves_artifacts: false,

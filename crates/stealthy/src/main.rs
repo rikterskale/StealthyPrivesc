@@ -727,7 +727,7 @@ fn print_guide() {
     println!("   · Enumerate + recommend");
     println!("   · --auto-exploit = reversible probes");
     println!("   · --allow-techniques = high-impact families (ROE opt-in)");
-    println!("   · --profile quiet|balanced|thorough|ci");
+    println!("   · --profile quiet|balanced|thorough|ci (quiet skips sudo/getcap helpers)");
     println!();
     println!(
         "{}",

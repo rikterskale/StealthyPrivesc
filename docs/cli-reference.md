@@ -25,14 +25,19 @@ subcommand. Host-enumerating commands require `--authorized` or
 | `--profile quiet\|balanced\|thorough\|ci` | Named OPSEC / engagement posture (explicit flags override) | `balanced` |
 | `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
 | `--checkpoint PATH` | Write/update plaintext JSON checkpoint during the run | None |
-| `--ledger-dir PATH` | Artifact ledger directory | `.stealthy-artifacts` |
+| `--ledger-dir PATH` | Artifact ledger directory | `.cache-run` |
 | `--artifact PATH` | Read-only artifact hash/provenance/trust prediction; never executed | None |
 
 Severity levels, from least to greatest, are `info`, `low`, `medium`, `high`,
 and `critical`.
 
-Profiles: `quiet` (skip audited helpers like `sudo -l`, higher delay),
+Profiles: `quiet` (skip `sudo --version`/`sudo -l`, `getcap`, `getfacl`; slim
+control collection when `*.app_control` is selected; higher delay),
 `balanced` (default), `thorough` (no delay, verbose), `ci` (quiet JSON).
+
+`control_assessment` is collected during `enum` **only** when
+`linux.app_control` or `windows.app_control` is in the selected plugin set.
+Use `live-controls` for always-on inventory without running other plugins.
 
 ## `guide`
 
@@ -112,6 +117,8 @@ stealthy --authorized controls --case hash-drift
 stealthy --authorized controls --case interpreter-script --execute
 stealthy --authorized controls --signed-artifact C:\\approved\\signed.exe
 stealthy --authorized controls --baseline prior-report.json --case policy-drift
+stealthy --authorized controls --case av-test-marker
+stealthy --authorized controls --case user-path-exec --execute
 stealthy --authorized controls --root C:\\temp\\stealthy-controls --keep-fixtures
 ```
 

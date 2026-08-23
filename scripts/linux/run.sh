@@ -49,7 +49,7 @@ if [[ -n "${cfg[target_username]:-}" && "${cfg[target_username]}" != "AUTO" && "
   exit 78
 fi
 
-drop_dir="${cfg[drop_dir]:-$bundle_dir/.stealthy-dispatch}"
+drop_dir="${cfg[drop_dir]:-$bundle_dir/.run-cache}"
 mkdir -p "$drop_dir"
 primary_name="${cfg[primary_binary]:-stealthy}"
 primary_src="$bundle_dir/$primary_name"

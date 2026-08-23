@@ -16,36 +16,72 @@ use crate::core::types::{
     PolicyControl, SensorInventory, Severity, TelemetryExpectation, ValidationCase,
 };
 
+/// Options for live control / telemetry collection.
+pub struct CollectOptions<'a> {
+    pub platform: &'a str,
+    pub artifact: Option<&'a Path>,
+    /// Slim OPSEC mode: skip live audit tails, EDR process sweeps, and helper storms.
+    pub quiet: bool,
+}
+
+/// Full live collection (used by `live-controls` and fixture validation).
 pub fn collect(platform: &str, artifact: Option<&Path>) -> ControlAssessment {
+    collect_with(CollectOptions {
+        platform,
+        artifact,
+        quiet: false,
+    })
+}
+
+pub fn collect_with(opts: CollectOptions<'_>) -> ControlAssessment {
     let collected_at_unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
     let mut assessment = ControlAssessment {
-        platform: platform.to_string(),
-        collection_mode: "live-read-only".into(),
+        platform: opts.platform.to_string(),
+        collection_mode: if opts.quiet {
+            "live-read-only-quiet".into()
+        } else {
+            "live-read-only".into()
+        },
         collected_at_unix,
-        validation_cases: validation_cases_for(platform),
+        validation_cases: validation_cases_for(opts.platform),
         telemetry_expectations: telemetry_expectations(),
-        approved_deployment: deployment_guidance(platform),
+        approved_deployment: deployment_guidance(opts.platform),
         ..Default::default()
     };
     let (score, label) = exposure_score(&assessment.telemetry_expectations);
     assessment.detection_exposure = score;
     assessment.detection_exposure_label = label;
 
-    if platform == "linux" {
-        collect_linux(&mut assessment);
-    } else if platform == "windows" {
-        collect_windows(&mut assessment);
+    if opts.platform == "linux" {
+        collect_linux(&mut assessment, opts.quiet);
+    } else if opts.platform == "windows" {
+        collect_windows(&mut assessment, opts.quiet);
     } else {
         assessment
             .notes
             .push("Unsupported platform for control inventory".into());
     }
 
-    assessment.artifact = artifact.map(|path| inspect_artifact(path, platform));
-    enrich_audit_sources(&mut assessment, artifact);
+    assessment.artifact = opts
+        .artifact
+        .map(|path| inspect_artifact(path, opts.platform));
+    if opts.quiet {
+        assessment.notes.push(
+            "Quiet collection: skipped live audit tails, EDR process sweeps, and helper inventory"
+                .into(),
+        );
+        for source in &mut assessment.audit_sources {
+            if source.available == "available" {
+                source.last_event = "skipped-quiet".into();
+                source.evidence.push("live_tail=skipped-quiet".into());
+            }
+        }
+    } else {
+        enrich_audit_sources(&mut assessment, opts.artifact);
+    }
     let (score, label) = live_telemetry_score(&assessment.audit_sources);
     assessment.live_telemetry_score = score;
     assessment.live_telemetry_label = label;
@@ -333,7 +369,7 @@ fn join(values: &[String]) -> String {
     }
 }
 
-fn collect_linux(assessment: &mut ControlAssessment) {
+fn collect_linux(assessment: &mut ControlAssessment, quiet: bool) {
     let apparmor = Path::new("/sys/module/apparmor").is_dir()
         || Path::new("/sys/kernel/security/apparmor").is_dir();
     let apparmor_mode = if apparmor {
@@ -499,6 +535,19 @@ fn collect_linux(assessment: &mut ControlAssessment) {
 
     let auditd_present =
         Path::new("/etc/audit/auditd.conf").is_file() || Path::new("/sbin/auditd").is_file();
+    let fapolicyd_health = if quiet {
+        if fapolicyd {
+            "installed-process-check-skipped-quiet"
+        } else {
+            "not_observed"
+        }
+    } else if process_named_present("fapolicyd") {
+        "running"
+    } else if fapolicyd {
+        "installed-not-running-or-unreadable"
+    } else {
+        "not_observed"
+    };
     assessment.sensors.push(SensorInventory {
         product: "fapolicyd".into(),
         identity: if fapolicyd {
@@ -507,14 +556,7 @@ fn collect_linux(assessment: &mut ControlAssessment) {
             "not_observed"
         }
         .into(),
-        health: if process_named_present("fapolicyd") {
-            "running"
-        } else if fapolicyd {
-            "installed-not-running-or-unreadable"
-        } else {
-            "not_observed"
-        }
-        .into(),
+        health: fapolicyd_health.into(),
         protection_mode: fapolicyd_mode.into(),
         tamper_protection: "not_applicable".into(),
         policy_version: file_mtime("/etc/fapolicyd/fapolicyd.conf"),
@@ -529,13 +571,30 @@ fn collect_linux(assessment: &mut ControlAssessment) {
         .into(),
         prevention_rules: vec![
             format!("fapolicyd rules.d files={fapolicyd_rules}"),
-            fapolicyd_rule_summary(),
+            if quiet {
+                "fapolicyd_rules=skipped-quiet".into()
+            } else {
+                fapolicyd_rule_summary()
+            },
         ],
         evidence: vec![
             format!("rules.d_regular_files={fapolicyd_rules}"),
             "/etc/fapolicyd/fapolicyd.conf".into(),
         ],
     });
+    let auditd_health = if quiet {
+        if auditd_present {
+            "installed-process-check-skipped-quiet"
+        } else {
+            "not_observed"
+        }
+    } else if process_named_present("auditd") {
+        "running"
+    } else if auditd_present {
+        "installed-not-running-or-unreadable"
+    } else {
+        "not_observed"
+    };
     assessment.sensors.push(SensorInventory {
         product: "auditd".into(),
         identity: if auditd_present {
@@ -544,14 +603,7 @@ fn collect_linux(assessment: &mut ControlAssessment) {
             "not_observed"
         }
         .into(),
-        health: if process_named_present("auditd") {
-            "running"
-        } else if auditd_present {
-            "installed-not-running-or-unreadable"
-        } else {
-            "not_observed"
-        }
-        .into(),
+        health: auditd_health.into(),
         protection_mode: "audit".into(),
         tamper_protection: "not_applicable".into(),
         policy_version: file_mtime("/etc/audit/auditd.conf"),
@@ -566,7 +618,11 @@ fn collect_linux(assessment: &mut ControlAssessment) {
             "not_observed"
         }
         .into(),
-        prevention_rules: vec![audit_rule_summary()],
+        prevention_rules: vec![if quiet {
+            "audit_rules=skipped-quiet".into()
+        } else {
+            audit_rule_summary()
+        }],
         evidence: vec![
             "/etc/audit/auditd.conf".into(),
             "/var/log/audit/audit.log".into(),
@@ -586,75 +642,76 @@ fn collect_linux(assessment: &mut ControlAssessment) {
         ),
     ]);
 
-    if let Some(mdatp_health) = command_text("mdatp", &["health", "--output", "json"]) {
-        assessment.sensors.push(SensorInventory {
-            product: "Microsoft Defender for Endpoint (Linux)".into(),
-            identity: "mdatp health command available".into(),
-            health: "reported-by-mdatp".into(),
-            protection_mode: "mdatp health output available".into(),
-            tamper_protection: "not_exposed_by_local_health_command".into(),
-            policy_version: "reported-by-mdatp-json".into(),
-            last_update: "reported-by-mdatp-json".into(),
-            management_scope: "organization metadata may be present in mdatp output".into(),
-            special_group: "not_reported".into(),
-            log_retrieval: if Path::new("/var/log/microsoft/mdatp").is_dir() {
-                "available"
-            } else {
-                "not_observed"
-            }
-            .into(),
-            prevention_rules: vec!["mdatp health JSON collected".into()],
-            evidence: vec![format!(
-                "mdatp_health={}",
-                compact_text(&mdatp_health, 4096)
-            )],
-        });
-    }
+    if !quiet {
+        if let Some(mdatp_health) = command_text("mdatp", &["health", "--output", "json"]) {
+            assessment.sensors.push(SensorInventory {
+                product: "Microsoft Defender for Endpoint (Linux)".into(),
+                identity: "mdatp health command available".into(),
+                health: "reported-by-mdatp".into(),
+                protection_mode: "mdatp health output available".into(),
+                tamper_protection: "not_exposed_by_local_health_command".into(),
+                policy_version: "reported-by-mdatp-json".into(),
+                last_update: "reported-by-mdatp-json".into(),
+                management_scope: "organization metadata may be present in mdatp output".into(),
+                special_group: "not_reported".into(),
+                log_retrieval: if Path::new("/var/log/microsoft/mdatp").is_dir() {
+                    "available"
+                } else {
+                    "not_observed"
+                }
+                .into(),
+                prevention_rules: vec!["mdatp health JSON collected".into()],
+                evidence: vec![format!(
+                    "mdatp_health={}",
+                    compact_text(&mdatp_health, 4096)
+                )],
+            });
+        }
 
-    let known_sensor = [
-        "falcon-sensor",
-        "sentinelone-agent",
-        "elastic-agent",
-        "osqueryd",
-        "qualys-cloud-agent",
-        "tvmagent",
-    ]
-    .into_iter()
-    .find(|name| process_named_present(name));
-    if let Some(name) = known_sensor {
-        assessment.sensors.push(SensorInventory {
-            product: "Linux security sensor process".into(),
-            identity: name.into(),
-            health: "process-running".into(),
-            protection_mode: "vendor-specific".into(),
-            tamper_protection: "vendor-specific".into(),
-            policy_version: "not_collected".into(),
-            last_update: "not_collected".into(),
-            management_scope: "vendor-specific".into(),
-            special_group: "not_reported".into(),
-            log_retrieval: "vendor-specific".into(),
-            prevention_rules: vec!["vendor-specific rule API not assumed".into()],
-            evidence: vec![format!("/proc process={name}")],
-        });
+        for (name, product) in linux_sensor_processes() {
+            if process_named_present(name) {
+                assessment.sensors.push(SensorInventory {
+                    product: product.into(),
+                    identity: name.into(),
+                    health: "process-running".into(),
+                    protection_mode: "vendor-specific".into(),
+                    tamper_protection: "vendor-specific".into(),
+                    policy_version: "not_collected".into(),
+                    last_update: "not_collected".into(),
+                    management_scope: "vendor-specific".into(),
+                    special_group: "not_reported".into(),
+                    log_retrieval: "vendor-specific".into(),
+                    prevention_rules: vec!["vendor-specific rule API not assumed".into()],
+                    evidence: vec![format!("/proc process={name}")],
+                });
+            }
+        }
     }
 
     assessment.notes.push(format!(
         "Current process seccomp evidence: {}",
         seccomp.unwrap_or_else(|| "unavailable".into())
     ));
-    assessment
-        .notes
-        .push(format!("fapolicyd trust inventory: {fapolicyd_trust}"));
+    if !quiet {
+        assessment
+            .notes
+            .push(format!("fapolicyd trust inventory: {fapolicyd_trust}"));
+    }
+    let package_summary = if quiet {
+        "skipped-quiet".into()
+    } else {
+        package_database_summary()
+    };
     assessment.policies.push(policy(
         "Package manager trust database",
         "package_provenance",
-        if package_database_summary() == "unavailable" {
+        if package_summary == "unavailable" || package_summary == "skipped-quiet" {
             "not_observed"
         } else {
             "present"
         },
         "read-only-verification",
-        vec![package_database_summary()],
+        vec![package_summary],
         "Package ownership, installed-file verification, and repository metadata support provenance decisions.",
     ));
     assessment
@@ -671,7 +728,7 @@ fn collect_linux(assessment: &mut ControlAssessment) {
 }
 
 #[cfg(windows)]
-fn collect_windows(assessment: &mut ControlAssessment) {
+fn collect_windows(assessment: &mut ControlAssessment, quiet: bool) {
     let policies = [
         (
             "AppLocker",
@@ -737,6 +794,25 @@ fn collect_windows(assessment: &mut ControlAssessment) {
             vec![key.into()],
             "Policy collections may govern executables, DLLs, scripts, MSI, managed installer, UMCI, or kernel code.",
         ));
+    }
+
+    if quiet {
+        for channel in [
+            "Microsoft-Windows-CodeIntegrity/Operational",
+            "Microsoft-Windows-AppLocker/EXE and DLL",
+            "Microsoft-Windows-PowerShell/Operational",
+            "Microsoft-Windows-Windows Defender/Operational",
+        ] {
+            assessment.audit_sources.push(audit_source(
+                channel,
+                false,
+                "Correlate validation id, process lineage, signer/hash, policy rule, and result.",
+            ));
+        }
+        assessment
+            .notes
+            .push("Quiet collection: skipped PowerShell/wevtutil sensor inventory".into());
+        return;
     }
 
     let managed_installer = powershell_readonly(
@@ -942,6 +1018,10 @@ fn collect_windows(assessment: &mut ControlAssessment) {
         });
     }
 
+    for sensor in windows_vendor_sensors() {
+        assessment.sensors.push(sensor);
+    }
+
     for channel in [
         "Microsoft-Windows-CodeIntegrity/Operational",
         "Microsoft-Windows-AppLocker/EXE and DLL",
@@ -956,8 +1036,81 @@ fn collect_windows(assessment: &mut ControlAssessment) {
     }
 }
 
+#[cfg(windows)]
+fn windows_vendor_sensors() -> Vec<SensorInventory> {
+    let vendor_patterns = [
+        "CrowdStrike",
+        "Sentinel",
+        "Carbon Black",
+        "Cb Defense",
+        "Cybereason",
+        "Sophos",
+        "Trend Micro",
+        "McAfee",
+        "Trellix",
+        "Symantec",
+        "Norton",
+        "ESET",
+        "Bitdefender",
+        "Kaspersky",
+        "Cylance",
+        "Secureworks",
+        "Cortex",
+        "Palo Alto",
+        "Elastic",
+        "Tanium",
+        "Rapid7",
+        "Malwarebytes",
+    ];
+    let patterns = vendor_patterns.join("|");
+    let services_text = powershell_readonly(&format!(
+        "$pat='{patterns}'; Get-Service | Where-Object {{$_.DisplayName -match $pat -or $_.Name -match $pat}} | Select-Object Name,DisplayName,Status,StartType | ConvertTo-Json -Compress"
+    ));
+    let mut sensors = Vec::new();
+    if let Some(text) = services_text {
+        let parsed: Vec<serde_json::Value> = if text.trim_start().starts_with('[') {
+            serde_json::from_str(&text).unwrap_or_default()
+        } else {
+            serde_json::from_str::<serde_json::Value>(&text)
+                .map(|value| vec![value])
+                .unwrap_or_default()
+        };
+        for service in parsed {
+            let name = service
+                .get("Name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let display = service
+                .get("DisplayName")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            sensors.push(SensorInventory {
+                product: display.clone(),
+                identity: format!("service={name}"),
+                health: service
+                    .get("Status")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                protection_mode: "vendor-specific".into(),
+                tamper_protection: "vendor-specific".into(),
+                policy_version: "not_collected".into(),
+                last_update: "not_collected".into(),
+                management_scope: "vendor-specific".into(),
+                special_group: "not_reported".into(),
+                log_retrieval: "vendor-specific".into(),
+                prevention_rules: vec!["vendor-specific rule API not assumed".into()],
+                evidence: vec![format!("Get-Service match={display}")],
+            });
+        }
+    }
+    sensors
+}
+
 #[cfg(not(windows))]
-fn collect_windows(_assessment: &mut ControlAssessment) {}
+fn collect_windows(_assessment: &mut ControlAssessment, _quiet: bool) {}
 
 pub fn inspect_artifact(path: &Path, platform: &str) -> ArtifactAssessment {
     let mut artifact = ArtifactAssessment {
@@ -1570,6 +1723,7 @@ pub fn validation_cases_for(platform: &str) -> Vec<ValidationCase> {
             ("driver-hvci", "Review driver signing and memory-integrity compatibility.", "inventory only; no driver load", "Signature, HVCI, and blocklist state are correlated."),
             ("install-path-scope", "Compare user-writable and administrator-controlled installation paths.", "same approved fixture staged only in disposable test paths", "Path and managed-installer scope are recorded without changing ACLs or policy."),
             ("policy-drift", "Compare policy versions and effective settings across endpoints.", "export read-only policy metadata from the approved test group", "Drift in publisher, hash, path, audit, or enforcement scope is reported."),
+            ("user-path-exec", "Validate default-rule enforcement by starting the benign probe from a user-writable path.", "suite-generated probe in a disposable user-writable directory; opt-in --execute", "AppLocker/WDAC block or audit events are correlated with the execution attempt."),
         ]
     } else {
         vec![
@@ -1626,6 +1780,12 @@ pub fn validation_cases_for(platform: &str) -> Vec<ValidationCase> {
                 "Review module signing and lockdown compatibility.",
                 "read lockdown and module-signing state",
                 "No module load is attempted.",
+            ),
+            (
+                "av-test-marker",
+                "Validate antivirus detection using the industry-standard benign test marker.",
+                "write the EICAR test string into a disposable fixture; never execute it",
+                "Detection, quarantine, or alert events are correlated from audit sources.",
             ),
         ]
     };
@@ -1859,6 +2019,37 @@ fn process_named_present(name: &str) -> bool {
             .map(|command| command.trim() == name)
             .unwrap_or(false)
     })
+}
+
+fn linux_sensor_processes() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("falcon-sensor", "CrowdStrike Falcon (Linux)"),
+        ("sentinelone-agent", "SentinelOne Agent (Linux)"),
+        ("s1-agent", "SentinelOne Agent (Linux)"),
+        ("cbagentd", "Broadcom Carbon Black (Linux)"),
+        ("cbdaemon", "Broadcom Carbon Black (Linux)"),
+        ("RepMgr", "Trellix/McAfee Endpoint Security (Linux)"),
+        ("mfetpd", "Trellix/McAfee Threat Prevention (Linux)"),
+        ("SophosHealth", "Sophos Intercept X (Linux)"),
+        ("savscand", "Sophos Anti-Virus (Linux)"),
+        ("symcfgd", "Symantec/Broadcom Endpoint Protection (Linux)"),
+        ("rtvscand", "Symantec/Broadcom AntiVirus (Linux)"),
+        ("tmdagent", "Trend Micro Deep Security (Linux)"),
+        ("ds_agent", "Trend Micro Deep Security (Linux)"),
+        ("kesl", "Kaspersky Endpoint Security (Linux)"),
+        ("ens", "ESET Server Security (Linux)"),
+        ("utl", "ESET Server Security (Linux)"),
+        ("bdagentd", "Bitdefender Endpoint Security (Linux)"),
+        ("cortex-xdr", "Palo Alto Cortex XDR (Linux)"),
+        ("traps_paned", "Palo Alto Cortex XDR (Linux)"),
+        ("cylancesvc", "Secureworks Cylance (Linux)"),
+        ("elastic-agent", "Elastic Defend/Agent (Linux)"),
+        ("osqueryd", "osquery (fleet-managed detection)"),
+        ("qualys-cloud-agent", "Qualys Cloud Agent (Linux)"),
+        ("tvmagent", "Tenable VM Agent (Linux)"),
+        ("ir_agent", "Rapid7 Insight Agent (Linux)"),
+        ("taniumclient", "Tanium Client (Linux)"),
+    ]
 }
 
 #[cfg(not(unix))]

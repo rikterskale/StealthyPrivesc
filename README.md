@@ -77,7 +77,7 @@ cargo build -p stealthy --release
 # High-signal only + live progress
 ./target/release/stealthy --authorized enum --min-severity high
 
-# OPSEC profile (skips audited sudo -l; higher delay)
+# OPSEC profile (skips sudo helpers/getcap/getfacl; slim control collect; higher delay)
 ./target/release/stealthy --authorized --profile quiet enum
 
 # Quiet + select plugins

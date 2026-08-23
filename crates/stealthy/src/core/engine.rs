@@ -141,7 +141,6 @@ impl Engine {
 
         let os_info = os::detect();
         let ident = identity::current();
-        let control_assessment = controls::collect(&os_info.os, self.artifact.as_deref());
         let started_at_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs())
@@ -168,6 +167,9 @@ impl Engine {
         let mut plugins_run = Vec::new();
         let mut coverage = Vec::new();
         let mut triage_decisions: Vec<TriageDecision> = Vec::new();
+        let mut control_assessment = prior
+            .as_ref()
+            .and_then(|report| report.control_assessment.clone());
 
         if let Some(report) = &prior {
             for finding in &report.findings {
@@ -277,6 +279,26 @@ impl Engine {
             .filter(|p| !done_ok.contains(p.id()))
             .collect();
 
+        let needs_app_control = selected
+            .iter()
+            .any(|plugin| matches!(plugin.id(), "linux.app_control" | "windows.app_control"));
+        if needs_app_control {
+            if control_assessment.is_none() {
+                control_assessment = Some(controls::collect_with(controls::CollectOptions {
+                    platform: &os_info.os,
+                    artifact: self.artifact.as_deref(),
+                    quiet: self.prefer_quiet,
+                }));
+                store.note(if self.prefer_quiet {
+                    "control_assessment collected (quiet/slim; app_control selected)"
+                } else {
+                    "control_assessment collected (app_control selected)"
+                });
+            }
+        } else if control_assessment.is_none() {
+            store.note("control_assessment skipped (app_control not selected)");
+        }
+
         if selected.is_empty() {
             store.note(format!(
                 "No plugins selected for os={} — check --plugins / build target / resume coverage.",
@@ -341,7 +363,8 @@ impl Engine {
                 plugin.id(),
                 effective_auto_exploit,
                 &approved_probe_ids,
-                &control_assessment,
+                control_assessment.as_ref(),
+                cancel.clone(),
             );
 
             match outcome {
@@ -440,7 +463,7 @@ impl Engine {
                     coverage.clone(),
                     notes,
                     triage_decisions.clone(),
-                    Some(control_assessment.clone()),
+                    control_assessment.clone(),
                 );
                 if let Ok(body) = serde_json::to_string_pretty(&partial) {
                     let _ = std::fs::write(path, body);
@@ -511,7 +534,7 @@ impl Engine {
             profile: self.profile.as_str().into(),
             coverage_mode: "binary".into(),
             capability_delta: vec![],
-            control_assessment: Some(control_assessment),
+            control_assessment,
             os: os_info,
             identity: ident,
             findings,
@@ -590,7 +613,8 @@ impl Engine {
         plugin_id: &str,
         auto_exploit: bool,
         approved_probe_ids: &[String],
-        control_assessment: &ControlAssessment,
+        control_assessment: Option<&ControlAssessment>,
+        cancel: Arc<AtomicBool>,
     ) -> PluginOutcome {
         let timeout = self.plugin_timeout_ms;
         if timeout == 0 {
@@ -602,7 +626,8 @@ impl Engine {
                 &self.allow_techniques,
                 approved_probe_ids,
                 self.artifact.clone(),
-                Some(control_assessment.clone()),
+                control_assessment.cloned(),
+                cancel,
             ) {
                 Ok(f) => PluginOutcome::Ok(f),
                 Err(e) => PluginOutcome::Err(format!("{e:#}")),
@@ -615,8 +640,9 @@ impl Engine {
         let allow = self.allow_techniques.clone();
         let approved = approved_probe_ids.to_vec();
         let artifact = self.artifact.clone();
-        let control_assessment = control_assessment.clone();
+        let control_assessment = control_assessment.cloned();
         let id = plugin_id.to_string();
+        let worker_cancel = cancel.clone();
         std::thread::spawn(move || {
             let result = run_plugin_blocking(
                 &id,
@@ -626,7 +652,8 @@ impl Engine {
                 &allow,
                 &approved,
                 artifact,
-                Some(control_assessment),
+                control_assessment,
+                worker_cancel,
             );
             let _ = tx.send(result);
         });
@@ -634,7 +661,10 @@ impl Engine {
         match rx.recv_timeout(Duration::from_millis(timeout)) {
             Ok(Ok(findings)) => PluginOutcome::Ok(findings),
             Ok(Err(e)) => PluginOutcome::Err(format!("{e:#}")),
-            Err(mpsc::RecvTimeoutError::Timeout) => PluginOutcome::Timeout,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                cancel.store(true, Ordering::SeqCst);
+                PluginOutcome::Timeout
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 PluginOutcome::Err("plugin thread disconnected".into())
             }
@@ -658,6 +688,7 @@ fn run_plugin_blocking(
     approved_probe_ids: &[String],
     artifact_path: Option<PathBuf>,
     control_assessment: Option<ControlAssessment>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<Vec<Finding>> {
     let registry = plugins::registry();
     let plugin = registry
@@ -674,6 +705,7 @@ fn run_plugin_blocking(
         approved_probe_ids,
         artifact_path,
         control_assessment,
+        cancel,
     };
     plugin.run(&mut ctx)
 }
@@ -768,5 +800,5 @@ fn with_operator_next_step(mut finding: Finding) -> Finding {
 }
 
 fn store_into_parts(store: &EncryptedStore) -> (Vec<Finding>, Vec<String>) {
-    (store.findings().to_vec(), store.notes().to_vec())
+    (store.findings(), store.notes().to_vec())
 }

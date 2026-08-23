@@ -24,39 +24,40 @@ impl Plugin for SudoPlugin {
     fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        // Informational sudo version / CVE hints (spawns sudo --version; relatively low noise).
-        if let Ok(out) = Command::new("sudo").args(["--version"]).output() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let line = text.lines().next().unwrap_or("").to_string();
-            if !line.is_empty() {
-                findings.push(Finding {
-                    plugin: self.id().into(),
-                    kind: FindingKind::Enumeration,
-                    severity: Severity::Info,
-                    title: "sudo version".into(),
-                    detail: line.clone(),
-                    recommendation:
-                        "Compare against distro security tracker. No sudo CVE is auto-exploited."
-                            .into(),
-                    noisy: true,
-                    leaves_artifacts: false,
-                    ..Default::default()
-                });
-                // Crude historical hints only — never exploit.
-                if line.contains("1.8.") || line.contains("1.9.0") || line.contains("1.9.1") {
+        // Quiet profile skips all sudo binary helpers (version + -l).
+        if !ctx.prefer_quiet {
+            if let Ok(out) = Command::new("sudo").args(["--version"]).output() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let line = text.lines().next().unwrap_or("").to_string();
+                if !line.is_empty() {
                     findings.push(Finding {
                         plugin: self.id().into(),
-                        kind: FindingKind::Recommendation,
-                        severity: Severity::Medium,
-                        title: "sudo build may warrant CVE review (historical heap/Baron-class era)"
-                            .into(),
-                        detail: line,
-                        recommendation: "Validate patch level offline. Do not run public sudo exploits on production."
-                            .into(),
-                        noisy: false,
+                        kind: FindingKind::Enumeration,
+                        severity: Severity::Info,
+                        title: "sudo version".into(),
+                        detail: line.clone(),
+                        recommendation:
+                            "Compare against distro security tracker. No sudo CVE is auto-exploited."
+                                .into(),
+                        noisy: true,
                         leaves_artifacts: false,
                         ..Default::default()
                     });
+                    if line.contains("1.8.") || line.contains("1.9.0") || line.contains("1.9.1") {
+                        findings.push(Finding {
+                            plugin: self.id().into(),
+                            kind: FindingKind::Recommendation,
+                            severity: Severity::Medium,
+                            title: "sudo build may warrant CVE review (historical heap/Baron-class era)"
+                                .into(),
+                            detail: line,
+                            recommendation: "Validate patch level offline. Do not run public sudo exploits on production."
+                                .into(),
+                            noisy: false,
+                            leaves_artifacts: false,
+                            ..Default::default()
+                        });
+                    }
                 }
             }
         }
@@ -67,23 +68,24 @@ impl Plugin for SudoPlugin {
             .unwrap_or_default();
         let groups = util::current_group_names();
         for path in ["/etc/sudoers", "/etc/sudoers.d"] {
+            if ctx.cancelled() {
+                break;
+            }
             collect_readable_sudoers(path, &username, &groups, &mut findings);
         }
 
-        // Noisy path: only when verbose or when quiet paths found nothing useful.
-        // `sudo -l` is commonly audited — warn the operator.
-        // Quiet/OPSEC profiles skip this audited helper entirely.
+        // `sudo -l` is commonly audited — quiet/OPSEC profiles skip it entirely.
         if ctx.prefer_quiet {
             if findings.is_empty() {
                 findings.push(Finding {
                     plugin: self.id().into(),
                     kind: FindingKind::Recommendation,
                     severity: Severity::Info,
-                    title: "sudo -l skipped (quiet profile)".into(),
+                    title: "sudo helpers skipped (quiet profile)".into(),
                     detail:
-                        "prefer_quiet/OPSEC profile avoids audited sudo -l; readable sudoers only."
+                        "prefer_quiet/OPSEC profile avoids sudo --version and sudo -l; readable sudoers only."
                             .into(),
-                    recommendation: "Re-run with --profile balanced|thorough if sudo -l is in ROE."
+                    recommendation: "Re-run with --profile balanced|thorough if sudo helpers are in ROE."
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,

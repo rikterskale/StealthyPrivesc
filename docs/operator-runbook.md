@@ -1818,7 +1818,7 @@ or AV/EDR.
 | `0` with few findings | Healthy quiet host or filtered plugins | Widen `--plugins` or remove `--skip` |
 | `permission denied` running binary | No execute bit / mount `noexec` | `chmod +x` or run from executable mount; else use scripts |
 | Windows SmartScreen / AppLocker block | Custom `.exe` blocked | Use `enum.ps1` / `enum.js` / approved LOLBIN host |
-| `sudo -l` noisy / audited | Expected | Prefer readable sudoers paths; avoid verbose unless needed |
+| `sudo -l` noisy / audited | Expected | Prefer `--profile quiet` (skips sudo helpers) or readable sudoers paths |
 | Sealed file present, lost key | Cannot decrypt | Re-run with key capture; treat as sensitive credential |
 
 ---

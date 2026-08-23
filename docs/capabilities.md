@@ -122,6 +122,11 @@ Optional:
 - Windows service-account context, token-aware read-only ACL checks, and Winlogon persistence coverage
 - Low-and-slow delay knob
 - Script fallbacks when binaries are blocked
+- `control_assessment` during `enum` only when `*.app_control` is selected (`live-controls` always collects)
+- `--profile quiet` skips `sudo` helpers, `getcap`, `getfacl`, and uses slim control collection
+- Findings sealed at rest in the in-memory store; default ledger dir is `.cache-run`
+- Plugin timeouts cooperatively cancel Rust-side walks (helper child processes may still finish)
+- Residual static signature risk remains (cleartext brand/plugin strings); rename via `stage --name` when ROE requires
 
 ## Explicitly out of scope for v1
 - Fully autonomous multi-host C2 without operator-driven orchestration

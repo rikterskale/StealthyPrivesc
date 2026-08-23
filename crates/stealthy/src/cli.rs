@@ -47,7 +47,7 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 120_000)]
     pub plugin_timeout_ms: u64,
 
-    /// Artifact ledger directory (default: .stealthy-artifacts).
+    /// Artifact ledger directory (default: .cache-run).
     #[arg(long, global = true)]
     pub ledger_dir: Option<std::path::PathBuf>,
 

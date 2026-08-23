@@ -97,21 +97,25 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         )?;
     }
 
-    // Copy script fallbacks when present relative to cwd.
+    // Copy script fallbacks when present. Prefer cwd / exe-adjacent paths (no
+    // absolute build-machine CARGO_MANIFEST_DIR embedding in release binaries).
     let scripts_rel = if opts.os == "windows" {
         "scripts/windows"
     } else {
         "scripts/linux"
     };
-    let scripts_src = [
-        PathBuf::from(scripts_rel),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join(scripts_rel),
-    ]
-    .into_iter()
-    .find(|path| path.is_dir())
-    .unwrap_or_else(|| PathBuf::from(scripts_rel));
+    let mut candidates = vec![PathBuf::from(scripts_rel)];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join(scripts_rel));
+            candidates.push(dir.join("../").join(scripts_rel));
+            candidates.push(dir.join("../../").join(scripts_rel));
+        }
+    }
+    let scripts_src = candidates
+        .into_iter()
+        .find(|path| path.is_dir())
+        .unwrap_or_else(|| PathBuf::from(scripts_rel));
     let scripts_dst = opts.out_dir.join("scripts");
     fs::create_dir_all(&scripts_dst)?;
     if scripts_src.is_dir() {

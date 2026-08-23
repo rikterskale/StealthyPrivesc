@@ -54,7 +54,9 @@ impl EngagementProfile {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Quiet => "Low-noise reads; skip audited helpers like sudo -l; higher delay",
+            Self::Quiet => {
+                "Low-noise reads; skip sudo helpers/getcap/getfacl; slim control collect; higher delay"
+            }
             Self::Balanced => "Default enumerate posture",
             Self::Thorough => "Full plugin set, no delay, verbose progress",
             Self::Ci => "Quiet JSON automation posture",

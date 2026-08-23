@@ -79,10 +79,19 @@ pub fn is_writable_by_euid(meta: &fs::Metadata, euid: u32, gids: &[u32]) -> bool
 /// This follows the target metadata and evaluates owner/group/other mode bits.
 /// POSIX ACLs are intentionally reported as unknown until an ACL-aware backend
 /// is available; callers should not treat a false result as proof of safety.
-pub fn is_effectively_writable(path: &Path, euid: u32, gids: &[u32]) -> Option<bool> {
+/// Effective-write check. When `allow_getfacl` is false (quiet profile), skip the helper spawn.
+pub fn is_effectively_writable_opts(
+    path: &Path,
+    euid: u32,
+    gids: &[u32],
+    allow_getfacl: bool,
+) -> Option<bool> {
     let meta = fs::metadata(path).ok()?;
     if is_writable_by_euid(&meta, euid, gids) {
         return Some(true);
+    }
+    if !allow_getfacl {
+        return Some(false);
     }
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
@@ -144,7 +153,7 @@ fn acl_text_allows_write(text: &str, username: &str, groups: &[String]) -> bool 
 
 #[cfg(test)]
 mod tests {
-    use super::{acl_text_allows_write, is_effectively_writable, is_writable_by_euid};
+    use super::{acl_text_allows_write, is_effectively_writable_opts, is_writable_by_euid};
     use std::os::unix::fs::MetadataExt;
 
     #[test]
@@ -170,7 +179,10 @@ mod tests {
         perms.set_mode(0o600);
         std::fs::set_permissions(&path, perms).unwrap();
         let meta = std::fs::metadata(&path).unwrap();
-        assert_eq!(is_effectively_writable(&path, meta.uid(), &[]), Some(true));
+        assert_eq!(
+            is_effectively_writable_opts(&path, meta.uid(), &[], true),
+            Some(true)
+        );
     }
 
     #[test]

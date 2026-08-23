@@ -24,5 +24,9 @@ pub fn evasion_notes() -> Vec<String> {
     vec![
         "Prefer /proc and direct file reads over spawning ps/ss/id where possible.".into(),
         "Avoid cmd.exe /c and powershell.exe child processes for simple identity queries.".into(),
+        "control_assessment runs only when linux.app_control / windows.app_control is selected."
+            .into(),
+        "Use --profile quiet to skip sudo helpers, getcap/getfacl, and slim control collection."
+            .into(),
     ]
 }

@@ -22,7 +22,7 @@ impl Plugin for SshKeysPlugin {
         &["linux"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
         let mut roots: Vec<PathBuf> = Vec::new();
         if let Ok(home) = std::env::var("HOME") {
@@ -32,6 +32,9 @@ impl Plugin for SshKeysPlugin {
         // Shallow scan a few home dirs if readable
         if let Ok(rd) = fs::read_dir("/home") {
             for entry in rd.flatten().take(30) {
+                if ctx.cancelled() {
+                    break;
+                }
                 roots.push(entry.path().join(".ssh"));
             }
         }
@@ -46,6 +49,9 @@ impl Plugin for SshKeysPlugin {
         ];
 
         for root in roots {
+            if ctx.cancelled() {
+                break;
+            }
             if !root.is_dir() {
                 continue;
             }
@@ -89,10 +95,19 @@ fn check_private_key(path: &Path, findings: &mut Vec<Finding>) {
     if fs::File::open(path).is_err() {
         return;
     }
-    // Peek header only — never dump key material into findings.
-    let header_ok = fs::read_to_string(path)
+    // Peek header only — never dump key material into findings or fully load the file.
+    let mut header = [0u8; 64];
+    let header_ok = fs::File::open(path)
         .ok()
-        .map(|t| t.contains("PRIVATE KEY") || t.starts_with("SSH "))
+        .and_then(|mut f| {
+            use std::io::Read;
+            let n = f.read(&mut header).ok()?;
+            Some(header[..n].to_vec())
+        })
+        .map(|bytes| {
+            let text = String::from_utf8_lossy(&bytes);
+            text.contains("PRIVATE KEY") || text.starts_with("SSH ")
+        })
         .unwrap_or(false);
     if !header_ok {
         return;

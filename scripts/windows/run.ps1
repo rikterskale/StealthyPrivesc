@@ -41,7 +41,7 @@ if ($cfg.ContainsKey('target_username') -and $cfg.target_username -and $cfg.targ
   throw 'dispatcher: target username mismatch'
 }
 
-$dropDir = if ($cfg.drop_dir) { $cfg.drop_dir } else { Join-Path $bundleDir '.stealthy-dispatch' }
+$dropDir = if ($cfg.drop_dir) { $cfg.drop_dir } else { Join-Path $bundleDir '.run-cache' }
 New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
 $primaryName = if ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
 $primarySrc = Join-Path $bundleDir $primaryName

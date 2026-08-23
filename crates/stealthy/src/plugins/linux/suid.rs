@@ -1,6 +1,8 @@
 use anyhow::Result;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -56,11 +58,14 @@ impl Plugin for SuidPlugin {
         ];
 
         for root in roots {
+            if ctx.cancelled() {
+                break;
+            }
             let path = Path::new(root);
             if !path.is_dir() {
                 continue;
             }
-            walk_limited(path, 2, &mut |p, meta| {
+            walk_limited(path, 2, &ctx.cancel, &mut |p, meta| {
                 let mode = meta.mode();
                 let suid = mode & 0o4000 != 0;
                 let sgid = mode & 0o2000 != 0;
@@ -95,26 +100,29 @@ impl Plugin for SuidPlugin {
             });
         }
 
-        // Capabilities via getcap if present (optional, slightly noisier).
-        if let Ok(out) = std::process::Command::new("getcap")
-            .args(["-r", "/usr/bin"])
-            .output()
-        {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines().take(50) {
-                if line.contains('=') {
-                    findings.push(Finding {
-                        plugin: "linux.suid".into(),
-                        kind: FindingKind::Enumeration,
-                        severity: Severity::Medium,
-                        title: "File capability".into(),
-                        detail: line.to_string(),
-                        recommendation:
-                            "Review cap_setuid/cap_sys_admin style capabilities carefully.".into(),
-                        noisy: true,
-                        leaves_artifacts: false,
-                        ..Default::default()
-                    });
+        // Capabilities via getcap if present (optional, slightly noisier). Quiet skips spawn.
+        if !ctx.prefer_quiet {
+            if let Ok(out) = std::process::Command::new("getcap")
+                .args(["-r", "/usr/bin"])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&out.stdout);
+                for line in text.lines().take(50) {
+                    if line.contains('=') {
+                        findings.push(Finding {
+                            plugin: "linux.suid".into(),
+                            kind: FindingKind::Enumeration,
+                            severity: Severity::Medium,
+                            title: "File capability".into(),
+                            detail: line.to_string(),
+                            recommendation:
+                                "Review cap_setuid/cap_sys_admin style capabilities carefully."
+                                    .into(),
+                            noisy: true,
+                            leaves_artifacts: false,
+                            ..Default::default()
+                        });
+                    }
                 }
             }
         }
@@ -157,8 +165,13 @@ impl Plugin for SuidPlugin {
     }
 }
 
-fn walk_limited(dir: &Path, depth: u32, f: &mut dyn FnMut(&PathBuf, &std::fs::Metadata)) {
-    if depth == 0 {
+fn walk_limited(
+    dir: &Path,
+    depth: u32,
+    cancel: &Arc<AtomicBool>,
+    f: &mut dyn FnMut(&PathBuf, &std::fs::Metadata),
+) {
+    if depth == 0 || cancel.load(Ordering::SeqCst) {
         return;
     }
     let entries = match std::fs::read_dir(dir) {
@@ -166,6 +179,9 @@ fn walk_limited(dir: &Path, depth: u32, f: &mut dyn FnMut(&PathBuf, &std::fs::Me
         Err(_) => return,
     };
     for entry in entries.flatten() {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
         let path = entry.path();
         let meta = match entry.metadata() {
             Ok(m) => m,
@@ -177,7 +193,7 @@ fn walk_limited(dir: &Path, depth: u32, f: &mut dyn FnMut(&PathBuf, &std::fs::Me
         if meta.is_file() {
             f(&path, &meta);
         } else if meta.is_dir() {
-            walk_limited(&path, depth - 1, f);
+            walk_limited(&path, depth - 1, cancel, f);
         }
     }
 }

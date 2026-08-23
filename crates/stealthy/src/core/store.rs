@@ -8,11 +8,11 @@ use crate::core::types::{Finding, RunReport};
 
 /// Encrypted in-memory result store.
 ///
-/// Findings are held as plaintext `Finding` values for operator convenience during
-/// the run, then sealed with ChaCha20-Poly1305 when exporting. The ephemeral key
-/// is zeroized on drop.
+/// Findings are sealed with ChaCha20-Poly1305 while resident in this store.
+/// Transient decrypted views are produced only when reading or emitting.
+/// The ephemeral key is zeroized on drop.
 pub struct EncryptedStore {
-    findings: Vec<Finding>,
+    sealed_findings: Vec<String>,
     notes: Vec<String>,
     key: [u8; 32],
 }
@@ -22,22 +22,37 @@ impl EncryptedStore {
         let mut key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
         Self {
-            findings: Vec::new(),
+            sealed_findings: Vec::new(),
             notes: Vec::new(),
             key,
         }
     }
 
     pub fn push(&mut self, finding: Finding) {
-        self.findings.push(finding);
+        match serde_json::to_vec(&finding)
+            .ok()
+            .and_then(|bytes| self.seal_bytes(&bytes).ok())
+        {
+            Some(sealed) => self.sealed_findings.push(sealed),
+            None => {
+                // Extremely unlikely; keep a note rather than storing plaintext.
+                self.notes
+                    .push("failed to seal a finding into the encrypted store".into());
+            }
+        }
     }
 
     pub fn note(&mut self, note: impl Into<String>) {
         self.notes.push(note.into());
     }
 
-    pub fn findings(&self) -> &[Finding] {
-        &self.findings
+    /// Decrypt a temporary owned snapshot of sealed findings.
+    pub fn findings(&self) -> Vec<Finding> {
+        self.sealed_findings
+            .iter()
+            .filter_map(|sealed| self.open_bytes(sealed).ok())
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect()
     }
 
     pub fn notes(&self) -> &[String] {
@@ -86,8 +101,6 @@ impl EncryptedStore {
         ))
     }
 
-    /// Test-only opener used to verify authenticated encryption behavior.
-    #[cfg(test)]
     fn open_bytes(&self, sealed: &str) -> Result<Vec<u8>> {
         let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, sealed)
             .context("decode sealed payload")?;
@@ -116,6 +129,8 @@ impl Default for EncryptedStore {
 impl Drop for EncryptedStore {
     fn drop(&mut self) {
         self.key.zeroize();
+        self.sealed_findings.clear();
+        self.notes.clear();
     }
 }
 
@@ -203,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn stores_findings() {
+    fn stores_findings_sealed_at_rest() {
         let mut store = EncryptedStore::new();
         store.push(Finding {
             plugin: "t".into(),
@@ -217,5 +232,8 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(store.findings().len(), 1);
+        assert_eq!(store.findings()[0].title, "t");
+        assert_eq!(store.sealed_findings.len(), 1);
+        assert!(!store.sealed_findings[0].contains("\"title\":\"t\""));
     }
 }

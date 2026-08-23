@@ -1,5 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::core::store::EncryptedStore;
 use crate::core::types::{ControlAssessment, Finding};
@@ -11,7 +13,7 @@ pub struct PluginContext<'a> {
     pub verbose: bool,
     #[allow(dead_code)]
     pub auto_exploit: bool,
-    /// When true, plugins should skip known-audited helpers (e.g. `sudo -l`).
+    /// When true, plugins should skip known-audited helpers (e.g. `sudo -l`, `getcap`).
     #[allow(dead_code)]
     pub prefer_quiet: bool,
     pub allow_techniques: &'a TechniqueAllowlist,
@@ -26,6 +28,14 @@ pub struct PluginContext<'a> {
     /// Shared read-only control inventory for plugins that emit assessment findings.
     #[allow(dead_code)]
     pub control_assessment: Option<ControlAssessment>,
+    /// Cooperative cancel flag set on plugin timeout or operator interrupt.
+    pub cancel: Arc<AtomicBool>,
+}
+
+impl PluginContext<'_> {
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+    }
 }
 
 /// Independent privilege-escalation check.

@@ -12,9 +12,11 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 2. Safe local commands (`guide`, `doctor`, `disclaimer`, `report`, `diff`) run without host enumeration
 3. Core detects OS and enumerates identity with minimal process spawning
 4. Plugin IDs are validated, then the registry is filtered by OS, `--plugins`, and `--skip`
-5. Each plugin returns `Finding` values; core adds provenance, assessments, and coverage timing
-6. Findings are stored in an encrypted in-memory store
-7. Output mode emits a human report and optionally JSON, Markdown, SARIF, a sealed blob, or remote instructions
+5. If `linux.app_control` / `windows.app_control` is selected, run live control collection (slim under `--profile quiet`); otherwise skip it
+6. Each plugin returns `Finding` values; core adds provenance, assessments, and coverage timing
+7. Findings are sealed at rest in an encrypted in-memory store
+8. Output mode emits a human report and optionally JSON, Markdown, SARIF, a sealed blob, or remote instructions
+9. Plugin timeouts set a cooperative cancel flag so walks stop (in-flight helper processes may still finish)
 
 ## Core modules
 
@@ -23,8 +25,9 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 | `core::os` | OS family / version hints via files and constants |
 | `core::identity` | UID/user/groups without `id` where possible |
 | `core::plugin` | Plugin trait and selection |
-| `core::store` | ChaCha20-Poly1305 sealed export + zeroizing key |
-| `core::evasion` | Low-and-slow delays and operator notes |
+| `core::store` | ChaCha20-Poly1305 sealed findings at rest + sealed export + zeroizing key |
+| `core::evasion` | Low-and-slow delays and OPSEC operator notes |
+| `core::controls` | Live policy/EDR inventory; gated during enum to `*.app_control` |
 | `core::output` | memory / file / remote emission |
 | `core::engine` | Orchestration |
 | `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
