@@ -31,9 +31,11 @@ require authorization_ack
 require allow_fallback
 require roe_ref
 require target_hostname
+require operator_ack_required
 [[ "${cfg[manifest_version]}" == "1" ]] || { echo "dispatcher: unsupported manifest version" >&2; exit 78; }
 [[ "${cfg[authorization_ack]}" == "true" ]] || { echo "dispatcher: authorization_ack is not true" >&2; exit 78; }
 [[ "${cfg[allow_fallback]}" == "true" ]] || { echo "dispatcher: fallback is not approved" >&2; exit 78; }
+[[ "${cfg[operator_ack_required]}" == "true" ]] || { echo "dispatcher: operator acknowledgment is not required by the manifest" >&2; exit 78; }
 [[ "${cfg[execution_mode]:-enumerate-only}" == "enumerate-only" ]] || {
   echo "dispatcher: only enumerate-only fallback mode is supported" >&2; exit 78;
 }
@@ -48,6 +50,19 @@ if [[ -n "${cfg[target_username]:-}" && "${cfg[target_username]}" != "AUTO" && "
   echo "dispatcher: target username mismatch" >&2
   exit 78
 fi
+
+authorized_arg=false
+for arg in "$@"; do
+  [[ "$arg" == "--authorized" || "$arg" == "--i-understand-authorized-use-only" ]] && authorized_arg=true
+done
+if [[ "${STEALTHY_AUTHORIZED:-}" == "1" ]]; then
+  authorized_arg=true
+fi
+if [[ "$authorized_arg" == false ]]; then
+  echo "Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1" >&2
+  exit 2
+fi
+export STEALTHY_AUTHORIZED=1
 
 drop_dir="${cfg[drop_dir]:-$bundle_dir/.run-cache}"
 mkdir -p "$drop_dir"
@@ -65,16 +80,9 @@ done
 
 args=("$@")
 if [[ ${#args[@]} -eq 0 ]]; then
-  args=(--authorized --profile balanced enum)
+  args=(--profile balanced enum)
 fi
 primary_args=("${args[@]}")
-authorized_arg=false
-for arg in "${primary_args[@]}"; do
-  [[ "$arg" == "--authorized" || "$arg" == "--i-understand-authorized-use-only" ]] && authorized_arg=true
-done
-if [[ "$authorized_arg" == false ]]; then
-  primary_args=(--authorized "${primary_args[@]}")
-fi
 
 # Carry the already-approved context into either execution path. The fallback
 # may enrich it, but it never creates or broadens that authorization.

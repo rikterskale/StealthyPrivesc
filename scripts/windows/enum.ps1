@@ -1,8 +1,15 @@
 # StealthyPrivesc — PowerShell fallback (authorized assessments only)
 # Prefer cmdlets/APIs over spawning cmd.exe. Enumeration only.
 param(
-  [switch]$Json
+  [switch]$Json,
+  [switch]$Authorized
 )
+
+$authorized = $Authorized -or ($env:STEALTHY_AUTHORIZED -eq '1')
+if (-not $authorized) {
+  [Console]::Error.WriteLine('Authorization required: pass -Authorized or set STEALTHY_AUTHORIZED=1')
+  exit 2
+}
 
 if ($Json) {
   $report = [ordered]@{

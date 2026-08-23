@@ -12,6 +12,12 @@ fn stealthy() -> Command {
     Command::new(env!("CARGO_BIN_EXE_stealthy"))
 }
 
+fn stealthy_in(dir: &std::path::Path) -> Command {
+    let mut command = stealthy();
+    command.current_dir(dir);
+    command
+}
+
 #[test]
 fn refuses_host_commands_without_authorization() {
     let output = stealthy().arg("list-plugins").output().unwrap();
@@ -553,6 +559,72 @@ fn profile_ci_emits_json_with_finding_ids_and_attack_paths() {
 }
 
 #[test]
+fn equals_form_global_overrides_are_honored() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--profile=ci",
+            "--format=markdown",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("# StealthyPrivesc report"));
+    assert!(stdout.contains("Profile:** ci"));
+}
+
+#[test]
+fn memory_only_run_does_not_create_artifact_ledger() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = stealthy_in(dir.path())
+        .args([
+            "--authorized",
+            "--quiet",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!dir.path().join(".cache-run").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_direct_fallbacks_require_authorization() {
+    let scripts = [
+        ("bash", "scripts/linux/enum.sh"),
+        ("python3", "scripts/linux/enum.py"),
+    ];
+    for (interpreter, script) in scripts {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(script);
+        let output = std::process::Command::new(interpreter)
+            .arg(path)
+            .arg("--json")
+            .env_remove("STEALTHY_AUTHORIZED")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{interpreter} {script}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Authorization required"));
+    }
+}
+
+#[test]
 fn ingest_enriches_script_fixture() {
     let fixture = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -614,6 +686,7 @@ fn stage_and_verify_local_bundle() {
     assert!(dispatcher.is_file());
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
     assert!(manifest.contains("authorization_ack=true"));
+    assert!(manifest.contains("operator_ack_required=true"));
     assert!(manifest.contains("primary_binary=cache-update"));
     let sums = std::fs::read_to_string(out.join("SHA256SUMS")).unwrap();
     let expect = sums.split_whitespace().next().unwrap();
@@ -632,6 +705,114 @@ fn stage_and_verify_local_bundle() {
         "stderr={}",
         String::from_utf8_lossy(&verify.stderr)
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_output_must_be_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("preexisting.txt"), b"keep me").unwrap();
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"stealthy-fake").unwrap();
+    let output = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("must be empty"));
+    assert!(out.join("preexisting.txt").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn staged_dispatcher_requires_fresh_authorization() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 0\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+    let dispatcher = out.join("scripts/run.sh");
+    let output = std::process::Command::new("bash")
+        .arg(dispatcher)
+        .env_remove("STEALTHY_AUTHORIZED")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Authorization required"));
+}
+
+#[cfg(unix)]
+#[test]
+fn cleanup_removes_staged_directory_recursively() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"stealthy-fake").unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+    assert!(out.is_dir());
+    let cleanup = stealthy()
+        .args([
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+            "cleanup",
+            "--latest",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        cleanup.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&cleanup.stderr)
+    );
+    assert!(!out.exists());
+    assert!(!ledger.exists() || std::fs::read_dir(&ledger).unwrap().next().is_none());
 }
 
 #[test]

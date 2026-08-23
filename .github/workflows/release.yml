@@ -27,7 +27,7 @@ jobs:
         with:
           toolchain: stable
       - name: Build release binary
-        run: cargo build --workspace --release
+        run: cargo build --locked --workspace --release
       - name: Package Linux artifact
         if: runner.os == 'Linux'
         shell: bash

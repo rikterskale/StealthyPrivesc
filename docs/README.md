@@ -12,6 +12,7 @@ Use this page as the navigation hub for the project.
 - System overview: view the [Architecture Diagram](architecture-diagram.md).
 - Defender or reviewer: read [Capabilities](capabilities.md) and [Technique Risk Notes](techniques.md).
 - CI/integration user: use `--format json` or `--format sarif` and review the [Build](build.md) contract.
+- Report consumer: use the [Report schema](report-schema.md) and inspect coverage before comparing runs.
 
 ## Safe first run
 

@@ -42,7 +42,9 @@ describe the behavior users can rely on today.
    recommendations; it does not attempt a privilege escalation.
 3. **Explicit authorization** — host-enumerating commands require
    `--authorized` or `STEALTHY_AUTHORIZED=1`. Local commands such as `doctor`,
-   `guide`, `report`, and `diff` remain available without that gate.
+   `guide`, `report`, `diff`, `ingest`, and delivery helpers remain available
+   without that gate. Staged dispatchers still require a fresh acknowledgment;
+   a manifest is not authorization evidence.
 4. **Opt-in probes and high-impact families** — `--auto-exploit` enables
    supported reversible, low-noise checks. High-impact families require a
    separate `--allow-techniques` opt-in when ROE permits (scaffolded in the
@@ -90,8 +92,13 @@ The command surface is deliberately small:
 | `guide`, `doctor`, `disclaimer` | Not required | Local readiness, first-run, and legal guidance |
 | `list-plugins` / `plugins` | Required | Show plugins compiled into the current build |
 | `enum` / `scan` | Required | Run the selected enumeration checks |
+| `controls` / `validate-controls` | Required | Run disposable control-validation cases |
+| `live-controls` / `collect-controls` | Required | Collect live read-only control state |
 | `report` | Not required | Decode a sealed report with an operator-held key |
 | `diff` | Not required | Compare two plaintext JSON reports offline |
+| `ingest` | Not required | Normalize script JSON to schema v2 |
+| `artifacts` / `cleanup` | Not required | Inspect or remove tracked artifacts |
+| `stage` / `verify` / `one-liners` | Not required | Prepare and verify delivery workflows |
 
 ## Security & Privacy Considerations
 

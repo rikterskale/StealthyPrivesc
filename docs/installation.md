@@ -353,15 +353,15 @@ observation). See `docs/techniques.md`.
 **Linux** (ELF blocked, `noexec` drop path, AppArmor/SELinux constraint):
 
 ```bash
-bash scripts/linux/enum.sh | tee enum-shell.txt
-python3 scripts/linux/enum.py | tee enum-python.txt
+bash scripts/linux/enum.sh --authorized | tee enum-shell.txt
+python3 scripts/linux/enum.py --authorized | tee enum-python.txt
 ```
 
 **Windows** (PE blocked by AppLocker/WDAC/SmartScreen; prefer allowlisted hosts):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1
-cscript //nologo scripts\windows\enum.js
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
+cscript //nologo scripts\windows\enum.js --authorized
 msbuild scripts\windows\EnumTasks.csproj
 ```
 

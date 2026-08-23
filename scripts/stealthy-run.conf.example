@@ -5,6 +5,9 @@
 
 manifest_version=1
 authorization_ack=true
+# The manifest approves the execution path; each dispatch still requires a
+# fresh --authorized flag or STEALTHY_AUTHORIZED=1 acknowledgment.
+operator_ack_required=true
 allow_fallback=true
 roe_ref=INHERITED_PRIMARY_RUN
 execution_mode=enumerate-only

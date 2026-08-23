@@ -1,7 +1,8 @@
 # CLI Reference
 
-The executable is named `stealthy`. Global options may appear before the
-subcommand. Host-enumerating commands require `--authorized` or
+The executable is named `stealthy`. Global options may appear before or after
+the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
+`controls`, and `live-controls`—require `--authorized` or
 `STEALTHY_AUTHORIZED=1`.
 
 ## Global options
@@ -34,10 +35,18 @@ and `critical`.
 Profiles: `quiet` (skip `sudo --version`/`sudo -l`, `getcap`, `getfacl`; slim
 control collection when `*.app_control` is selected; higher delay),
 `balanced` (default), `thorough` (no delay, verbose), `ci` (quiet JSON).
+Explicit profile overrides work with both `--option value` and
+`--option=value` forms.
 
 `control_assessment` is collected during `enum` **only** when
 `linux.app_control` or `windows.app_control` is in the selected plugin set.
 Use `live-controls` for always-on inventory without running other plugins.
+`controls` and `live-controls` support JSON, Markdown, and human output;
+SARIF is unsupported for these reports. Their global output/file/fail-on
+options do not persist or filter the control report.
+
+For the complete JSON contract and reduced-coverage rules, see
+[`docs/report-schema.md`](report-schema.md).
 
 ## `guide`
 
@@ -146,6 +155,14 @@ loaded. `--baseline` accepts a previous full JSON report or control assessment
 and compares policy evidence, sensor prevention rules, audit-source
 availability, management, and exposure drift.
 
+Case IDs are platform-specific. Windows cases are `signed-vs-unsigned`,
+`publisher-scope`, `hash-drift`, `file-class-scope`,
+`managed-installer-boundary`, `dynamic-code`, `audit-vs-enforce`,
+`driver-hvci`, `install-path-scope`, `policy-drift`, and `user-path-exec`.
+Linux cases are `package-vs-copy`, `package-vs-custom-trust`,
+`integrity-drift`, `interpreter-script`, `mac-domain`, `mount-flags`,
+`suid-capability`, `container-host`, and `kernel-lockdown`.
+
 ## `live-controls` / `collect-controls`
 
 ```text
@@ -208,7 +225,12 @@ stealthy artifacts --latest
 stealthy cleanup --latest --secure-delete
 ```
 
-List or remove removable paths recorded in the run ledger.
+List or remove removable paths recorded in the run ledger. Memory-only runs do
+not create a ledger. `cleanup --secure-delete` is best-effort overwrite then
+unlink for files; staged directories are removed recursively only when the
+stage output was created empty by `stage`. `--remove-self` also attempts to
+remove the current executable and should be used only as a separately approved
+closeout action.
 
 ## `stage` / `verify` / `one-liners`
 
@@ -220,10 +242,11 @@ stealthy one-liners --os linux --transport ssh
 
 Operator-workstation delivery helpers (no host enumeration; no auth gate).
 `stage` also emits `scripts/run.sh` or `scripts/run.ps1` and a
-`stealthy-run.conf` dispatcher manifest carrying the inherited primary-run
-authorization context. Run the dispatcher as the target entrypoint; it binds
-to the current host, stages the bundle, tries the primary executable, and
-selects only the manifest-approved fallback after a launch failure.
+`stealthy-run.conf` dispatcher manifest describing the approved fallback path.
+The manifest is not authorization evidence: the dispatcher requires a fresh
+`--authorized` flag or `STEALTHY_AUTHORIZED=1` at execution time. It binds to
+the current host, stages the bundle, tries the primary executable, and selects
+only the manifest-approved fallback after a launch failure.
 
 The dispatcher does not approve or bypass AppLocker, WDAC, SmartScreen,
 AppArmor, SELinux, or `noexec`. If the selected interpreter is not already
@@ -283,5 +306,6 @@ destination instructions; it does not implement a silent background client.
 | ---: | --- |
 | `0` | Success; no selected failure threshold was crossed |
 | `2` | Authorization acknowledgment missing |
+| `3` | `doctor` readiness check failed |
 | `4` | `--fail-on` threshold triggered |
 | Other nonzero | Invalid arguments, unavailable input, or operational failure |

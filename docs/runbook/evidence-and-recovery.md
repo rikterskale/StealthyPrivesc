@@ -63,8 +63,9 @@ Treat an interrupted process as incomplete:
 2. Check whether the report is complete and hashable.
 3. Inspect the approved drop directory for partial artifacts.
 4. Confirm no unexpected child process, service, task, or listener remains.
-5. Resume with a new run ID or close the host as incomplete; never append to a
-   partial report.
+5. Resume with `stealthy --authorized resume --checkpoint PATH` when a
+   checkpoint exists and the same scope remains approved, or close the host as
+   incomplete; never append to a partial report.
 
 See [exit-code triage](../operator-runbook.md#8-exit-codes-and-failure-triage)
 and [finding review](../operator-runbook.md#9-finding-review-and-disposition)

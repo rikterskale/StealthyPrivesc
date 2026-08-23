@@ -2,7 +2,21 @@
 # StealthyPrivesc Linux bash fallback — authorized assessments only.
 set -euo pipefail
 
-if [[ "${1:-}" == "--json" ]]; then
+authorized=false
+json=false
+for arg in "$@"; do
+  case "$arg" in
+    --authorized|--i-understand-authorized-use-only) authorized=true ;;
+    --json) json=true ;;
+  esac
+done
+[[ "${STEALTHY_AUTHORIZED:-}" == "1" ]] && authorized=true
+if [[ "$authorized" != true ]]; then
+  echo "Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1" >&2
+  exit 2
+fi
+
+if [[ "$json" == true ]]; then
   here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if command -v python3 >/dev/null 2>&1 && [[ -f "$here/enum.py" ]]; then
     exec python3 "$here/enum.py" --json

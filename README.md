@@ -50,13 +50,24 @@ docs/                     Architecture, build, technique risk notes
 Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.sh | bash
+curl -fsSL \
+  https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.sh \
+  -o /tmp/stealthy-install.sh
+less /tmp/stealthy-install.sh
+bash /tmp/stealthy-install.sh
+rm -f /tmp/stealthy-install.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.ps1 | iex
+$Installer = Join-Path $env:TEMP 'stealthy-install.ps1'
+Invoke-WebRequest \
+  'https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.ps1' \
+  -OutFile $Installer
+Get-Content $Installer
+& $Installer
+Remove-Item -Force $Installer
 ```
 
 Both installers verify the release SHA-256 checksum. For high-assurance
@@ -64,7 +75,7 @@ environments, download and review the script before execution.
 
 ```bash
 # Build (Linux host)
-cargo build -p stealthy --release
+cargo build --locked -p stealthy --release
 
 # First-run guide (no auth required)
 ./target/release/stealthy doctor
@@ -92,8 +103,8 @@ cargo build -p stealthy --release
   --binary ./target/release/stealthy
 
 # Run the staged bundle through the policy-bound dispatcher
-# (the staged manifest carries the primary-run authorization context)
-bash ./drop/scripts/run.sh --profile balanced enum
+# (the dispatcher still requires a fresh operator acknowledgment)
+bash ./drop/scripts/run.sh --authorized --profile balanced enum
 
 # Markdown / JSON / SARIF console formats
 ./target/release/stealthy --authorized --format markdown enum > report.md
@@ -129,31 +140,36 @@ bash ./drop/scripts/run.sh --profile balanced enum
 Use the staged dispatcher as the normal entrypoint. It verifies the approved
 manifest, stages the bundle, tries the primary executable, and automatically
 selects an approved script fallback only when the executable cannot launch.
-It injects the authorization acknowledgment required by the primary binary;
-the manifest carries the inherited ROE context and binds execution to the
-current host without granting permission or overriding host policy.
+The manifest carries inherited ROE context and binds execution to the current
+host; it does not grant permission or override host policy. The dispatcher
+requires a fresh authorization acknowledgment and forwards it to the selected
+execution path.
 
 ```bash
-bash ./drop/scripts/run.sh --profile balanced enum
+bash ./drop/scripts/run.sh --authorized --profile balanced enum
 ```
 
 On Windows:
 
 ```powershell
-& .\drop\scripts\run.ps1 --profile balanced enum
+& .\drop\scripts\run.ps1 --authorized --profile balanced enum
 ```
+
+The dispatcher and direct scripts both require a fresh `--authorized` flag or
+`STEALTHY_AUTHORIZED=1`; the manifest approves the fallback path but is not an
+authorization acknowledgment.
 
 Use direct scripts only for troubleshooting or when the dispatcher itself is
 not an approved execution path.
 
 ```bash
 # Linux
-bash scripts/linux/enum.sh
-python3 scripts/linux/enum.py
+bash scripts/linux/enum.sh --authorized
+python3 scripts/linux/enum.py --authorized
 
 # Windows (examples)
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1
-cscript //nologo scripts\windows\enum.js
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
+cscript //nologo scripts\windows\enum.js --authorized
 ```
 
 ## CLI flags
@@ -170,6 +186,10 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--min-severity info\|low\|medium\|high\|critical` | Filter displayed findings |
 | `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
+| `--profile quiet\|balanced\|thorough\|ci` | Named engagement/OPSEC profile |
+| `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables |
+| `--checkpoint PATH` | Write a resumable plaintext checkpoint |
+| `--ledger-dir PATH` | Artifact ledger location for explicit artifacts/checkpoints |
 | `--artifact PATH` | Read-only hash/provenance/trust prediction for an approved test artifact; never executes it |
 | `--output memory\|file\|remote` | Result destination (default `memory`) |
 | `--output-path PATH` | Destination for `--output file` |
@@ -182,12 +202,17 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `disclaimer` | Print legal text (no auth) |
 | `list-plugins` / `plugins` | Table of compiled plugin IDs |
 | `controls` / `validate-controls` | Run disposable application-control validation cases |
+| `live-controls` / `collect-controls` | Collect live read-only policy, sensor, and audit state |
+| `resume --checkpoint PATH` | Resume an interrupted enumeration |
+| `ingest PATH` | Normalize script JSON to report schema v2 |
+| `artifacts` / `cleanup` | Inspect or remove ledger-recorded artifacts |
+| `stage` / `verify` / `one-liners` | Package and verify approved delivery bundles |
 | `enum --auto-exploit` | Opt-in reversible probes |
 | `enum --allow-techniques a,b` | Opt-in high-impact families (`endpoint-bypass` documented in `docs/techniques.md`) |
 | `enum --plugins a,b` | Enable listed plugins |
 | `enum --skip a,b` | Skip listed plugins |
 
-Exit codes: `0` ok · `2` missing authorization · `4` `--fail-on` triggered
+Exit codes: `0` ok · `2` missing authorization · `3` doctor readiness failure · `4` `--fail-on` triggered
 
 ## Technique risk notes (summary)
 
@@ -229,5 +254,6 @@ Environment variables:
 1. Refuses to run without authorization acknowledgment
 2. Default = enumerate + recommend
 3. High-impact families require `--allow-techniques` (not hard-refused; see `docs/techniques.md`)
-4. Results stay in memory unless you explicitly request file/remote output
+4. Findings stay encrypted in memory; memory mode does not create an artifact
+   ledger. Explicit file, checkpoint, or staging operations write tracked files.
 5. Comments warn where techniques create artifacts or EDR telemetry

@@ -3,6 +3,20 @@
 
 var wsh = new ActiveXObject("WScript.Shell");
 var fso = new ActiveXObject("Scripting.FileSystemObject");
+var authorized = false;
+for (var a = 0; a < WScript.Arguments.Count; a++) {
+  var arg = String(WScript.Arguments.Item(a)).toLowerCase();
+  if (arg === "--authorized" || arg === "--i-understand-authorized-use-only") {
+    authorized = true;
+  }
+}
+if (wsh.ExpandEnvironmentStrings("%STEALTHY_AUTHORIZED%") === "1") {
+  authorized = true;
+}
+if (!authorized) {
+  WScript.Echo("Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1");
+  WScript.Quit(2);
+}
 
 WScript.Echo("=== StealthyPrivesc Windows JScript enum ===");
 WScript.Echo("LEGAL: Authorized use only.");

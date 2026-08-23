@@ -8,7 +8,7 @@ write to disk and does not execute an exploit.
 flowchart TD
     A[Operator command] --> B[CLI parser]
     B --> C{Authorization required?}
-    C -->|No: guide, doctor, disclaimer, report, diff| D[Local safe command]
+    C -->|No: guide, doctor, disclaimer, report, diff, ingest, delivery| D[Local safe command]
     C -->|Yes| E{Acknowledgment present?}
     E -->|No| F[Exit 2: authorization required]
     E -->|Yes| G[Engine initialization]
@@ -21,7 +21,7 @@ flowchart TD
 
     L --> M[Linux plugins]
     L --> N[Windows plugins]
-    L --> O[Script fallbacks when binary is unavailable]
+    L --> O[External staged dispatcher selects script fallback]
     M --> P[Finding values]
     N --> P
     O --> P

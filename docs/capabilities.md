@@ -15,6 +15,8 @@ Implemented phase scope: [`docs/phases.md`](phases.md)
 
 First-user journey contract: [`docs/first-user-journey.md`](first-user-journey.md)
 
+Report contract: [`docs/report-schema.md`](report-schema.md)
+
 Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 
 ## Initial MVP capabilities
@@ -66,12 +68,20 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy enum --allow-techniques ...` | Opt into high-impact families (`endpoint-bypass` = alternate-path + approved-fixture validation; others mostly scaffold) |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
+| `stealthy controls` / `validate-controls` | Run disposable control-validation cases; authorization required |
+| `stealthy live-controls` / `collect-controls` | Collect live read-only policy, sensor, provenance, and audit state; authorization required |
+| `stealthy resume --checkpoint PATH` | Resume an interrupted run |
+| `stealthy ingest PATH` | Normalize script JSON into report schema v2 |
+| `stealthy artifacts` / `cleanup` | Inspect or remove ledger-recorded artifacts |
+| `stealthy stage` / `verify` / `one-liners` | Package, verify, and print approved transport snippets |
 | `stealthy report PATH --key-hex KEY` | Decode a sealed report locally (no host access) |
 | `stealthy diff BASELINE CURRENT` | Compare plaintext JSON reports offline |
 | `stealthy live-controls` / `collect-controls` | Collect live application-control, provenance, EDR, integrity, MAC, kernel, mount, container, and audit state |
 
-Authorization is required for `list-plugins`, `enum`, and `scan`; it is not
-required for `guide`, `doctor`, `disclaimer`, `report`, or `diff`. The visible
+Authorization is required for `list-plugins`, `enum`, `scan`, `controls`, and
+`live-controls`; it is not required for `guide`, `doctor`, `disclaimer`,
+`report`, `diff`, `ingest`, `artifacts`, `cleanup`, `stage`, `verify`, or
+`one-liners`. The visible
 `--authorized` flag is an alias for the full acknowledgment flag, and
 `STEALTHY_AUTHORIZED=1` is the supported environment equivalent.
 
@@ -99,9 +109,13 @@ read-only and writes each result into the structured `ControlAssessment` JSON.
 Primary implementation: `crates/stealthy/src/core/controls.rs`. Primary command:
 `stealthy --authorized live-controls --format json`.
 
-Global options: `-q`, `-v`, `--no-color`, `--format`, `--min-severity`,
-`--fail-on`, `--delay-ms`, `--output`, `--output-path`, `--plaintext-file`,
-`--also-markdown`, and `--exfil-url`.
+Enumeration global options include `-q`, `-v`, `--no-color`, `--format`,
+`--min-severity`, `--fail-on`, `--delay-ms`, `--plugin-timeout-ms`,
+`--profile`, `--checkpoint`, `--ledger-dir`, `--output`, `--output-path`,
+`--plaintext-file`, `--also-markdown`, and `--exfil-url`. `controls` and
+`live-controls` print directly and support JSON/Markdown/human formats;
+SARIF, file output, remote output, and `--fail-on` are unsupported for those
+reports.
 
 ## Artifact workflow
 
@@ -125,9 +139,13 @@ Optional:
 - Script fallbacks when binaries are blocked
 - `control_assessment` during `enum` only when `*.app_control` is selected (`live-controls` always collects)
 - `--profile quiet` skips `sudo` helpers, `getcap`, `getfacl`, and uses slim control collection
-- Findings sealed at rest in the in-memory store; default ledger dir is `.cache-run`
+- Findings sealed at rest in the in-memory store; memory-only runs do not create
+  a ledger. Explicit checkpoints, file outputs, and staged bundles are tracked
+  under the selected ledger directory (default `.cache-run`).
 - Plugin timeouts cooperatively cancel Rust-side walks (helper child processes may still finish)
 - Residual static signature risk remains (cleartext brand/plugin strings); rename via `stage --name` when ROE requires
+- `doctor` returns exit code `3` when readiness checks fail; `2` remains the
+  missing-authorization code and `4` remains the `--fail-on` code.
 
 ## Explicitly out of scope for v1
 - Fully autonomous multi-host C2 without operator-driven orchestration

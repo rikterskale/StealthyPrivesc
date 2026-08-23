@@ -592,7 +592,9 @@ impl Engine {
         if let Some(path) = &self.checkpoint {
             ledger.register("checkpoint", path, true, "checkpoint");
         }
-        let _ = artifacts::save_ledger(&self.ledger_dir, &ledger);
+        if !ledger.entries.is_empty() {
+            let _ = artifacts::save_ledger(&self.ledger_dir, &ledger);
+        }
 
         if self.verbose && self.output.mode == OutputMode::Memory && !self.quiet {
             eprintln!(

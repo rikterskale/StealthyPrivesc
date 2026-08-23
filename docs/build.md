@@ -269,13 +269,13 @@ When a custom binary cannot be approved or executed, validate and run only the
 fallback appropriate to the target:
 
 ```bash
-bash scripts/linux/enum.sh
-python3 scripts/linux/enum.py
+bash scripts/linux/enum.sh --authorized
+python3 scripts/linux/enum.py --authorized
 ```
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1
-cscript //nologo scripts\windows\enum.js
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
+cscript //nologo scripts\windows\enum.js --authorized
 ```
 
 Use the [Operator Runbook](operator-runbook.md) for target deployment, hash

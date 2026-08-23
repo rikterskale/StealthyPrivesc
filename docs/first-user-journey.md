@@ -106,7 +106,9 @@ Windows PowerShell:
 
 Checkpoint: `doctor` should report a supported OS, one or more compiled
 plugins, a usable working directory, and `Ready for an authorized scan.`.
-Nothing should have been written to disk by these checks.
+Nothing should have been written to disk by these checks. A normal memory-only
+enumeration also does not create `.cache-run`; ledgers appear only when the
+operator explicitly requests file output, a checkpoint, or staging.
 
 ### Stage 2 — authorization pause
 

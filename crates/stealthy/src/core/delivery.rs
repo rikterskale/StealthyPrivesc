@@ -69,6 +69,20 @@ pub struct StageOptions<'a> {
 }
 
 pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
+    if opts.out_dir.exists() {
+        if !opts.out_dir.is_dir() {
+            bail!(
+                "stage output is not a directory: {}",
+                opts.out_dir.display()
+            );
+        }
+        if fs::read_dir(opts.out_dir)?.next().transpose()?.is_some() {
+            bail!(
+                "stage output directory must be empty: {}",
+                opts.out_dir.display()
+            );
+        }
+    }
     fs::create_dir_all(opts.out_dir)?;
     let bin_name = if opts.os == "windows" {
         format!("{}.exe", opts.name)
@@ -131,6 +145,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         "# Generated dispatcher manifest — inherits the primary-run authorization context.\n\
          manifest_version=1\n\
          authorization_ack=true\n\
+         operator_ack_required=true\n\
          allow_fallback=true\n\
          roe_ref=INHERITED_PRIMARY_RUN\n\
          execution_mode=enumerate-only\n\
@@ -163,7 +178,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
          os={} arch={} name={}\n\
          binary_sha256={}\n\n\
          Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
-         Enumerate:\n  {} ./scripts/{} --authorized --profile balanced enum\n\n\
+         Enumerate (requires a fresh operator acknowledgment):\n  {} ./scripts/{} --authorized --profile balanced enum\n\n\
          Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
         opts.os,
         opts.arch,

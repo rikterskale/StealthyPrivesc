@@ -446,6 +446,16 @@ def emit_json() -> None:
 def main(argv: list[str] | None = None) -> int:
     global JSON_MODE
     args = list(sys.argv[1:] if argv is None else argv)
+    if not (
+        "--authorized" in args
+        or "--i-understand-authorized-use-only" in args
+        or os.environ.get("STEALTHY_AUTHORIZED") == "1"
+    ):
+        print(
+            "Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1",
+            file=sys.stderr,
+        )
+        return 2
     JSON_MODE = "--json" in args
     if JSON_MODE:
         # JSON mode is a machine contract: suppress the human transcript while

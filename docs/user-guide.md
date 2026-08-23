@@ -114,8 +114,9 @@ Windows PowerShell:
 ```
 
 This default run is enumerate-only. Findings remain in the encrypted
-in-memory store and are rendered for review; no report file is created unless
-you explicitly choose an output mode or redirect console output yourself.
+in-memory store and are rendered for review. Memory mode does not create an
+artifact ledger; files are created only when you explicitly request file output,
+a checkpoint, staging, or redirect console output yourself.
 
 Expected result:
 

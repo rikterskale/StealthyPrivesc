@@ -128,21 +128,18 @@ pub fn cleanup(
             continue;
         }
         let path = PathBuf::from(&entry.path);
-        if !path.exists() {
+        if fs::symlink_metadata(&path).is_err() {
             continue;
         }
-        if secure_delete {
-            let _ = output::secure_delete_hint(&path);
-        } else {
-            let _ = fs::remove_file(&path);
-        }
-        if !path.exists() {
+        remove_recorded_path(&path, secure_delete)
+            .with_context(|| format!("remove recorded artifact {}", path.display()))?;
+        if fs::symlink_metadata(&path).is_err() {
             removed.push(entry.path.clone());
         }
     }
     // Remove ledger file itself after cleanup.
     let lp = ledger_path(dir, &ledger.run_id);
-    let _ = fs::remove_file(&lp);
+    fs::remove_file(&lp).with_context(|| format!("remove ledger {}", lp.display()))?;
     removed.push(lp.display().to_string());
 
     if remove_self {
@@ -156,4 +153,22 @@ pub fn cleanup(
         }
     }
     Ok(removed)
+}
+
+fn remove_recorded_path(path: &Path, secure_delete: bool) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        if secure_delete && !metadata.file_type().is_symlink() {
+            output::secure_delete_hint(path)?;
+        } else {
+            fs::remove_file(path)?;
+        }
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(path)? {
+        remove_recorded_path(&entry?.path(), secure_delete)?;
+    }
+    fs::remove_dir(path)?;
+    Ok(())
 }

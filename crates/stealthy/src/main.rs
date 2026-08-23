@@ -24,9 +24,9 @@ use crate::core::term;
 fn main() -> Result<()> {
     let argv: Vec<String> = std::env::args().collect();
     let overrides = CliOverrides {
-        delay_ms_set: argv.iter().any(|a| a == "--delay-ms"),
-        plugin_timeout_ms_set: argv.iter().any(|a| a == "--plugin-timeout-ms"),
-        format_set: argv.iter().any(|a| a == "--format"),
+        delay_ms_set: arg_was_set(&argv, "--delay-ms"),
+        plugin_timeout_ms_set: arg_was_set(&argv, "--plugin-timeout-ms"),
+        format_set: arg_was_set(&argv, "--format"),
     };
     let mut cli = Cli::parse();
     term::init(cli.no_color);
@@ -516,6 +516,11 @@ fn check(ok: bool) -> String {
     } else {
         term::err("[!!]")
     }
+}
+
+fn arg_was_set(argv: &[String], option: &str) -> bool {
+    argv.iter()
+        .any(|arg| arg == option || arg.starts_with(&format!("{option}=")))
 }
 
 fn print_report(path: &std::path::Path, key_hex: &str, format: ReportFormat) -> Result<()> {
