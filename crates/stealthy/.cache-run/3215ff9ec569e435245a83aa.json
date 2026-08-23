@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "run_id": "3215ff9ec569e435245a83aa",
+  "entries": [
+    {
+      "run_id": "3215ff9ec569e435245a83aa",
+      "kind": "checkpoint",
+      "path": "/tmp/.tmpPRMjIa/cp.json",
+      "created_at_unix": 1787494552,
+      "removable": true,
+      "notes": "checkpoint"
+    }
+  ]
+}
