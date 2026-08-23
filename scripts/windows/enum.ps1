@@ -1,4 +1,4 @@
-# StealthyPrivesc — PowerShell fallback (authorized assessments only)
+# StealthyPrivesc - PowerShell fallback (authorized assessments only)
 # Prefer cmdlets/APIs over spawning cmd.exe. Enumeration only.
 param(
   [switch]$Json,
@@ -174,7 +174,7 @@ Write-Host ""
 
 Write-Host "[*] SeImpersonate highlight"
 if ((whoami /priv) -match 'SeImpersonatePrivilege') {
-  Write-Host "FINDING: SeImpersonatePrivilege present — Potato-family may apply (manual only)"
+  Write-Host "FINDING: SeImpersonatePrivilege present - Potato-family may apply (manual only)"
 }
 Write-Host ""
 
@@ -222,4 +222,4 @@ Write-Host 'NOTE: if custom .exe is blocked, prefer enum.ps1 / enum.js / EnumTas
 Write-Host 'NOTE: this script does not disable AppLocker, WDAC, SmartScreen, AMSI, or AV/EDR.'
 Write-Host ""
 
-Write-Host "Done. Enumeration only — no auto-exploit."
+Write-Host "Done. Enumeration only - no auto-exploit."
