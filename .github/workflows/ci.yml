@@ -509,6 +509,40 @@ jobs:
       - name: Native Windows ACL validation
         run: cargo test --locked --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
 
+      - name: Windows CLI, PowerShell fallback, and bundle smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = (Resolve-Path .\target\release\stealthy.exe).Path
+          $doctor = & $bin doctor --json | ConvertFrom-Json
+          if ($doctor.schema_version -ne '1' -or -not $doctor.healthy) { throw 'doctor smoke failed' }
+
+          $unauthorized = Start-Process -FilePath $bin -ArgumentList @('enum') -Wait -PassThru -NoNewWindow
+          if ($unauthorized.ExitCode -ne 2) { throw "expected auth exit 2, got $($unauthorized.ExitCode)" }
+
+          $fallback = & powershell.exe -NoProfile -File .\scripts\windows\enum.ps1 -Authorized -Json | ConvertFrom-Json
+          if ($fallback.coverage_mode -ne 'script') { throw 'PowerShell fallback coverage mode mismatch' }
+          if ($fallback.capability_delta.Count -ne 11) { throw 'PowerShell fallback capability delta mismatch' }
+
+          $root = Join-Path $env:TEMP ('stealthy-smoke-' + [guid]::NewGuid().ToString('N'))
+          $stage = Join-Path $root 'stage'
+          $ledger = Join-Path $root 'ledger'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          & $bin stage --os windows --out $stage --binary $bin --ledger-dir $ledger
+          $sum = (Get-Content (Join-Path $stage 'SHA256SUMS')).Split()[0]
+          & $bin verify --path (Join-Path $stage 'stealthy.exe') --expect-sha256 $sum
+          $native = & (Join-Path $stage 'scripts\run.ps1') --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
+          if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
+          & $bin --ledger-dir $ledger cleanup --latest
+
+          $fallbackRoot = Join-Path $root 'fallback'
+          $fallbackLedger = Join-Path $root 'fallback-ledger'
+          & $bin stage --os windows --out $fallbackRoot --name stealthy --ledger-dir $fallbackLedger
+          $reduced = & (Join-Path $fallbackRoot 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
+          if ($reduced.coverage_mode -ne 'script') { throw 'dispatcher fallback coverage mode mismatch' }
+          & $bin --ledger-dir $fallbackLedger cleanup --latest
+          Remove-Item -LiteralPath $root -Recurse -Force
+
   agents:
     name: Agent syntax checks
     runs-on: ${{ matrix.os }}
@@ -535,7 +569,7 @@ jobs:
           bash -n scripts/install.sh
           python3 -m py_compile scripts/linux/enum.py
           python3 scripts/linux/enum.py --authorized --json > /tmp/stealthy-script-report.json
-          python3 -c 'import json; r=json.load(open("/tmp/stealthy-script-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"; assert r["plugins_run"]'
+          python3 -c 'import json; r=json.load(open("/tmp/stealthy-script-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"; assert r["plugins_run"]; assert len(r["capability_delta"]) == 6'
           bash scripts/linux/enum.sh --authorized --json > /tmp/stealthy-shell-report.json
           python3 -c 'import json; r=json.load(open("/tmp/stealthy-shell-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"'
 

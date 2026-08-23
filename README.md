@@ -62,8 +62,8 @@ Windows PowerShell:
 
 ```powershell
 $Installer = Join-Path $env:TEMP 'stealthy-install.ps1'
-Invoke-WebRequest \
-  'https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.ps1' \
+Invoke-WebRequest `
+  'https://raw.githubusercontent.com/rikterskale/StealthyPrivesc/main/scripts/install.ps1' `
   -OutFile $Installer
 Get-Content $Installer
 & $Installer
@@ -96,7 +96,8 @@ cargo build --locked -p stealthy --release
   enum --plugins linux.sudo,linux.containers,linux.suid,linux.groups
 
 # Triage stub for stepwise probe approval
-./target/release/stealthy --authorized enum --triage --triage-out decisions.json
+./target/release/stealthy --authorized --checkpoint /tmp/triage.json enum --triage --triage-out decisions.json
+./target/release/stealthy --authorized --checkpoint /tmp/triage.json enum --approve-file decisions.json
 
 # Stage a drop bundle on the operator workstation
 ./target/release/stealthy stage --os linux --out ./drop \
@@ -187,7 +188,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
 | `--profile quiet\|balanced\|thorough\|ci` | Named engagement/OPSEC profile |
-| `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables |
+| `--plugin-timeout-ms N` | Per-plugin isolated-process timeout; `0` disables |
 | `--checkpoint PATH` | Write a resumable plaintext checkpoint |
 | `--ledger-dir PATH` | Artifact ledger location for explicit artifacts/checkpoints |
 | `--artifact PATH` | Read-only hash/provenance/trust prediction for an approved test artifact; never executes it |

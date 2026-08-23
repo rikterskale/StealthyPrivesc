@@ -255,6 +255,13 @@ pub enum Commands {
         transport: String,
     },
 
+    /// Private per-plugin worker used to enforce process-level timeouts.
+    #[command(name = "__plugin-worker", hide = true)]
+    PluginWorker {
+        #[arg(long)]
+        plugin: String,
+    },
+
     /// Resume an interrupted run from a checkpoint JSON file.
     Resume {
         /// Checkpoint path from a prior `--checkpoint` run.

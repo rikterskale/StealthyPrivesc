@@ -52,8 +52,14 @@ jobs:
       - name: Flatten artifacts and create checksums
         shell: bash
         run: |
-          find dist -type f -exec cp {} dist/ \;
-          find dist -mindepth 1 -type d -empty -delete
+          flattened="$(mktemp -d)"
+          find dist -mindepth 2 -type f -exec cp {} "$flattened"/ \;
+          find dist -mindepth 2 -type f -delete
+          find dist -depth -mindepth 1 -type d -empty -delete
+          cp "$flattened"/* dist/
+          rm -rf "$flattened"
+          test -f dist/stealthy-linux-x86_64.tar.gz
+          test -f dist/stealthy-windows-x86_64.zip
           sha256sum dist/* > dist/SHA256SUMS
       - name: Create GitHub release
         env:

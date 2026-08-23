@@ -509,7 +509,7 @@ pub struct RunReport {
     /// Engagement / OPSEC profile used for this run.
     #[serde(default)]
     pub profile: String,
-    /// `binary` or `script` evidence source.
+    /// `native` for the Rust engine or `script` for a fallback report.
     #[serde(default = "default_coverage_mode")]
     pub coverage_mode: String,
     /// Plugin IDs missing relative to a full binary run (script mode).
@@ -536,7 +536,7 @@ pub struct RunReport {
 }
 
 fn default_coverage_mode() -> String {
-    "binary".into()
+    "native".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

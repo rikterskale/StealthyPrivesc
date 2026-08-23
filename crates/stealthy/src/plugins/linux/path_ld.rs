@@ -88,7 +88,7 @@ impl Plugin for PathLdPlugin {
                         kind: FindingKind::Enumeration,
                         severity: Severity::Medium,
                         title: format!("{var} is set"),
-                        detail: val,
+                        detail: redacted_loader_detail(&val),
                         recommendation: "Inherited loader variables can redirect privileged dynamically linked programs.".into(),
                         noisy: false,
                         leaves_artifacts: false,
@@ -106,7 +106,10 @@ impl Plugin for PathLdPlugin {
                     kind: FindingKind::Enumeration,
                     severity: Severity::High,
                     title: "/etc/ld.so.preload is non-empty".into(),
-                    detail: text.trim().to_string(),
+                    detail: format!(
+                        "{} non-empty loader configuration line(s); contents redacted.",
+                        text.lines().filter(|line| !line.trim().is_empty()).count()
+                    ),
                     recommendation: "If writable, this is a powerful persistence/privesc primitive — handle with extreme care.".into(),
                     noisy: false,
                     leaves_artifacts: false,
@@ -148,5 +151,22 @@ impl Plugin for PathLdPlugin {
         }
 
         Ok(findings)
+    }
+}
+
+fn redacted_loader_detail(value: &str) -> String {
+    let entries = value.split(':').filter(|entry| !entry.is_empty()).count();
+    format!("value_present=true entries={entries}; raw loader value redacted")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redacted_loader_detail;
+
+    #[test]
+    fn loader_details_do_not_echo_environment_values() {
+        let detail = redacted_loader_detail("/secret/token.so:/opt/private/lib");
+        assert!(!detail.contains("secret"));
+        assert!(detail.contains("entries=2"));
     }
 }

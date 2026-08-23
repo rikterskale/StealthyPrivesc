@@ -1,9 +1,15 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+use serde::{Deserialize, Serialize};
 
 use crate::cli::{Cli, CliOverrides, OutputMode, ReportFormat};
 use crate::core::artifacts::{self, ArtifactLedger};
@@ -52,6 +58,33 @@ pub struct EngineOutcome {
     pub fail_on_triggered: bool,
     #[allow(dead_code)]
     pub run_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PluginWorkerRequest {
+    pub plugin: String,
+    pub verbose: bool,
+    pub auto_exploit: bool,
+    pub prefer_quiet: bool,
+    pub allow_techniques: Vec<String>,
+    pub approved_probe_ids: Vec<String>,
+    pub artifact_path: Option<PathBuf>,
+    pub control_assessment: Option<ControlAssessment>,
+}
+
+pub(crate) fn run_plugin_worker(request: PluginWorkerRequest) -> Result<Vec<Finding>> {
+    let allow = TechniqueAllowlist::from_ids(&request.allow_techniques)?;
+    run_plugin_blocking(
+        &request.plugin,
+        request.verbose,
+        request.auto_exploit,
+        request.prefer_quiet,
+        &allow,
+        &request.approved_probe_ids,
+        request.artifact_path,
+        request.control_assessment,
+        Arc::new(AtomicBool::new(false)),
+    )
 }
 
 impl Engine {
@@ -152,6 +185,15 @@ impl Engine {
             prior = Some(serde_json::from_str(&text)?);
         }
 
+        let approved_file = self
+            .approve_file
+            .as_ref()
+            .map(|path| triage::load_approve_file(path))
+            .transpose()?;
+        if approved_file.is_some() && prior.is_none() {
+            bail!("--approve-file requires a checkpoint from the same triage run");
+        }
+
         let run_id = prior
             .as_ref()
             .map(|r| r.run_id.clone())
@@ -203,8 +245,14 @@ impl Engine {
         let mut effective_auto_exploit = self.auto_exploit && !self.triage;
         let mut approved_probe_ids: Vec<String> = Vec::new();
 
-        if let Some(path) = &self.approve_file {
-            let file = triage::load_approve_file(path)?;
+        if let Some(file) = &approved_file {
+            if file.run_id != run_id {
+                anyhow::bail!(
+                    "approval file run_id {} does not match current run_id {}",
+                    file.run_id,
+                    run_id
+                );
+            }
             triage_decisions = file.decisions.clone();
             approved_probe_ids = triage::probe_ids(&file.decisions);
             if !approved_probe_ids.is_empty() {
@@ -480,10 +528,18 @@ impl Engine {
                     control_assessment.clone(),
                 );
                 if let Ok(body) = serde_json::to_string_pretty(&partial) {
-                    let _ = std::fs::write(path, body);
+                    if let Err(error) = std::fs::write(path, body) {
+                        store.note(format!("Checkpoint persistence failed: {error}"));
+                    }
                     let mut ledger = ArtifactLedger::new(&run_id);
                     ledger.register("checkpoint", path, true, "partial run checkpoint");
-                    let _ = artifacts::save_ledger(&self.ledger_dir, &ledger);
+                    if let Err(error) = artifacts::save_ledger(&self.ledger_dir, &ledger) {
+                        store.note(format!("Artifact ledger persistence failed: {error}"));
+                    }
+                } else {
+                    store.note(
+                        "Checkpoint serialization failed; partial checkpoint was not written",
+                    );
                 }
             }
         }
@@ -546,7 +602,7 @@ impl Engine {
             primary_launch: "ok".into(),
             roe_ref: std::env::var("STEALTHY_MANIFEST_ROE_REF").unwrap_or_default(),
             profile: self.profile.as_str().into(),
-            coverage_mode: "binary".into(),
+            coverage_mode: "native".into(),
             capability_delta: vec![],
             control_assessment,
             os: os_info,
@@ -563,7 +619,10 @@ impl Engine {
         // Persist final checkpoint if requested.
         if let Some(path) = &self.checkpoint {
             if let Ok(body) = serde_json::to_string_pretty(&report) {
-                let _ = std::fs::write(path, body);
+                std::fs::write(path, body)
+                    .with_context(|| format!("write checkpoint {}", path.display()))?;
+            } else {
+                anyhow::bail!("serialize final checkpoint");
             }
         }
 
@@ -593,7 +652,7 @@ impl Engine {
             ledger.register("checkpoint", path, true, "checkpoint");
         }
         if !ledger.entries.is_empty() {
-            let _ = artifacts::save_ledger(&self.ledger_dir, &ledger);
+            artifacts::save_ledger(&self.ledger_dir, &ledger).context("persist artifact ledger")?;
         }
 
         if self.verbose && self.output.mode == OutputMode::Memory && !self.quiet {
@@ -650,42 +709,123 @@ impl Engine {
             };
         }
 
-        let (tx, rx) = mpsc::channel();
-        let verbose = self.verbose;
-        let prefer_quiet = self.prefer_quiet;
-        let allow = self.allow_techniques.clone();
-        let approved = approved_probe_ids.to_vec();
-        let artifact = self.artifact.clone();
-        let control_assessment = control_assessment.cloned();
-        let id = plugin_id.to_string();
-        let worker_cancel = cancel.clone();
-        std::thread::spawn(move || {
-            let result = run_plugin_blocking(
-                &id,
-                verbose,
-                auto_exploit,
-                prefer_quiet,
-                &allow,
-                &approved,
-                artifact,
-                control_assessment,
-                worker_cancel,
-            );
-            let _ = tx.send(result);
-        });
-
-        match rx.recv_timeout(Duration::from_millis(timeout)) {
-            Ok(Ok(findings)) => PluginOutcome::Ok(findings),
-            Ok(Err(e)) => PluginOutcome::Err(format!("{e:#}")),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                cancel.store(true, Ordering::SeqCst);
-                PluginOutcome::Timeout
+        let request = PluginWorkerRequest {
+            plugin: plugin_id.into(),
+            verbose: self.verbose,
+            auto_exploit,
+            prefer_quiet: self.prefer_quiet,
+            allow_techniques: self
+                .allow_techniques
+                .ids()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            approved_probe_ids: approved_probe_ids.to_vec(),
+            artifact_path: self.artifact.clone(),
+            control_assessment: control_assessment.cloned(),
+        };
+        let mut child = match std::env::current_exe()
+            .context("locate plugin worker executable")
+            .and_then(|exe| {
+                let mut command = Command::new(exe);
+                command
+                    .args([
+                        "--authorized",
+                        "--quiet",
+                        "__plugin-worker",
+                        "--plugin",
+                        plugin_id,
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                #[cfg(unix)]
+                unsafe {
+                    command.pre_exec(|| {
+                        if setsid() == -1 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+                command.spawn().context("spawn isolated plugin worker")
+            }) {
+            Ok(child) => child,
+            Err(error) => return PluginOutcome::Err(format!("{error:#}")),
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            match serde_json::to_vec(&request) {
+                Ok(body) => {
+                    if let Err(error) = stdin.write_all(&body) {
+                        terminate_worker(&mut child);
+                        return PluginOutcome::Err(format!("write plugin worker request: {error}"));
+                    }
+                }
+                Err(error) => {
+                    terminate_worker(&mut child);
+                    return PluginOutcome::Err(format!("serialize plugin worker request: {error}"));
+                }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                PluginOutcome::Err("plugin thread disconnected".into())
+        }
+        let deadline = Instant::now() + Duration::from_millis(timeout);
+        loop {
+            if cancel.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                cancel.store(true, Ordering::SeqCst);
+                terminate_worker(&mut child);
+                return PluginOutcome::Timeout;
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let mut stdout = Vec::new();
+                    let mut stderr = Vec::new();
+                    if let Some(mut pipe) = child.stdout.take() {
+                        use std::io::Read;
+                        let _ = pipe.read_to_end(&mut stdout);
+                    }
+                    if let Some(mut pipe) = child.stderr.take() {
+                        use std::io::Read;
+                        let _ = pipe.read_to_end(&mut stderr);
+                    }
+                    if !status.success() {
+                        return PluginOutcome::Err(format!(
+                            "plugin worker failed: {}",
+                            String::from_utf8_lossy(&stderr)
+                        ));
+                    }
+                    return match serde_json::from_slice::<Vec<Finding>>(&stdout) {
+                        Ok(findings) => PluginOutcome::Ok(findings),
+                        Err(error) => {
+                            PluginOutcome::Err(format!("parse plugin worker output: {error}"))
+                        }
+                    };
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                Err(error) => {
+                    terminate_worker(&mut child);
+                    return PluginOutcome::Err(format!("poll plugin worker: {error}"));
+                }
             }
         }
     }
+}
+
+fn terminate_worker(child: &mut Child) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        unsafe {
+            // The worker creates a private process group so helper commands do not
+            // survive a timeout as orphaned host activity.
+            let _ = kill(-pid, 9);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+    fn setsid() -> i32;
 }
 
 enum PluginOutcome {
@@ -770,7 +910,7 @@ fn build_report(
         primary_launch: "ok".into(),
         roe_ref: std::env::var("STEALTHY_MANIFEST_ROE_REF").unwrap_or_default(),
         profile: profile.into(),
-        coverage_mode: "binary".into(),
+        coverage_mode: "native".into(),
         capability_delta: vec![],
         control_assessment,
         os: os_info,

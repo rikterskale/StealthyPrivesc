@@ -92,9 +92,7 @@ fn walk_tasks(dir: &Path, depth: u32, findings: &mut Vec<Finding>) {
                 let bin = strip_quotes_path(&cmd);
                 if !bin.is_empty()
                     && std::path::Path::new(&bin).is_file()
-                    && super::acl::is_writable_for_current_user(Path::new(&bin)).unwrap_or_else(
-                        || std::fs::OpenOptions::new().append(true).open(&bin).is_ok(),
-                    )
+                    && super::acl::is_writable_for_current_user(Path::new(&bin)).unwrap_or(false)
                 {
                     findings.push(Finding {
                         plugin: "windows.scheduled_tasks".into(),

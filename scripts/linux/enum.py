@@ -236,12 +236,10 @@ def containers() -> None:
         except OSError:
             continue
         print(f"socket {path} mode={oct(mode)}")
-        try:
-            fd = os.open(sock, os.O_RDWR)
-            os.close(fd)
-            print(f"FINDING: {path} RW open succeeded")
-        except OSError as exc:
-            print(f"{path} not RW: {exc}")
+        if os.access(sock, os.W_OK):
+            print(f"FINDING: {path} appears writable by metadata/access check")
+        else:
+            print(f"{path} not writable by metadata/access check")
     if not found:
         print("no common container sockets")
     print()
@@ -404,11 +402,12 @@ def emit_json() -> None:
         "profile": "script",
         "coverage_mode": "script",
         "capability_delta": [
-            "linux.wildcard_cron",
+            "linux.app_control",
+            "linux.systemd_cron",
             "linux.nfs",
-            "linux.polkit",
-            "linux.endpoint_controls",
-            "linux.kernel_cve",
+            "linux.path_ld",
+            "linux.services",
+            "linux.wildcard_cron",
         ],
         "os": {
             "family": "unix",
@@ -479,8 +478,8 @@ def main(argv: list[str] | None = None) -> int:
             plugin
             for plugin in [
                 "linux.containers",
-                "linux.mounts",
                 "linux.polkit",
+                "linux.mounts",
                 "linux.endpoint_controls",
                 "linux.ssh_keys",
                 "linux.credentials",

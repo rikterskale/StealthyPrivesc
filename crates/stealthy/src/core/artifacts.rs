@@ -1,11 +1,14 @@
 //! Run-scoped artifact ledger and cleanup helpers.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::core::output;
 
@@ -24,6 +27,8 @@ pub struct ArtifactRecord {
 pub struct ArtifactLedger {
     pub schema_version: String,
     pub run_id: String,
+    #[serde(default)]
+    pub integrity: String,
     pub entries: Vec<ArtifactRecord>,
 }
 
@@ -32,6 +37,7 @@ impl ArtifactLedger {
         Self {
             schema_version: "1".into(),
             run_id: run_id.into(),
+            integrity: String::new(),
             entries: Vec::new(),
         }
     }
@@ -62,22 +68,50 @@ pub fn default_ledger_dir() -> PathBuf {
     PathBuf::from(".cache-run")
 }
 
-pub fn ledger_path(dir: &Path, run_id: &str) -> PathBuf {
-    dir.join(format!("{run_id}.json"))
+pub fn ledger_path(dir: &Path, run_id: &str) -> Result<PathBuf> {
+    validate_run_id(run_id)?;
+    Ok(dir.join(format!("{run_id}.json")))
 }
 
 pub fn save_ledger(dir: &Path, ledger: &ArtifactLedger) -> Result<PathBuf> {
+    validate_run_id(&ledger.run_id)?;
     fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
-    let path = ledger_path(dir, &ledger.run_id);
-    let body = serde_json::to_string_pretty(ledger)?;
-    fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
+    restrict_dir_permissions(dir)?;
+    let key = load_or_create_key(dir)?;
+    let mut unsigned = ledger.clone();
+    unsigned.schema_version = "2".into();
+    unsigned.integrity.clear();
+    let unsigned_body = serde_json::to_vec_pretty(&unsigned)?;
+    unsigned.integrity = integrity_tag(&key, &unsigned_body);
+    let body = serde_json::to_vec_pretty(&unsigned)?;
+    let path = ledger_path(dir, &ledger.run_id)?;
+    atomic_private_write(&path, &body)?;
     Ok(path)
 }
 
 pub fn load_ledger(dir: &Path, run_id: &str) -> Result<ArtifactLedger> {
-    let path = ledger_path(dir, run_id);
+    let path = ledger_path(dir, run_id)?;
     let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    Ok(serde_json::from_str(&text)?)
+    let ledger: ArtifactLedger = serde_json::from_str(&text)?;
+    if ledger.run_id != run_id || ledger.integrity.is_empty() {
+        bail!("ledger is missing a valid run identity or integrity tag");
+    }
+    if ledger
+        .entries
+        .iter()
+        .any(|entry| entry.run_id != ledger.run_id)
+    {
+        bail!("ledger entry run identity does not match ledger");
+    }
+    let key = load_key(dir)?;
+    let mut unsigned = ledger.clone();
+    let expected = unsigned.integrity.clone();
+    unsigned.integrity.clear();
+    let body = serde_json::to_vec_pretty(&unsigned)?;
+    if integrity_tag(&key, &body) != expected {
+        bail!("ledger integrity verification failed");
+    }
+    Ok(ledger)
 }
 
 pub fn latest_run_id(dir: &Path) -> Result<String> {
@@ -138,9 +172,19 @@ pub fn cleanup(
         }
     }
     // Remove ledger file itself after cleanup.
-    let lp = ledger_path(dir, &ledger.run_id);
+    let lp = ledger_path(dir, &ledger.run_id)?;
     fs::remove_file(&lp).with_context(|| format!("remove ledger {}", lp.display()))?;
     removed.push(lp.display().to_string());
+    let has_other_ledgers = fs::read_dir(dir)?
+        .flatten()
+        .any(|entry| entry.file_name().to_string_lossy().ends_with(".json"));
+    if !has_other_ledgers {
+        let kp = key_path(dir);
+        if kp.exists() {
+            fs::remove_file(&kp).with_context(|| format!("remove ledger key {}", kp.display()))?;
+            removed.push(kp.display().to_string());
+        }
+    }
 
     if remove_self {
         if let Ok(exe) = std::env::current_exe() {
@@ -153,6 +197,119 @@ pub fn cleanup(
         }
     }
     Ok(removed)
+}
+
+fn validate_run_id(run_id: &str) -> Result<()> {
+    if run_id.is_empty()
+        || run_id == "."
+        || run_id == ".."
+        || run_id
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
+    {
+        bail!("run ID must be a safe filename component");
+    }
+    Ok(())
+}
+
+fn key_path(dir: &Path) -> PathBuf {
+    dir.join(".ledger-key")
+}
+
+fn load_key(dir: &Path) -> Result<Vec<u8>> {
+    let path = key_path(dir);
+    let key = fs::read(&path).with_context(|| format!("read ledger key {}", path.display()))?;
+    if key.len() != 32 {
+        bail!("ledger key has an invalid length");
+    }
+    Ok(key)
+}
+
+fn load_or_create_key(dir: &Path) -> Result<Vec<u8>> {
+    if let Ok(key) = load_key(dir) {
+        return Ok(key);
+    }
+    let path = key_path(dir);
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+    match OpenOptions::new().write(true).create_new(true).open(&path) {
+        Ok(mut file) => {
+            restrict_file_permissions(&file)?;
+            file.write_all(&key)?;
+            file.sync_all()?;
+            Ok(key.to_vec())
+        }
+        Err(_) => load_key(dir),
+    }
+}
+
+fn integrity_tag(key: &[u8], body: &[u8]) -> String {
+    // HMAC-SHA256 with the SHA-256 block size, kept local to avoid another dependency.
+    let mut key_block = [0u8; 64];
+    if key.len() > key_block.len() {
+        let digest = Sha256::digest(key);
+        key_block[..digest.len()].copy_from_slice(&digest);
+    } else {
+        key_block[..key.len()].copy_from_slice(key);
+    }
+    let mut inner = Sha256::new();
+    for byte in &mut key_block {
+        *byte ^= 0x36;
+    }
+    inner.update(key_block);
+    inner.update(body);
+    let inner_digest = inner.finalize();
+    for byte in &mut key_block {
+        *byte ^= 0x36 ^ 0x5c;
+    }
+    let mut outer = Sha256::new();
+    outer.update(key_block);
+    outer.update(inner_digest);
+    hex::encode(outer.finalize())
+}
+
+fn atomic_private_write(path: &Path, body: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("ledger path has no parent"))?;
+    let suffix = rand::random::<u64>();
+    let temp = parent.join(format!(
+        ".{}.tmp-{suffix:016x}",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .with_context(|| format!("create temporary ledger {}", temp.display()))?;
+    restrict_file_permissions(&file)?;
+    file.write_all(body)?;
+    file.sync_all()?;
+    drop(file);
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    fs::rename(&temp, path).with_context(|| format!("replace ledger {}", path.display()))?;
+    Ok(())
+}
+
+fn restrict_file_permissions(_file: &std::fs::File) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        _file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+fn restrict_dir_permissions(_dir: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(_dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 fn remove_recorded_path(path: &Path, secure_delete: bool) -> Result<()> {
@@ -171,4 +328,40 @@ fn remove_recorded_path(path: &Path, secure_delete: bool) -> Result<()> {
     }
     fs::remove_dir(path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{load_ledger, save_ledger, ArtifactLedger};
+
+    #[test]
+    fn ledgers_are_private_and_tamper_evident() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ledger = ArtifactLedger::new("run-1");
+        ledger.register("test", dir.path().join("artifact"), true, "fixture");
+        let path = save_ledger(dir.path(), &ledger).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                std::fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        assert!(load_ledger(dir.path(), "run-1").is_ok());
+        let mut body = std::fs::read_to_string(&path).unwrap();
+        body = body.replace("fixture", "tampered");
+        std::fs::write(&path, body).unwrap();
+        assert!(load_ledger(dir.path(), "run-1").is_err());
+    }
+
+    #[test]
+    fn ledger_path_rejects_traversal_ids() {
+        assert!(super::ledger_path(std::path::Path::new("/tmp"), "../outside").is_err());
+    }
 }

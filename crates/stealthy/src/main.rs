@@ -147,6 +147,7 @@ fn main() -> Result<()> {
             print!("{}", delivery::one_liners(&os, &transport));
             Ok(())
         }
+        Commands::PluginWorker { plugin } => run_plugin_worker(&plugin),
         Commands::Resume {
             checkpoint,
             auto_exploit,
@@ -190,6 +191,20 @@ fn main() -> Result<()> {
     }
 }
 
+fn run_plugin_worker(plugin: &str) -> Result<()> {
+    use std::io::Read;
+
+    let mut body = String::new();
+    std::io::stdin().read_to_string(&mut body)?;
+    let request: crate::core::engine::PluginWorkerRequest = serde_json::from_str(&body)?;
+    if request.plugin != plugin {
+        anyhow::bail!("plugin worker request mismatch");
+    }
+    let findings = crate::core::engine::run_plugin_worker(request)?;
+    println!("{}", serde_json::to_string(&findings)?);
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_enum(
     cli: &Cli,
@@ -204,6 +219,13 @@ fn run_enum(
     triage_out: Option<std::path::PathBuf>,
     approve_file: Option<std::path::PathBuf>,
 ) -> Result<()> {
+    let approval_resume = if approve_file.is_some() {
+        Some(checkpoint.clone().ok_or_else(|| {
+            anyhow::anyhow!("--approve-file requires --checkpoint from the triage run")
+        })?)
+    } else {
+        resume_from
+    };
     let allow =
         crate::exploit::TechniqueAllowlist::from_ids(allow_techniques.as_deref().unwrap_or(&[]))?;
     let mut engine = Engine::from_cli(
@@ -214,7 +236,7 @@ fn run_enum(
         only,
         skip,
         checkpoint,
-        resume_from,
+        approval_resume,
         triage,
         triage_out,
         approve_file,
@@ -549,7 +571,7 @@ fn print_diff(
         serde_json::from_str(&std::fs::read_to_string(baseline_path)?)?;
     let current: crate::core::types::RunReport =
         serde_json::from_str(&std::fs::read_to_string(current_path)?)?;
-    let diff = crate::core::diff::compare(&baseline, &current);
+    let diff = crate::core::diff::compare(&baseline, &current)?;
     match format {
         ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&diff)?),
         ReportFormat::Markdown | ReportFormat::Human => {

@@ -94,6 +94,7 @@ is_json=false
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
     --json) is_json=true ;;
+    --format=json) is_json=true ;;
     --format)
       [[ "${args[$((i + 1))]:-}" == "json" ]] && is_json=true
       ;;

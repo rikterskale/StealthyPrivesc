@@ -12,16 +12,25 @@ use crate::core::types::RunReport;
 pub fn script_capability_delta(os: &str) -> Vec<String> {
     match os {
         "windows" => vec![
-            "windows.dll_hijack".into(),
+            "windows.services".into(),
             "windows.scheduled_tasks".into(),
+            "windows.always_install_elevated".into(),
+            "windows.uac".into(),
+            "windows.dll_hijack".into(),
+            "windows.credentials".into(),
+            "windows.admin_sessions".into(),
+            "windows.env_path".into(),
+            "windows.autoruns".into(),
             "windows.endpoint_controls".into(),
+            "windows.app_control".into(),
         ],
         _ => vec![
-            "linux.wildcard_cron".into(),
+            "linux.app_control".into(),
+            "linux.systemd_cron".into(),
             "linux.nfs".into(),
-            "linux.polkit".into(),
-            "linux.endpoint_controls".into(),
-            "linux.kernel_cve".into(),
+            "linux.path_ld".into(),
+            "linux.services".into(),
+            "linux.wildcard_cron".into(),
         ],
     }
 }

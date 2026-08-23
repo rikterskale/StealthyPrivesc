@@ -25,7 +25,11 @@ if ($Json) {
     roe_ref = if ($env:STEALTHY_MANIFEST_ROE_REF) { $env:STEALTHY_MANIFEST_ROE_REF } else { "" }
     profile = "script"
     coverage_mode = "script"
-    capability_delta = @("windows.dll_hijack", "windows.scheduled_tasks", "windows.endpoint_controls")
+    capability_delta = @(
+      "windows.services", "windows.scheduled_tasks", "windows.always_install_elevated",
+      "windows.uac", "windows.dll_hijack", "windows.credentials", "windows.admin_sessions",
+      "windows.env_path", "windows.autoruns", "windows.endpoint_controls", "windows.app_control"
+    )
     os = @{
       family = "windows"
       os = "windows"

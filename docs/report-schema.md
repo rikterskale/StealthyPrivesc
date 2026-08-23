@@ -36,9 +36,9 @@ but not SARIF.
 Native schema-v2 findings include stable `finding_id`, `plugin`, `kind`,
 `severity`, `title`, `detail`, `recommendation`, `what_next`, `next_command`,
 `noisy`, `leaves_artifacts`, and `mitre_techniques`. Optional fields such as
-`object`, `evidence`, `technique_id`, and `assessment` are emitted when
-applicable. Consumers must ignore unknown fields and tolerate absent optional
-fields.
+`object` and `technique_id` are emitted when applicable. Assessment metadata
+is emitted in the top-level `assessments` array, aligned by finding index.
+Consumers must ignore unknown fields and tolerate absent optional fields.
 
 ## Fallback and ingest rules
 
@@ -52,7 +52,9 @@ stealthy ingest fallback-report.json --format json > normalized-report.json
 
 Do not infer native plugin coverage from a script report. Use
 `capability_delta` and the coverage arrays, and preserve the original script
-report alongside the normalized output.
+report alongside the normalized output. `capability_delta` is the canonical
+list of native plugin IDs not attempted by that fallback; reduced structured
+evidence within an attempted plugin is described in the report notes.
 
 ## Output and persistence
 

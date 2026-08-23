@@ -69,7 +69,7 @@ $argsToRun = if ($Arguments) { $Arguments } else { @('--profile','balanced','enu
 $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
 $env:STEALTHY_EXECUTION_PATH = 'binary'
 $env:STEALTHY_PRIMARY_LAUNCH = 'ok'
-$isJson = ($argsToRun -contains '--json') -or (($argsToRun -contains '--format') -and ($argsToRun -contains 'json'))
+$isJson = ($argsToRun -contains '--json') -or ($argsToRun -contains '--format=json') -or (($argsToRun -contains '--format') -and ($argsToRun -contains 'json'))
 $approvedFallbacks = if ($cfg.windows_fallbacks) { $cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } } else { @('powershell') }
 
 function Invoke-PowerShellFallback {

@@ -207,7 +207,7 @@ mod tests {
             }],
             notes: vec![],
             profile: "balanced".into(),
-            coverage_mode: "binary".into(),
+            coverage_mode: "native".into(),
             capability_delta: vec![],
             control_assessment: None,
         };

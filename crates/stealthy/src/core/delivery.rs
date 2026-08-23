@@ -32,10 +32,11 @@ pub fn verify_local(path: &Path, expect_sha256: &str) -> Result<()> {
 }
 
 pub fn verify_ssh(ssh_target: &str, remote_path: &str, expect_sha256: &str) -> Result<()> {
+    let quoted_path = shell_quote(remote_path)?;
     let output = Command::new("ssh")
         .args([
             ssh_target,
-            &format!("sha256sum '{remote_path}' || shasum -a 256 '{remote_path}'"),
+            &format!("sha256sum {quoted_path} || shasum -a 256 {quoted_path}"),
         ])
         .output()
         .context("spawn ssh for remote verify")?;
@@ -56,6 +57,13 @@ pub fn verify_ssh(ssh_target: &str, remote_path: &str, expect_sha256: &str) -> R
         bail!("remote hash mismatch: expected {expect}, got {got}");
     }
     Ok(())
+}
+
+fn shell_quote(value: &str) -> Result<String> {
+    if value.is_empty() || value.bytes().any(|b| b == 0 || b == b'\n' || b == b'\r') {
+        bail!("remote path must be non-empty and contain no NUL/newline characters");
+    }
+    Ok(format!("'{}'", value.replace('\'', "'\\''")))
 }
 
 pub struct StageOptions<'a> {
@@ -84,12 +92,17 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         }
     }
     fs::create_dir_all(opts.out_dir)?;
+    validate_bundle_name(opts.name)?;
     let bin_name = if opts.os == "windows" {
         format!("{}.exe", opts.name)
     } else {
         opts.name.to_string()
     };
-    let dest_bin = opts.out_dir.join(&bin_name);
+    let stage_root = fs::canonicalize(opts.out_dir)?;
+    let dest_bin = stage_root.join(&bin_name);
+    if dest_bin.parent() != Some(stage_root.as_path()) {
+        bail!("staged binary must remain inside the stage directory");
+    }
 
     if let Some(src) = opts.binary {
         fs::copy(src, &dest_bin)
@@ -207,6 +220,19 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     Ok(opts.out_dir.to_path_buf())
 }
 
+fn validate_bundle_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
+    {
+        bail!("stage name must be a safe file basename without path separators");
+    }
+    Ok(())
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     fs::create_dir_all(dst)?;
     for ent in fs::read_dir(src)? {
@@ -259,5 +285,24 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
         _ => format!(
             "# No built-in snippet for os={os} transport={transport}\n# Supported: linux:(ssh|scp|http|smb) windows:(winrm|smb|http)\n"
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{shell_quote, validate_bundle_name};
+
+    #[test]
+    fn shell_quote_contains_metacharacters_as_data() {
+        let quoted = shell_quote("a' ; echo injected ; #").unwrap();
+        assert_eq!(quoted, "'a'\\'' ; echo injected ; #'");
+    }
+
+    #[test]
+    fn stage_name_rejects_path_components() {
+        for name in ["../outside", r"sub\\file", "/tmp/file", "..", ""] {
+            assert!(validate_bundle_name(name).is_err(), "accepted {name:?}");
+        }
+        assert!(validate_bundle_name("stealthy").is_ok());
     }
 }

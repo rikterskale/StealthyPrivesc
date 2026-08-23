@@ -77,7 +77,7 @@ impl Plugin for ServicesPlugin {
 
             if let Some(bin) = super::executable_path(&image_path) {
                 if super::acl::is_writable_for_current_user(std::path::Path::new(&bin))
-                    .unwrap_or_else(|| is_writable_for_user(&bin))
+                    .unwrap_or(false)
                 {
                     findings.push(Finding {
                         plugin: self.id().into(),
@@ -267,20 +267,9 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-#[cfg(windows)]
-fn is_writable_for_user(path: &str) -> bool {
-    // Conservative check: try opening for append without creating.
-    std::fs::OpenOptions::new().append(true).open(path).is_ok()
-}
-
 #[cfg(not(windows))]
 fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
     Ok(vec![])
-}
-
-#[cfg(not(windows))]
-fn is_writable_for_user(_path: &str) -> bool {
-    false
 }
 
 #[cfg(test)]

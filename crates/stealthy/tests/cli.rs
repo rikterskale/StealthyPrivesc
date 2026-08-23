@@ -857,6 +857,33 @@ fn triage_out_writes_decisions_stub() {
 }
 
 #[test]
+fn approval_file_requires_same_run_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let decisions = dir.path().join("decisions.json");
+    std::fs::write(
+        &decisions,
+        r#"{"schema_version":"1","run_id":"not-a-checkpoint-run","decisions":[]}"#,
+    )
+    .unwrap();
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--approve-file",
+            decisions.to_str().unwrap(),
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires --checkpoint"));
+}
+
+#[test]
 fn checkpoint_and_resume_skips_completed_plugin() {
     let dir = tempfile::tempdir().unwrap();
     let checkpoint = dir.path().join("cp.json");

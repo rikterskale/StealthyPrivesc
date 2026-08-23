@@ -76,8 +76,15 @@ impl Plugin for ContainersPlugin {
                     ..Default::default()
                 });
 
-                match std::fs::OpenOptions::new().read(true).write(true).open(p) {
-                    Ok(_) => findings.push(Finding {
+                let writable = util::is_effectively_writable_opts(
+                    p,
+                    util::euid(),
+                    &util::current_gids(),
+                    !ctx.prefer_quiet,
+                )
+                .unwrap_or(false);
+                if writable {
+                    findings.push(Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Misconfiguration,
                         severity: sev,
@@ -88,19 +95,7 @@ impl Plugin for ContainersPlugin {
                         noisy: false,
                         leaves_artifacts: false,
                         ..Default::default()
-                    }),
-                    Err(e) if ctx.verbose => findings.push(Finding {
-                        plugin: self.id().into(),
-                        kind: FindingKind::Enumeration,
-                        severity: Severity::Info,
-                        title: format!("{label} socket not RW-accessible"),
-                        detail: e.to_string(),
-                        recommendation: "Check group membership.".into(),
-                        noisy: false,
-                        leaves_artifacts: false,
-                        ..Default::default()
-                    }),
-                    Err(_) => {}
+                    });
                 }
             }
         }

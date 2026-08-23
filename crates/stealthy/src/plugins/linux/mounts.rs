@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
+use crate::plugins::linux::util;
 
 pub struct MountsPlugin;
 
@@ -21,36 +22,49 @@ impl Plugin for MountsPlugin {
         &["linux"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        // /etc/passwd writable => classic user add path (recommend only; never auto-write)
+        // Infer writability from metadata only. Enumeration must not request a write handle.
         let passwd = Path::new("/etc/passwd");
-        match fs::OpenOptions::new().write(true).open(passwd) {
-            Ok(_) => findings.push(Finding {
+        let writable = fs::metadata(passwd)
+            .ok()
+            .and_then(|_| {
+                util::is_effectively_writable_opts(
+                    passwd,
+                    util::euid(),
+                    &util::current_gids(),
+                    !ctx.prefer_quiet,
+                )
+            })
+            .unwrap_or(false);
+        if writable {
+            findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Misconfiguration,
                 severity: Severity::Critical,
                 title: "/etc/passwd is writable".into(),
-                detail: "Opened O_WRONLY successfully — do not modify without explicit approval."
-                    .into(),
+                detail:
+                    "Metadata/ACL evaluation indicates write access; no write handle was opened."
+                        .into(),
                 recommendation: "Writable passwd enables local user/UID 0 insertion. Manual only."
                     .into(),
                 noisy: false,
                 leaves_artifacts: true,
                 ..Default::default()
-            }),
-            Err(_) => findings.push(Finding {
+            });
+        } else {
+            findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Enumeration,
                 severity: Severity::Info,
                 title: "/etc/passwd not writable".into(),
-                detail: "Expected on hardened hosts.".into(),
+                detail: "Metadata/ACL evaluation found no current-user write access; no write handle was opened.".into(),
                 recommendation: "Continue with sudo/SUID/container checks.".into(),
                 noisy: false,
                 leaves_artifacts: false,
                 ..Default::default()
-            }),
+            });
         }
 
         // Parse /proc/self/mountinfo for user-interesting mounts

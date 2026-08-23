@@ -117,6 +117,9 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
+  Create the triage checkpoint first, then pass that same `--checkpoint` with
+  `--approve-file`. Approval files are bound to the checkpoint `run_id`; a
+  missing or mismatched checkpoint is rejected.
 
 The application-control plugins expose policy discovery, package/signer/hash/path
 trust evidence, sensor/tamper state, audit sources, harmless validation cases,
@@ -226,7 +229,8 @@ stealthy cleanup --latest --secure-delete
 ```
 
 List or remove removable paths recorded in the run ledger. Memory-only runs do
-not create a ledger. `cleanup --secure-delete` is best-effort overwrite then
+not create a ledger. Ledgers are private, integrity-tagged files and tampered
+or malformed ledgers are rejected. `cleanup --secure-delete` is best-effort overwrite then
 unlink for files; staged directories are removed recursively only when the
 stage output was created empty by `stage`. `--remove-self` also attempts to
 remove the current executable and should be used only as a separately approved
@@ -272,7 +276,8 @@ stealthy diff BASELINE.json CURRENT.json --format markdown
 ```
 
 Compares plaintext JSON reports offline. It reports added, removed, and
-changed findings. SARIF is intentionally unsupported for diffs.
+changed findings. Duplicate finding identities are rejected rather than silently
+overwritten. SARIF is intentionally unsupported for diffs.
 
 ## Output modes
 
