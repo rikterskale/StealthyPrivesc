@@ -768,14 +768,14 @@ jobs:
         run: |
           echo "Validating Linux install script..."
           bash -n scripts/install.sh
-          grep -q "GitHub artifact attestation" scripts/install.sh
-          grep -q "SHA-256 checksum" scripts/install.sh
+          grep -q "attestation verify" scripts/install.sh
+          grep -q "checksum" scripts/install.sh
           grep -q "HOME/.local/bin" scripts/install.sh
           echo "✓ Linux install script validated"
 
           echo "Validating Windows install script..."
           # PowerShell syntax check requires Windows, so just verify key content
-          grep -q "artifact attestation" scripts/install.ps1
+          grep -q "attestation verification" scripts/install.ps1
           grep -q "SHA256" scripts/install.ps1
           grep -q "LOCALAPPDATA" scripts/install.ps1
           echo "✓ Windows install script structure validated"
