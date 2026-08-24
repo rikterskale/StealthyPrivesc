@@ -781,8 +781,9 @@ jobs:
           echo "✓ Windows install script structure validated"
 
       - name: Validate documentation examples
-        shell: python3
+        shell: bash
         run: |
+          python3 << 'PYTHON_EOF'
           import re
           from pathlib import Path
 
@@ -825,6 +826,7 @@ jobs:
               exit(1)
           else:
               print("✓ All documentation examples validated")
+          PYTHON_EOF
 
       - name: Validate version consistency
         shell: bash
