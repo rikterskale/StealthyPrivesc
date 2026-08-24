@@ -48,20 +48,33 @@ my $exec_path = $ENV{STEALTHY_EXECUTION_PATH} // 'perl-fallback';
 my $primary_launch = $ENV{STEALTHY_PRIMARY_LAUNCH} // 'not_applicable';
 my $roe_ref = $ENV{STEALTHY_MANIFEST_ROE_REF} // '';
 
+sub json_escape {
+    my ($value) = @_;
+    $value //= '';
+    $value =~ s/\\/\\\\/g;
+    $value =~ s/"/\\"/g;
+    $value =~ s/\n/\\n/g;
+    $value =~ s/\r/\\r/g;
+    $value =~ s/\t/\\t/g;
+    return $value;
+}
+
 if ($json) {
     # Minimal schema v2 shell; enrich with `stealthy ingest` when needed.
-    my $roe_esc = $roe_ref;
-    $roe_esc =~ s/\\/\\\\/g;
-    $roe_esc =~ s/"/\\"/g;
+    my $exec_esc = json_escape($exec_path);
+    my $launch_esc = json_escape($primary_launch);
+    my $roe_esc = json_escape($roe_ref);
+    my $user_esc = json_escape($user);
+    my $host_esc = json_escape($host);
     print '{"schema_version":"2","tool":"stealthy-script","coverage_mode":"script",';
-    print '"execution_path":"' . $exec_path . '","primary_launch":"' . $primary_launch . '",';
+    print '"execution_path":"' . $exec_esc . '","primary_launch":"' . $launch_esc . '",';
     print '"roe_ref":"' . $roe_esc . '",';
     print '"notes":["perl fallback — reduced coverage"],"findings":[],';
     print '"os":{"family":"unix","os":"linux","arch":"unknown","version_hint":"linux"},';
-    print '"identity":{"username":"' . $user . '","uid":null,"gid":null,"groups":[],';
-    print '"is_elevated":false,"elevation_source":"perl","token_context":"","hostname":"' . $host . '"},';
+    print '"identity":{"username":"' . $user_esc . '","uid":null,"gid":null,"groups":[],';
+    print '"is_elevated":false,"elevation_source":"perl","token_context":"","hostname":"' . $host_esc . '"},';
     print '"plugins_run":[],"coverage":[],"assessments":[],"attack_paths":[],"triage_decisions":[],';
-    print '"capability_delta":["linux.sudo","linux.suid","linux.cron","linux.systemd","linux.kernel","linux.credentials"],';
+    print '"capability_delta":["linux.app_control","linux.systemd_cron","linux.nfs","linux.path_ld","linux.services","linux.wildcard_cron"],';
     print '"mode":"enumerate-only","profile":"script","authorized_use_ack":true,"version":"0.1.0",';
     print '"run_id":"perl-fallback","started_at_unix":0}' . "\n";
     exit 0;

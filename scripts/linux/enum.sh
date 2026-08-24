@@ -21,7 +21,15 @@ if [[ "$json" == true ]]; then
   if command -v python3 >/dev/null 2>&1 && [[ -f "$here/enum.py" ]]; then
     exec python3 "$here/enum.py" --authorized --json
   fi
-  echo '{"schema_version":"2","tool":"stealthy-script","coverage_mode":"script","notes":["bash --json requires python3 enum.py"],"findings":[],"os":{"family":"unix","os":"linux","arch":"unknown","version_hint":"linux"},"identity":{"username":"'"${USER:-unknown}"'","uid":null,"gid":null,"groups":[],"is_elevated":false,"elevation_source":"","token_context":"","hostname":"'"$(hostname 2>/dev/null || echo unknown)"'"},"plugins_run":[],"coverage":[],"assessments":[],"attack_paths":[],"triage_decisions":[],"capability_delta":[],"mode":"enumerate-only","profile":"script","authorized_use_ack":true,"version":"0.1.0","run_id":"bash-json","started_at_unix":0}' 
+  json_escape() {
+    printf '%s' "$1" | awk 'BEGIN { ORS=""; first=1 }
+      { if (!first) printf "\\n"; first=0;
+        gsub(/\\/, "\\\\"); gsub(/"/, "\\\"");
+        gsub(/\r/, "\\r"); gsub(/\t/, "\\t"); printf "%s", $0 }'
+  }
+  user_json=$(json_escape "${USER:-unknown}")
+  host_json=$(json_escape "$(hostname 2>/dev/null || echo unknown)")
+  echo '{"schema_version":"2","tool":"stealthy-script","coverage_mode":"script","notes":["bash --json requires python3 enum.py"],"findings":[],"os":{"family":"unix","os":"linux","arch":"unknown","version_hint":"linux"},"identity":{"username":"'"$user_json"'","uid":null,"gid":null,"groups":[],"is_elevated":false,"elevation_source":"","token_context":"","hostname":"'"$host_json"'"},"plugins_run":[],"coverage":[],"assessments":[],"attack_paths":[],"triage_decisions":[],"capability_delta":["linux.app_control","linux.systemd_cron","linux.nfs","linux.path_ld","linux.services","linux.wildcard_cron"],"mode":"enumerate-only","profile":"script","authorized_use_ack":true,"version":"0.1.0","run_id":"bash-json","started_at_unix":0}'
   exit 0
 fi
 

@@ -23,11 +23,20 @@ hostname_val=$( (cat /etc/hostname 2>/dev/null || hostname 2>/dev/null) | head -
 hostname_val=${hostname_val:-unknown}
 user_val=${USER:-unknown}
 
+json_escape() {
+  printf '%s' "$1" | awk 'BEGIN { ORS=""; first=1 }
+    { if (!first) printf "\\n"; first=0;
+      gsub(/\\/, "\\\\"); gsub(/"/, "\\\"");
+      gsub(/\r/, "\\r"); gsub(/\t/, "\\t"); printf "%s", $0 }'
+}
+
 if [ "$json" = true ]; then
-  exec_path=${STEALTHY_EXECUTION_PATH:-sh-fallback}
-  primary_launch=${STEALTHY_PRIMARY_LAUNCH:-not_applicable}
-  roe_ref=${STEALTHY_MANIFEST_ROE_REF:-}
-  printf '%s' "{\"schema_version\":\"2\",\"tool\":\"stealthy-script\",\"coverage_mode\":\"script\",\"execution_path\":\"${exec_path}\",\"primary_launch\":\"${primary_launch}\",\"roe_ref\":\"${roe_ref}\",\"notes\":[\"posix sh fallback — reduced coverage\"],\"findings\":[],\"os\":{\"family\":\"unix\",\"os\":\"linux\",\"arch\":\"unknown\",\"version_hint\":\"linux\"},\"identity\":{\"username\":\"${user_val}\",\"uid\":null,\"gid\":null,\"groups\":[],\"is_elevated\":false,\"elevation_source\":\"posix-sh\",\"token_context\":\"\",\"hostname\":\"${hostname_val}\"},\"plugins_run\":[],\"coverage\":[],\"assessments\":[],\"attack_paths\":[],\"triage_decisions\":[],\"capability_delta\":[\"linux.sudo\",\"linux.suid\",\"linux.capabilities\",\"linux.cron\",\"linux.systemd\",\"linux.kernel\",\"linux.credentials\"],\"mode\":\"enumerate-only\",\"profile\":\"script\",\"authorized_use_ack\":true,\"version\":\"0.1.0\",\"run_id\":\"posix-sh\",\"started_at_unix\":0}"
+  exec_path=$(json_escape "${STEALTHY_EXECUTION_PATH:-sh-fallback}")
+  primary_launch=$(json_escape "${STEALTHY_PRIMARY_LAUNCH:-not_applicable}")
+  roe_ref=$(json_escape "${STEALTHY_MANIFEST_ROE_REF:-}")
+  user_json=$(json_escape "$user_val")
+  hostname_json=$(json_escape "$hostname_val")
+  printf '%s' "{\"schema_version\":\"2\",\"tool\":\"stealthy-script\",\"coverage_mode\":\"script\",\"execution_path\":\"${exec_path}\",\"primary_launch\":\"${primary_launch}\",\"roe_ref\":\"${roe_ref}\",\"notes\":[\"posix sh fallback — reduced coverage\"],\"findings\":[],\"os\":{\"family\":\"unix\",\"os\":\"linux\",\"arch\":\"unknown\",\"version_hint\":\"linux\"},\"identity\":{\"username\":\"${user_json}\",\"uid\":null,\"gid\":null,\"groups\":[],\"is_elevated\":false,\"elevation_source\":\"posix-sh\",\"token_context\":\"\",\"hostname\":\"${hostname_json}\"},\"plugins_run\":[],\"coverage\":[],\"assessments\":[],\"attack_paths\":[],\"triage_decisions\":[],\"capability_delta\":[\"linux.app_control\",\"linux.systemd_cron\",\"linux.nfs\",\"linux.path_ld\",\"linux.services\",\"linux.wildcard_cron\"],\"mode\":\"enumerate-only\",\"profile\":\"script\",\"authorized_use_ack\":true,\"version\":\"0.1.0\",\"run_id\":\"posix-sh\",\"started_at_unix\":0}"
   echo
   exit 0
 fi

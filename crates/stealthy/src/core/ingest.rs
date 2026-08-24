@@ -47,8 +47,11 @@ pub fn ingest_json(text: &str) -> Result<RunReport> {
     if report.coverage_mode.is_empty() {
         report.coverage_mode = "script".into();
     }
-    if report.capability_delta.is_empty() {
-        report.capability_delta = script_capability_delta(&report.os.os);
+    if report.coverage_mode == "script" {
+        let canonical = script_capability_delta(&report.os.os);
+        if report.capability_delta != canonical {
+            report.capability_delta = canonical;
+        }
     }
     report.findings = report.findings.into_iter().map(finalize_finding).collect();
     let paths = build_attack_paths(&report.findings);
@@ -58,4 +61,24 @@ pub fn ingest_json(text: &str) -> Result<RunReport> {
         report.tool = "stealthy".into();
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ingest_json, script_capability_delta};
+
+    #[test]
+    fn normalizes_script_capability_delta_to_native_ids() {
+        let mut report: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/script_report_min.json"))
+                .unwrap();
+        report["coverage_mode"] = serde_json::Value::String("script".into());
+        report["os"]["os"] = serde_json::Value::String("linux".into());
+        report["capability_delta"] = serde_json::json!(["linux.cron", "linux.kernel"]);
+        let normalized = ingest_json(&serde_json::to_string(&report).unwrap()).unwrap();
+        assert_eq!(
+            normalized.capability_delta,
+            script_capability_delta("linux")
+        );
+    }
 }

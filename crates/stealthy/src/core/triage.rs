@@ -91,3 +91,48 @@ pub fn probe_ids(decisions: &[TriageDecision]) -> Vec<String> {
         .map(|d| d.finding_id.clone())
         .collect()
 }
+
+pub fn validate_probe_ids(
+    decisions: &[TriageDecision],
+    findings: &[Finding],
+) -> Result<Vec<String>> {
+    let known: std::collections::BTreeSet<&str> = findings
+        .iter()
+        .map(|finding| finding.finding_id.as_str())
+        .collect();
+    let ids = probe_ids(decisions);
+    let unknown: Vec<&str> = ids
+        .iter()
+        .map(String::as_str)
+        .filter(|id| !known.contains(id))
+        .collect();
+    if !unknown.is_empty() {
+        anyhow::bail!(
+            "approval file contains unknown probe finding_id(s): {}",
+            unknown.join(", ")
+        );
+    }
+    Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_probe_ids;
+    use crate::core::types::{Finding, FindingKind, Severity, TriageDecision};
+
+    #[test]
+    fn rejects_probe_ids_not_present_in_checkpoint_findings() {
+        let findings = vec![Finding {
+            finding_id: "known-id".into(),
+            plugin: "linux.path_ld".into(),
+            kind: FindingKind::Misconfiguration,
+            severity: Severity::High,
+            ..Default::default()
+        }];
+        let decisions = vec![TriageDecision {
+            finding_id: "unknown-id".into(),
+            action: "probe".into(),
+        }];
+        assert!(validate_probe_ids(&decisions, &findings).is_err());
+    }
+}

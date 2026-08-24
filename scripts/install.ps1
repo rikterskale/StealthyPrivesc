@@ -8,6 +8,10 @@ New-Item -ItemType Directory -Force -Path $tmp, $installDir | Out-Null
 $base = "https://github.com/$repo/releases/download/$tag"
 Invoke-WebRequest "$base/$asset" -OutFile (Join-Path $tmp $asset)
 $sums = (Invoke-WebRequest "$base/SHA256SUMS").Content
+$gh = Get-Command gh -ErrorAction SilentlyContinue
+if (-not $gh) { throw 'GitHub CLI (gh) is required to verify release provenance' }
+& $gh.Source attestation verify (Join-Path $tmp $asset) --repo $repo --signer-workflow "$repo/.github/workflows/release.yml"
+if ($LASTEXITCODE -ne 0) { throw 'GitHub artifact attestation verification failed' }
 $expected = (($sums -split "`n") | Where-Object { $_ -match [regex]::Escape($asset) }).Split(' ')[0]
 $actual = (Get-FileHash (Join-Path $tmp $asset) -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($expected -ne $actual) { throw 'SHA256 checksum mismatch' }

@@ -58,6 +58,9 @@ bash /tmp/stealthy-install.sh
 rm -f /tmp/stealthy-install.sh
 ```
 
+The published installer requires the GitHub CLI (`gh`) to verify the release
+artifact attestation before checking its SHA-256 checksum.
+
 Windows PowerShell:
 
 ```powershell

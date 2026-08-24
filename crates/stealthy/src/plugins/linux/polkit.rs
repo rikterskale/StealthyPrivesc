@@ -66,19 +66,21 @@ impl Plugin for PolkitPlugin {
             }
             if let Ok(meta) = fs::metadata(p) {
                 if util::is_writable_by_euid(&meta, euid, &util::current_gids()) {
-                    findings.push(Finding {
+                    let candidate = Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Misconfiguration,
                         severity: Severity::Critical,
                         title: format!("Writable polkit path: {dir}"),
                         detail: format!("path={dir}"),
-                        recommendation: "Writable polkit rules can grant root actions to low-priv users."
-                            .into(),
+                        recommendation:
+                            "Writable polkit rules can grant root actions to low-priv users.".into(),
                         noisy: false,
                         leaves_artifacts: false,
                         ..Default::default()
-                    });
-                    if ctx.auto_exploit && p.is_dir() {
+                    };
+                    let probe_allowed = ctx.probe_allowed_for(&candidate);
+                    findings.push(candidate);
+                    if probe_allowed && p.is_dir() {
                         if let Ok(true) = exploit::writable_probe(p) {
                             findings.push(Finding {
                                 plugin: self.id().into(),

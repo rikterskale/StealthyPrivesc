@@ -121,7 +121,8 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
   Create the triage checkpoint first, then pass that same `--checkpoint` with
   `--approve-file`. Approval files are bound to the checkpoint `run_id`; a
-  missing or mismatched checkpoint is rejected.
+  missing, mismatched, or unknown `finding_id` is rejected. Approved probe IDs
+  are scoped to their owning finding/plugin; they do not enable probes globally.
 
 The application-control plugins expose policy discovery, package/signer/hash/path
 trust evidence, sensor/tamper state, audit sources, harmless validation cases,

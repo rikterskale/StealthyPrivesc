@@ -61,23 +61,8 @@ impl Plugin for EnvPathPlugin {
                 });
                 continue;
             }
-            if p.is_dir() && ctx.auto_exploit {
-                if let Ok(true) = exploit::writable_probe(&p) {
-                    findings.push(Finding {
-                        plugin: self.id().into(),
-                        kind: FindingKind::ExploitAttempt,
-                        severity: Severity::High,
-                        title: format!("Confirmed writable PATH dir ({src}): {entry}"),
-                        detail: "Reversible marker write/delete succeeded.".into(),
-                        recommendation: "Do not plant binaries unless explicitly authorized."
-                            .into(),
-                        noisy: true,
-                        leaves_artifacts: false,
-                        ..Default::default()
-                    });
-                }
-            } else if p.is_dir() {
-                findings.push(Finding {
+            if p.is_dir() {
+                let candidate = Finding {
                     plugin: self.id().into(),
                     kind: FindingKind::Enumeration,
                     severity: Severity::Info,
@@ -88,7 +73,25 @@ impl Plugin for EnvPathPlugin {
                     noisy: false,
                     leaves_artifacts: false,
                     ..Default::default()
-                });
+                };
+                if ctx.probe_allowed_for(&candidate) {
+                    if let Ok(true) = exploit::writable_probe(&p) {
+                        findings.push(Finding {
+                            plugin: self.id().into(),
+                            kind: FindingKind::ExploitAttempt,
+                            severity: Severity::High,
+                            title: format!("Confirmed writable PATH dir ({src}): {entry}"),
+                            detail: "Reversible marker write/delete succeeded.".into(),
+                            recommendation: "Do not plant binaries unless explicitly authorized."
+                                .into(),
+                            noisy: true,
+                            leaves_artifacts: false,
+                            ..Default::default()
+                        });
+                    }
+                } else {
+                    findings.push(candidate);
+                }
             }
         }
 
@@ -185,7 +188,7 @@ fn to_wide(s: &str) -> Vec<u16> {
 
 #[cfg(windows)]
 fn read_hklm_path() -> Option<String> {
-    let output = std::process::Command::new("reg")
+    let output = crate::core::command::trusted_command("reg")
         .args([
             "query",
             r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",

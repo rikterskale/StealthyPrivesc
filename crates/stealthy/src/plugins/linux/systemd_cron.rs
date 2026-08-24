@@ -74,7 +74,7 @@ impl Plugin for SystemdCronPlugin {
         if ctx.auto_exploit {
             // Only probe directories we ourselves can write — reversible marker.
             for f in findings.clone() {
-                if f.title.contains("Writable") {
+                if ctx.probe_allowed_for(&f) && f.title.contains("Writable") {
                     if let Some(path) = f.detail.strip_prefix("path=") {
                         let path = Path::new(path.trim());
                         if path.is_dir() {

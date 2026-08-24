@@ -34,6 +34,22 @@ pub struct PluginContext<'a> {
 }
 
 impl PluginContext<'_> {
+    /// Return whether a reversible probe associated with `finding` is approved.
+    /// An empty approval set preserves explicit `--auto-exploit` behavior; a
+    /// non-empty set is finding-scoped and never falls back to blanket access.
+    pub fn probe_allowed_for(&self, finding: &Finding) -> bool {
+        if !self.auto_exploit {
+            return false;
+        }
+        if self.approved_probe_ids.is_empty() {
+            return true;
+        }
+        let finalized = crate::core::finalize::finalize_finding(finding.clone());
+        self.approved_probe_ids
+            .iter()
+            .any(|id| id == &finalized.finding_id)
+    }
+
     #[allow(dead_code)]
     pub fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)

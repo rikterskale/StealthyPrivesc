@@ -102,7 +102,7 @@ impl Plugin for SuidPlugin {
 
         // Capabilities via getcap if present (optional, slightly noisier). Quiet skips spawn.
         if !ctx.prefer_quiet {
-            if let Ok(out) = std::process::Command::new("getcap")
+            if let Ok(out) = crate::core::command::trusted_command("getcap")
                 .args(["-r", "/usr/bin"])
                 .output()
             {

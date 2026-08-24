@@ -7,7 +7,6 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
@@ -2119,7 +2118,10 @@ fn mount_options(path: &Path) -> Option<String> {
 }
 
 fn command_text(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
+    let output = crate::core::command::trusted_command(program)
+        .args(args)
+        .output()
+        .ok()?;
     output
         .status
         .success()
@@ -2326,7 +2328,7 @@ fn authenticode(
     String,
 ) {
     let script = r#"$p=$args[0]; $s=Get-AuthenticodeSignature -LiteralPath $p; $i=Get-Item -LiteralPath $p; $v=$i.VersionInfo; $z=Get-Item -LiteralPath $p -Stream Zone.Identifier -ErrorAction SilentlyContinue; $chain='not_available'; if($null -ne $s.SignerCertificate){$chain=$s.SignerCertificate.Verify().ToString()}; [ordered]@{status=$s.Status.ToString(); signer=([string]$s.SignerCertificate.Subject); publisher=([string]$v.CompanyName); product=([string]$v.ProductName); file_version=([string]$v.FileVersion); original_filename=([string]$v.OriginalFilename); origin=if($null -ne $z){'downloaded-zone-identifier'}else{'local-or-unknown'}; timestamp=([string]$s.TimeStamperCertificate.Subject); chain=$chain} | ConvertTo-Json -Compress"#;
-    let output = Command::new("powershell.exe")
+    let output = crate::core::command::trusted_command("powershell.exe")
         .args([
             "-NoProfile",
             "-NonInteractive",

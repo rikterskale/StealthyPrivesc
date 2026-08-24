@@ -254,7 +254,11 @@ impl Engine {
                 );
             }
             triage_decisions = file.decisions.clone();
-            approved_probe_ids = triage::probe_ids(&file.decisions);
+            let prior_findings = prior
+                .as_ref()
+                .map(|report| report.findings.as_slice())
+                .unwrap_or(&[]);
+            approved_probe_ids = triage::validate_probe_ids(&file.decisions, prior_findings)?;
             if !approved_probe_ids.is_empty() {
                 effective_auto_exploit = true;
                 store.note(format!(
@@ -336,9 +340,23 @@ impl Engine {
             .map(|c| c.id.clone())
             .collect();
 
+        let approved_plugins: std::collections::BTreeSet<String> = prior
+            .as_ref()
+            .map(|report| {
+                report
+                    .findings
+                    .iter()
+                    .filter(|finding| approved_probe_ids.contains(&finding.finding_id))
+                    .map(|finding| finding.plugin.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
         let selected: Vec<_> = selected
             .into_iter()
-            .filter(|p| !done_ok.contains(p.id()))
+            .filter(|p| {
+                !done_ok.contains(p.id())
+                    || (self.approve_file.is_some() && approved_plugins.contains(p.id()))
+            })
             .collect();
 
         let needs_app_control = selected

@@ -107,7 +107,7 @@ pub fn is_effectively_writable_opts(
 }
 
 fn read_acl(path: &Path) -> Option<String> {
-    let output = std::process::Command::new("getfacl")
+    let output = crate::core::command::trusted_command("getfacl")
         .args(["--absolute-names", "-cp"])
         .arg(path)
         .output()

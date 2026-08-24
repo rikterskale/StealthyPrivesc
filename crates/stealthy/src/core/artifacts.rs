@@ -323,8 +323,31 @@ fn remove_recorded_path(path: &Path, secure_delete: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Detach the directory atomically before walking it. This prevents a
+    // concurrent replacement of the recorded root from redirecting cleanup
+    // outside the tree we are deleting.
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let detached = parent.join(format!(".stealthy-cleanup-{}", hex::encode(nonce)));
+    fs::rename(path, &detached)
+        .with_context(|| format!("detach cleanup tree {}", path.display()))?;
+    remove_detached_tree(&detached, secure_delete)
+}
+
+fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
     for entry in fs::read_dir(path)? {
-        remove_recorded_path(&entry?.path(), secure_delete)?;
+        let child = entry?.path();
+        let metadata = fs::symlink_metadata(&child)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            if secure_delete && !metadata.file_type().is_symlink() {
+                output::secure_delete_hint(&child)?;
+            } else {
+                fs::remove_file(&child)?;
+            }
+        } else {
+            remove_detached_tree(&child, secure_delete)?;
+        }
     }
     fs::remove_dir(path)?;
     Ok(())
@@ -363,5 +386,28 @@ mod tests {
     #[test]
     fn ledger_path_rejects_traversal_ids() {
         assert!(super::ledger_path(std::path::Path::new("/tmp"), "../outside").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_does_not_follow_symlinked_children() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let ledger_dir = dir.path().join("ledger");
+        let tree = dir.path().join("tree");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("keep.txt"), b"keep").unwrap();
+        symlink(&outside, tree.join("link")).unwrap();
+
+        let mut ledger = ArtifactLedger::new("symlink-run");
+        ledger.register("tree", &tree, true, "fixture");
+        save_ledger(&ledger_dir, &ledger).unwrap();
+        super::cleanup(&ledger_dir, Some("symlink-run"), false, false).unwrap();
+
+        assert!(!tree.exists());
+        assert!(outside.join("keep.txt").exists());
     }
 }

@@ -19,6 +19,9 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "${base}/${asset}" -o "$tmp/$asset"
 curl -fsSL "${base}/SHA256SUMS" -o "$tmp/SHA256SUMS"
+command -v gh >/dev/null 2>&1 || { echo "GitHub CLI (gh) is required to verify release provenance" >&2; exit 1; }
+gh attestation verify "$tmp/$asset" --repo "$repo" \
+  --signer-workflow "$repo/.github/workflows/release.yml"
 (cd "$tmp" && grep " $asset$" SHA256SUMS | sha256sum -c -)
 tar -xzf "$tmp/$asset" -C "$tmp"
 install -m 0755 "$tmp/stealthy" "$install_dir/stealthy"

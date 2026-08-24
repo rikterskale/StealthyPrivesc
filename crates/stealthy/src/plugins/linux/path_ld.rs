@@ -47,7 +47,7 @@ impl Plugin for PathLdPlugin {
                 if let Ok(meta) = fs::metadata(p) {
                     let mode = meta.permissions().mode();
                     if mode & 0o002 != 0 {
-                        findings.push(Finding {
+                        let candidate = Finding {
                             plugin: self.id().into(),
                             kind: FindingKind::Misconfiguration,
                             severity: Severity::High,
@@ -57,8 +57,10 @@ impl Plugin for PathLdPlugin {
                             noisy: false,
                             leaves_artifacts: false,
                             ..Default::default()
-                        });
-                        if ctx.auto_exploit {
+                        };
+                        let probe_allowed = ctx.probe_allowed_for(&candidate);
+                        findings.push(candidate);
+                        if probe_allowed {
                             if let Ok(true) = exploit::writable_probe(p) {
                                 findings.push(Finding {
                                     plugin: self.id().into(),

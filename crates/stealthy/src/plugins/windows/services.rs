@@ -38,7 +38,7 @@ impl Plugin for ServicesPlugin {
 
                 if let Some(bin) = super::executable_path(&image_path) {
                     for parent in unquoted_plant_dirs(&bin) {
-                        findings.push(Finding {
+                        let candidate = Finding {
                             plugin: self.id().into(),
                             kind: FindingKind::Recommendation,
                             severity: Severity::Medium,
@@ -49,8 +49,10 @@ impl Plugin for ServicesPlugin {
                             noisy: false,
                             leaves_artifacts: false,
                             ..Default::default()
-                        });
-                        if ctx.auto_exploit {
+                        };
+                        let probe_allowed = ctx.probe_allowed_for(&candidate);
+                        findings.push(candidate);
+                        if probe_allowed {
                             let p = std::path::Path::new(&parent);
                             if p.is_dir() {
                                 if let Ok(true) = crate::exploit::writable_probe(p) {

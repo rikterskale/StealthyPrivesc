@@ -11,7 +11,7 @@ pub(super) fn is_writable_for_current_user(path: &Path) -> Option<bool> {
         if let Some(result) = native_access_check(path) {
             return Some(result);
         }
-        let output = std::process::Command::new("icacls")
+        let output = crate::core::command::trusted_command("icacls")
             .arg(path)
             .output()
             .ok()?;

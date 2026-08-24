@@ -17,6 +17,8 @@ Have these ready:
 - A supported Linux or Windows operator/target environment.
 - An approved place for reports and, for sealed reports, a separate secret
   store for the decryption key.
+- GitHub CLI (`gh`) installed and authenticated for release provenance
+  verification when using a published installer.
 - A decision about whether the first run may write any evidence to disk. The
   guided first run below is memory-only.
 
@@ -50,7 +52,8 @@ command -v stealthy
 stealthy --version
 ```
 
-The installer verifies the release SHA-256 checksum and installs to
+The installer verifies the GitHub artifact attestation and release SHA-256
+checksum, then installs to
 `$HOME/.local/bin/stealthy` by default. The `PATH` change above affects the
 current shell only. Add the same directory through your normal shell profile
 process if you want it available in future terminals.
@@ -80,7 +83,8 @@ Get-Item $Stealthy
 & $Stealthy --version
 ```
 
-The installer verifies the release SHA-256 checksum and installs to
+The installer verifies the GitHub artifact attestation and release SHA-256
+checksum, then installs to
 `$env:LOCALAPPDATA\StealthyPrivesc\stealthy.exe` by default. If you prefer to
 call `stealthy` without its full path, add that directory to your user `PATH`
 through your normal Windows administration process, then open a new terminal.

@@ -3,7 +3,6 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
@@ -32,8 +31,9 @@ pub fn verify_local(path: &Path, expect_sha256: &str) -> Result<()> {
 }
 
 pub fn verify_ssh(ssh_target: &str, remote_path: &str, expect_sha256: &str) -> Result<()> {
+    validate_ssh_target(ssh_target)?;
     let quoted_path = shell_quote(remote_path)?;
-    let output = Command::new("ssh")
+    let output = crate::core::command::trusted_command("ssh")
         .args([
             ssh_target,
             &format!("sha256sum {quoted_path} || shasum -a 256 {quoted_path}"),
@@ -55,6 +55,20 @@ pub fn verify_ssh(ssh_target: &str, remote_path: &str, expect_sha256: &str) -> R
     let expect = expect_sha256.trim().to_ascii_lowercase();
     if got != expect {
         bail!("remote hash mismatch: expected {expect}, got {got}");
+    }
+    Ok(())
+}
+
+fn validate_ssh_target(target: &str) -> Result<()> {
+    let target = target.trim();
+    if target.is_empty() {
+        bail!("SSH target must be non-empty");
+    }
+    if target.starts_with('-') {
+        bail!("SSH target must not begin with '-' (options are not accepted)");
+    }
+    if target.bytes().any(|b| b == 0 || b == b'\n' || b == b'\r') {
+        bail!("SSH target must not contain NUL/newline characters");
     }
     Ok(())
 }
@@ -298,7 +312,7 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 
 #[cfg(test)]
 mod tests {
-    use super::{one_liners, shell_quote, validate_bundle_name};
+    use super::{one_liners, shell_quote, validate_bundle_name, validate_ssh_target};
 
     #[test]
     fn shell_quote_contains_metacharacters_as_data() {
@@ -312,6 +326,14 @@ mod tests {
             assert!(validate_bundle_name(name).is_err(), "accepted {name:?}");
         }
         assert!(validate_bundle_name("stealthy").is_ok());
+    }
+
+    #[test]
+    fn ssh_target_rejects_options_and_control_characters() {
+        for target in ["-oProxyCommand=echo bad", "", "host\nname"] {
+            assert!(validate_ssh_target(target).is_err(), "accepted {target:?}");
+        }
+        assert!(validate_ssh_target("operator@example.test").is_ok());
     }
 
     #[test]

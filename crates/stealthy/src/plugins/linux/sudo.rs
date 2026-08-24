@@ -1,9 +1,7 @@
-use anyhow::Result;
-use std::process::Command;
-
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
 use crate::plugins::linux::util;
+use anyhow::Result;
 
 pub struct SudoPlugin;
 
@@ -26,7 +24,10 @@ impl Plugin for SudoPlugin {
 
         // Quiet profile skips all sudo binary helpers (version + -l).
         if !ctx.prefer_quiet {
-            if let Ok(out) = Command::new("sudo").args(["--version"]).output() {
+            if let Ok(out) = crate::core::command::trusted_command("sudo")
+                .args(["--version"])
+                .output()
+            {
                 let text = String::from_utf8_lossy(&out.stdout);
                 let line = text.lines().next().unwrap_or("").to_string();
                 if !line.is_empty() {
@@ -107,7 +108,10 @@ impl Plugin for SudoPlugin {
                 ..Default::default()
             });
 
-            match Command::new("sudo").args(["-n", "-l"]).output() {
+            match crate::core::command::trusted_command("sudo")
+                .args(["-n", "-l"])
+                .output()
+            {
                 Ok(out) => {
                     let stdout = String::from_utf8_lossy(&out.stdout);
                     let stderr = String::from_utf8_lossy(&out.stderr);

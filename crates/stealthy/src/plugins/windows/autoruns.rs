@@ -59,7 +59,7 @@ impl Plugin for AutorunsPlugin {
             if !dir.is_dir() {
                 continue;
             }
-            findings.push(Finding {
+            let candidate = Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Enumeration,
                 severity: Severity::Info,
@@ -69,8 +69,10 @@ impl Plugin for AutorunsPlugin {
                 noisy: false,
                 leaves_artifacts: false,
                 ..Default::default()
-            });
-            if ctx.auto_exploit && dir_writable(&dir) {
+            };
+            let probe_allowed = ctx.probe_allowed_for(&candidate);
+            findings.push(candidate);
+            if probe_allowed && dir_writable(&dir) {
                 findings.push(Finding {
                     plugin: self.id().into(),
                     kind: FindingKind::ExploitAttempt,

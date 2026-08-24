@@ -47,15 +47,30 @@ impl Plugin for DllHijackPlugin {
             if !dir.is_dir() {
                 continue;
             }
-            // Write probes leave momentary artifacts — only with --auto-exploit.
-            if ctx.auto_exploit && is_dir_writable(&dir) {
+            let candidate = Finding {
+                plugin: self.id().into(),
+                kind: FindingKind::Enumeration,
+                severity: Severity::Info,
+                title: format!("DLL search/app directory candidate: {}", dir.display()),
+                detail: "Writability was not probed in enumerate-only mode.".into(),
+                recommendation: "Use an explicitly approved probe to test this directory before any DLL planting action.".into(),
+                noisy: false,
+                leaves_artifacts: false,
+                ..Default::default()
+            };
+            let probe_allowed = ctx.probe_allowed_for(&candidate);
+            findings.push(candidate);
+            if probe_allowed && is_dir_writable(&dir) {
                 findings.push(Finding {
                     plugin: self.id().into(),
-                    kind: FindingKind::Misconfiguration,
+                    kind: FindingKind::ExploitAttempt,
                     severity: Severity::High,
-                    title: format!("Writable search/app directory: {}", dir.display()),
-                    detail: "Writable dirs in loader search order enable DLL planting.".into(),
-                    recommendation: "Identify privileged processes that load DLLs from this path before any write test.".into(),
+                    title: format!(
+                        "Confirmed writable DLL search/app directory: {}",
+                        dir.display()
+                    ),
+                    detail: "Reversible marker write/delete succeeded.".into(),
+                    recommendation: "Do not plant DLLs unless explicitly authorized.".into(),
                     noisy: true,
                     leaves_artifacts: false,
                     ..Default::default()
