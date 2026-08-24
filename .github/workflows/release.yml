@@ -209,7 +209,7 @@ jobs:
           upload-release-assets: false
 
       - name: Upload release kit and SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -229,7 +229,7 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Download release kits and SBOMs
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           path: dist

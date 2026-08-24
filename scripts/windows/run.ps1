@@ -108,7 +108,7 @@ foreach ($file in @('enum.ps1', 'enum.js', 'EnumTasks.csproj')) {
     $alt = Join-Path $bundleDir (Join-Path 'scripts\windows' $file)
     if (Test-Path -LiteralPath $alt) { $source = $alt }
   }
-  if ((Test-Path -LiteralPath $source) -and ($dropDir -ne $scriptSourceDir)) {
+  if ((Test-Path -LiteralPath $source) -and -not $useInPlace -and ($dropDir -ne $scriptSourceDir)) {
     $dest = Join-Path $dropDir $file
     if ($source -ne $dest) {
       try { Copy-Item -LiteralPath $source -Destination $dest -Force } catch { }
