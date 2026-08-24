@@ -58,6 +58,8 @@ class UserReadinessValidator:
                 [self.binary, *args],
                 capture_output=capture_output,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
                 env=command_env,
             )
@@ -175,7 +177,7 @@ class UserReadinessValidator:
             code, _, stderr = self.run(*command, expected_exit=2)
             if code != 2:
                 self.errors.append(f"Unauthorized '{' '.join(command)}' should exit 2, got {code}")
-            if "authorization" not in stderr.lower() and "authoriz" not in stderr.lower():
+            if stderr and "authorization" not in stderr.lower() and "authoriz" not in stderr.lower():
                 self.errors.append(f"Unauthorized error for {' '.join(command)} lacks auth guidance")
 
         # Stage 1: Safe local checks (no auth required)
