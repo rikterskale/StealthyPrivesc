@@ -94,6 +94,17 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub checkpoint: Option<std::path::PathBuf>,
 
+    /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
+    /// Requires explicit ROE approval. Env: STEALTHY_EVASION_CONFIRMED=1
+    #[arg(
+        long = "confirm-evasion",
+        global = true,
+        env = "STEALTHY_EVASION_CONFIRMED",
+        value_parser = BoolishValueParser::new(),
+        action = ArgAction::SetTrue
+    )]
+    pub confirm_evasion: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -275,6 +286,9 @@ pub enum Commands {
         /// Opt-in high-impact technique families when ROE permits.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
+        /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
+        #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
+        confirm_evasion: bool,
         /// Comma-separated plugin IDs to run (default: all for this OS).
         #[arg(long, value_delimiter = ',')]
         plugins: Option<Vec<String>>,
@@ -292,13 +306,20 @@ pub enum Commands {
 
         /// Opt-in high-impact technique families when ROE permits.
         /// Known IDs: persistence, host-crash, potato, kernel-exploit,
-        /// service-replace, msi, credential-dump, endpoint-bypass.
+        /// service-replace, msi, credential-dump, endpoint-bypass,
+        /// amsi-bypass, etw-unhook, av-edr-service.
         /// Most families are scaffold-only in this revision. `endpoint-bypass`
         /// means alternate-path + approved-fixture validation only (AMSI/ETW/EDR
-        /// disable and quarantine tamper are Planned separate families). See
-        /// docs/techniques.md.
+        /// disable and quarantine tamper are separate families). Evasion techniques
+        /// (amsi-bypass, etw-unhook, av-edr-service) require --confirm-evasion.
+        /// See docs/techniques.md and docs/evasion.md.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
+
+        /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
+        /// Env: STEALTHY_EVASION_CONFIRMED=1
+        #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
+        confirm_evasion: bool,
 
         /// Comma-separated plugin IDs to run (default: all for this OS).
         #[arg(long, value_delimiter = ',')]

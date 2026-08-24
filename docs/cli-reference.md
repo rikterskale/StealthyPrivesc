@@ -107,14 +107,15 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 - `--auto-exploit`: enables supported reversible probes.
 - `--allow-techniques`: comma-separated high-impact families when ROE permits.
   Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,
-  `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`.
+  `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`,
+  `amsi-bypass`, `etw-unhook`, `av-edr-service`.
   Most families record scaffold findings only in this revision.
   `endpoint-bypass` means alternate-path tracking + approved-fixture validation
-  (pair with `--artifact` and/or `controls --execute`). AMSI/ETW/EDR/AppLocker/WDAC
-  disable and quarantine tamper are **not** part of this ID — they are Planned
-  as separate gated families. When opted in, findings set
-  `technique_id=endpoint-bypass` and wire `next_command` / What's next to
-  `live-controls --artifact` and `controls --execute`. See `docs/techniques.md`.
+  (pair with `--artifact` and/or `controls --execute`).
+  **Evasion techniques** (`amsi-bypass`, `etw-unhook`, `av-edr-service`) require
+  `--confirm-evasion` (or `STEALTHY_EVASION_CONFIRMED=1`) in addition to
+  `--authorized` and `--allow-techniques`. See `docs/techniques.md` and
+  `docs/evasion.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.

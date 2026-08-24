@@ -73,24 +73,17 @@ validation only.
 
 ---
 
-## Planned future enhancements
+## Evasion technique families (implemented)
 
-These items are **roadmap work for this repository** and are **not** part of
-today's `endpoint-bypass` contract. Shipping any of them requires a **new**
-`--allow-techniques` family ID (or IDs), an explicit ROE gate, tests, and a
-contract rewrite — they must not silently land under `endpoint-bypass`.
+These technique families are **explicitly gated** and require both `--authorized` and `--allow-techniques <id>` plus `--confirm-evasion`.
 
-| Enhancement | Notes |
-| --- | --- |
-| AMSI bypass / patching / blinding | New family; never under `endpoint-bypass` |
-| ETW unhooking / patching / provider disablement | New family; never under `endpoint-bypass` |
-| AppLocker / WDAC / SmartScreen policy weakening or removal | New family; policy-change is not validation |
-| AV / EDR service stop or sensor unload | New family; opt-in interference when ROE allows |
-| Quarantine restore / quarantine-tamper helpers | New family; recover or inspect quarantined delivery artifacts |
-| Automated path-exclusion helpers | New family; lab/kit path exclusions distinct from disabling realtime |
-| Generic control-disable / “hide from sensor” payloads | New family; ROE-gated product decision |
-| Silent in-process HTTPS exfil client | Separate deferred item (see `docs/capabilities.md`) |
-| Tighter enum→validation automation (auto-chain `controls --execute` when allowlisted + artifact present) | Optional UX; still alternate-path only under `endpoint-bypass` |
+| Technique ID | What it does | Gate | Risk |
+|--------------|--------------|------|------|
+| `amsi-bypass` | Disables AMSI for the current process via memory patching | `--allow-techniques amsi-bypass --confirm-evasion` | High - evasion |
+| `etw-unhook` | Unhooks ETW providers or disables ETW for the current process | `--allow-techniques etw-unhook --confirm-evasion` | High - evasion |
+| `av-edr-service` | Suspends, disables, or unloads AV/EDR services/drivers | `--allow-techniques av-edr-service --confirm-evasion` | Critical - system impact |
+
+**Important:** These techniques are for **authorized red team engagements only** and require explicit ROE approval. They may trigger alerts, crash systems, or leave forensic artifacts. See [`docs/evasion.md`](evasion.md) for detailed documentation.
 
 ---
 

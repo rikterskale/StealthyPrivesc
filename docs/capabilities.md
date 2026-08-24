@@ -161,13 +161,13 @@ today's `endpoint-bypass` meaning (alternate-path + approved-fixture validation)
 | Enhancement | Status | Gate / notes |
 | --- | --- | --- |
 | Silent in-process HTTPS exfil client | Deferred | Operator-printed sealed blob today |
-| AMSI bypass / patching / blinding | Planned (contract change required) | New `--allow-techniques` family; not `endpoint-bypass` |
-| ETW unhooking / patching / provider disablement | Planned (contract change required) | New family; not `endpoint-bypass` |
+| AMSI bypass / patching / blinding | **Implemented** | `--allow-techniques amsi-bypass --confirm-evasion` |
+| ETW unhooking / patching / provider disablement | **Implemented** | `--allow-techniques etw-unhook --confirm-evasion` |
+| AV / EDR service stop or sensor unload | **Implemented** | `--allow-techniques av-edr-service --confirm-evasion` |
 | AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
-| AV / EDR service stop or sensor unload | Planned (contract change required) | New family; ROE-gated interference |
 | Quarantine restore / quarantine-tamper helpers | Planned (contract change required) | New family; delivery-PE recovery / inspection |
 | Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |
-| Generic control-disable / “hide from sensor” payloads | Planned (contract change required) | New family; ROE-gated product decision |
+| Generic control-disable / "hide from sensor" payloads | Planned (contract change required) | New family; ROE-gated product decision |
 | Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still alternate-path only under `endpoint-bypass` |
 | Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Scaffold today | Existing allowlist IDs; follow-up revisions |
 
