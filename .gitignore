@@ -1,20 +1,21 @@
-/target/
-**/*.rs.bk
-.idea/
+```
+# Dependencies
+target/
+Cargo.lock
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
 .vscode/
-*.seal
-*.bin
-*.exe
-*.dll
-*.so
-.stealthy_probe_marker
-.stealthy-artifacts/
-**/.cache-run/*.json
-release-dist/
-release-staging/
-__pycache__/
-*.pyc
-prompt.txt
-spec.txt
-skills/
-.aider*
+.idea/
+
+# Rust-specific
+**/*.rs.bk
+```
