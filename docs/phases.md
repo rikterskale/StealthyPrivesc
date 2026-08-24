@@ -58,5 +58,5 @@ are available through `--auto-exploit`, and high-impact families through
   candidate ACL enumeration, and explicit per-script coverage deltas.
 - Protected sealed-report key output on Unix and Windows.
 - Full release kits, SPDX SBOMs, GitHub attestations, Linux aarch64 GNU,
-  full tag gates, cargo-deny/Gitleaks, a 65% coverage floor, constrained build
+  full tag gates, cargo-deny/Gitleaks, an 80% coverage floor, constrained build
   flavors, and a nightly safe fixture matrix.

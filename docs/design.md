@@ -159,7 +159,7 @@ Every behavior change should preserve or update these checks:
   actions
 - Linux (Python/Bash/POSIX sh/Perl) and Windows PowerShell fallback syntax checks
 - Security/supply-chain checks and the final CI readiness gate
-- A 65% Rust line-coverage floor, full-history Gitleaks scan, and
+- An 80% Rust line-coverage floor, full-history Gitleaks scan, and
   `cargo-deny` advisory/license/source policy
 - Full delivery-kit packaging for Linux x86-64/aarch64 GNU and Windows x86-64
   MSVC, with SPDX SBOMs, checksums, and GitHub artifact attestations

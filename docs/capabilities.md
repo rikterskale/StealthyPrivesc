@@ -48,7 +48,7 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Fixture validation harness | Done (`controls` / `validate-controls`; disposable fixtures, optional benign probes, and structured case results) |
 | Release provenance | Done (GitHub attestations, SHA-256 manifest, and SPDX JSON SBOMs) |
 | Published architectures | Linux x86-64 GNU, Linux aarch64 GNU, Windows x86-64 MSVC |
-| Tag release gate | Done (fmt, Clippy, tests, release/flavor builds, 65% coverage floor, script checks, Gitleaks, cargo-deny) |
+| Tag release gate | Done (fmt, Clippy, tests, release/flavor builds, 80% coverage floor, script checks, Gitleaks, cargo-deny) |
 | Nightly safe fixture lab | Done (Linux/Windows local fixtures and enum-only authorization contract; no destructive exploit lab) |
 | Build flavors | Done (`full`, `enum-only`, `opsec-string-strip`; constrained flavors retain authorization/disclaimer/audit fields) |
 
@@ -113,6 +113,10 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy stage` / `verify` / `one-liners` | Package, verify, and print approved transport snippets |
 | `stealthy report PATH --key-file KEY_PATH` | Decode a sealed report locally using the preferred protected key-file source (no host access) |
 | `stealthy diff BASELINE CURRENT` | Compare plaintext JSON reports offline |
+| `stealthy quickstart` / `demo` / `security-lab` | Guided first run, inert demo, and disposable local fixtures |
+| `stealthy html-report` / `explain-finding` / `playbook` | Beginner report, finding explanation, and remediation guidance |
+| `stealthy completions` / `plugin-picker` / `explain-plugin` | Shell UX and plugin discovery |
+| `stealthy coverage-compare` / `disposition` | Fallback coverage gaps and review state tracking |
 | `stealthy live-controls` / `collect-controls` | Collect live application-control, provenance, EDR, integrity, MAC, kernel, mount, container, and audit state |
 
 Authorization is required for `list-plugins`, `enum`, `scan`, `controls`, and

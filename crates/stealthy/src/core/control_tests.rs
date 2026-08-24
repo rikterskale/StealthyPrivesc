@@ -1099,4 +1099,77 @@ mod tests {
         assert_eq!(report.results.len(), 1);
         assert_eq!(report.results[0].status, "observed_drift");
     }
+
+    #[test]
+    fn every_linux_case_is_safe_without_execution() {
+        let cases = crate::core::controls::validation_cases_for("linux");
+        for case in cases {
+            let report = run(&Options {
+                platform: "linux".into(),
+                case_filter: Some(case.id.to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(report.results.len(), 1, "case {}", case.id);
+            assert!(!report.results[0].executed, "case {}", case.id);
+            assert!(report.fixtures_cleaned, "case {}", case.id);
+        }
+    }
+
+    #[test]
+    fn explicit_execution_remains_fixture_scoped() {
+        let report = run(&Options {
+            platform: "linux".into(),
+            case_filter: Some("interpreter-script".into()),
+            execute: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(report.results.len(), 1);
+        assert!(report.results[0].executed);
+        assert!(report.results[0]
+            .observations
+            .iter()
+            .any(|entry| entry.contains("interpreter=")));
+    }
+
+    #[test]
+    fn explicit_execution_covers_each_safe_linux_case() {
+        for case in crate::core::controls::validation_cases_for("linux") {
+            let report = run(&Options {
+                platform: "linux".into(),
+                case_filter: Some(case.id.to_string()),
+                execute: true,
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(report.results.len(), 1, "case {}", case.id);
+            assert!(report.fixtures_cleaned, "case {}", case.id);
+        }
+    }
+
+    #[test]
+    fn baseline_drift_and_fixture_retention_are_reported() {
+        let root = tempfile::tempdir().unwrap();
+        let baseline = root.path().join("baseline.json");
+        let baseline_report = crate::core::controls::collect("linux", None);
+        std::fs::write(&baseline, serde_json::to_vec(&baseline_report).unwrap()).unwrap();
+        let fixture_root = root.path().join("fixtures");
+        let report = run(&Options {
+            platform: "linux".into(),
+            case_filter: Some("policy-drift".into()),
+            root: Some(fixture_root.clone()),
+            baseline: Some(baseline),
+            keep_fixtures: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!report.fixtures_cleaned);
+        assert!(fixture_root.is_dir());
+        assert!(report
+            .notes
+            .iter()
+            .any(|note| note.contains("Policy drift")));
+        std::fs::remove_dir_all(fixture_root).unwrap();
+    }
 }

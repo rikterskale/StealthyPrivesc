@@ -21,3 +21,4 @@ pub mod store;
 pub mod term;
 pub mod triage;
 pub mod types;
+pub mod ux;

@@ -363,7 +363,10 @@ fn format_gtfobins_annotations(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_gtfobins_annotations, rule_applies_to_identity, scan_sudoers_text};
+    use super::{
+        append_annotation, format_gtfobins_annotations, read_text_bounded,
+        rule_applies_to_identity, scan_sudoers_text, truncate,
+    };
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
@@ -411,5 +414,62 @@ mod tests {
     #[test]
     fn annotations_never_include_unknown_commands() {
         assert!(format_gtfobins_annotations("/usr/bin/custom-tool --check").is_empty());
+    }
+
+    #[test]
+    fn scanner_covers_broad_rules_annotations_and_cancel() {
+        let mut findings = Vec::new();
+        scan_sudoers_text(
+            "/fixture/sudoers",
+            "# comment\n\n%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/find\nalice ALL=(ALL) /bin/bash\n",
+            "alice",
+            &["wheel".into()],
+            &Arc::new(AtomicBool::new(false)),
+            &mut findings,
+        );
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "sudo-nopasswd-rule-readable"));
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "sudo-broad-all-rule-readable"));
+        assert!(append_annotation("detail".into(), "note").contains("note"));
+        assert_eq!(append_annotation("detail".into(), ""), "detail");
+
+        let cancelled = Arc::new(AtomicBool::new(true));
+        let mut cancelled_findings = Vec::new();
+        scan_sudoers_text(
+            "/fixture",
+            "alice ALL=(ALL) ALL",
+            "alice",
+            &[],
+            &cancelled,
+            &mut cancelled_findings,
+        );
+        assert!(cancelled_findings.is_empty());
+    }
+
+    #[test]
+    fn helper_paths_cover_bounded_read_and_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sudoers");
+        std::fs::write(&path, b"abcdef").unwrap();
+        assert_eq!(read_text_bounded(&path, 3).as_deref(), Some("abc"));
+        assert!(read_text_bounded(&dir.path().join("missing"), 3).is_none());
+        assert_eq!(truncate("short", 10), "short");
+        assert!(truncate("abcdef", 3).ends_with('…'));
+    }
+
+    #[test]
+    fn gtfobins_allowlist_covers_known_safe_annotations() {
+        let text = "awk bash sh env find make nmap perl python python3 ruby systemctl cp mv tar zip vi vim less more man";
+        let annotations = format_gtfobins_annotations(text);
+        for binary in text.split_whitespace() {
+            assert!(
+                annotations.contains(&format!("gtfobins.binary={binary}")),
+                "missing {binary}"
+            );
+        }
+        assert_eq!(format_gtfobins_annotations("'unknown'"), "");
     }
 }

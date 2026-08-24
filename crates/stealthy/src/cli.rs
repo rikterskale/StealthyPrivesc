@@ -1,4 +1,5 @@
 use clap::{builder::BoolishValueParser, ArgAction, Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 
 use crate::core::profile::EngagementProfile;
 
@@ -28,6 +29,10 @@ pub struct Cli {
     /// Named OPSEC / engagement profile (explicit flags override).
     #[arg(long, global = true, value_enum, default_value_t = EngagementProfile::Balanced)]
     pub profile: EngagementProfile,
+
+    /// Beginner-friendly scan preset; maps to a safe engagement profile.
+    #[arg(long, global = true, value_enum)]
+    pub preset: Option<ScanPreset>,
 
     /// Reduce console noise (still stores findings in memory).
     #[arg(short, long, global = true, action = ArgAction::SetTrue)]
@@ -136,6 +141,62 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Guided first run: readiness, authorization explanation, plugins, and a safe scan.
+    Quickstart,
+
+    /// Explore a bundled, non-host demo report.
+    Demo {
+        /// Render the demo as a self-contained HTML report.
+        #[arg(long)]
+        html: bool,
+    },
+
+    /// Create disposable local fixtures for learning what checks observe.
+    SecurityLab {
+        /// Directory to create; defaults to a temporary directory.
+        #[arg(long)]
+        root: Option<std::path::PathBuf>,
+    },
+
+    /// Describe a plugin before running it.
+    ExplainPlugin { id: String },
+
+    /// Interactively choose plugins by beginner-friendly category.
+    PluginPicker,
+
+    /// Print shell completion script with current plugin IDs and flags.
+    Completions { shell: CompletionShell },
+
+    /// Explain a finding ID in plain English.
+    ExplainFinding {
+        id: String,
+        report: Option<std::path::PathBuf>,
+    },
+
+    /// Render a JSON report as a self-contained HTML document.
+    HtmlReport { input: std::path::PathBuf },
+
+    /// Compare native and fallback coverage in two reports.
+    CoverageCompare {
+        native: std::path::PathBuf,
+        fallback: std::path::PathBuf,
+    },
+
+    /// Record a disposition without modifying the original evidence.
+    Disposition {
+        report: std::path::PathBuf,
+        finding_id: String,
+        status: DispositionStatus,
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
+
+    /// Show scan presets and their expected runtime/noise tradeoffs.
+    Presets,
+
+    /// Show a safe remediation playbook for a plugin or finding ID.
+    Playbook { id: String },
 
     /// Run disposable, read-only application-control validation cases.
     #[command(visible_alias = "validate-controls")]
@@ -353,6 +414,13 @@ pub enum Commands {
         /// Apply triage decisions; `probe` actions enable reversible probes.
         #[arg(long)]
         approve_file: Option<std::path::PathBuf>,
+
+        /// Save the completed plaintext report as a baseline.
+        #[arg(long)]
+        save_baseline: Option<std::path::PathBuf>,
+        /// Compare the completed report with this prior plaintext report.
+        #[arg(long)]
+        compare_with: Option<std::path::PathBuf>,
     },
 }
 
@@ -376,6 +444,31 @@ pub enum ReportFormat {
     Markdown,
     /// SARIF 2.1.0 for GitHub code-scanning-compatible consumers.
     Sarif,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ScanPreset {
+    Quick,
+    Standard,
+    Deep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DispositionStatus {
+    Fixed,
+    AcceptedRisk,
+    FalsePositive,
+    Deferred,
+    NeedsReview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

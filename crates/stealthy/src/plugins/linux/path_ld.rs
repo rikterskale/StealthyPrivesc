@@ -197,12 +197,21 @@ fn redacted_loader_detail(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::redacted_loader_detail;
+    use super::{read_text_bounded, redacted_loader_detail};
 
     #[test]
     fn loader_details_do_not_echo_environment_values() {
         let detail = redacted_loader_detail("/secret/token.so:/opt/private/lib");
         assert!(!detail.contains("secret"));
         assert!(detail.contains("entries=2"));
+    }
+
+    #[test]
+    fn bounded_reader_is_limited_and_reports_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("preload");
+        std::fs::write(&path, b"abcdef").unwrap();
+        assert_eq!(read_text_bounded(&path, 3).as_deref(), Some("abc"));
+        assert!(read_text_bounded(&dir.path().join("missing"), 3).is_none());
     }
 }

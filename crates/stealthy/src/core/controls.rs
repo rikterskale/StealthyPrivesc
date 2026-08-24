@@ -2392,7 +2392,11 @@ fn authenticode(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect, validation_cases_for};
+    use super::{
+        classify_access_control, collect, compact_text, detect_header_kind, digest_string,
+        exposure_score, file_kind, findings, inspect_artifact, path_class, static_analysis,
+        validation_cases_for,
+    };
 
     #[test]
     fn validation_cases_are_non_destructive_and_do_not_execute() {
@@ -2411,5 +2415,160 @@ mod tests {
         assert_eq!(assessment.platform, "linux");
         assert!(assessment.artifact.is_none());
         assert!(!assessment.telemetry_expectations.is_empty());
+    }
+
+    #[test]
+    fn collection_modes_and_findings_are_structured() {
+        let quiet = super::collect_with(super::CollectOptions {
+            platform: "linux",
+            artifact: None,
+            quiet: true,
+        });
+        let thorough = collect("linux", None);
+        assert_eq!(quiet.collection_mode, "live-read-only-quiet");
+        assert!(!findings(&quiet, "linux.app_control").is_empty());
+        assert!(!findings(&thorough, "linux.endpoint_controls").is_empty());
+        assert!(thorough.live_telemetry_score <= 100);
+    }
+
+    #[test]
+    fn artifact_classification_and_policy_parsers_cover_safe_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let extensions = [
+            "sh", "py", "pl", "so", "dll", "msi", "exe", "sys", "ko", "txt",
+        ];
+        for extension in extensions {
+            let path = root.path().join(format!("fixture.{extension}"));
+            std::fs::write(&path, format!("fixture {extension}\n")).unwrap();
+            let assessment = inspect_artifact(&path, "linux");
+            assert!(!assessment.kind.is_empty());
+            assert!(!assessment.sha256.is_empty());
+            assert!(!static_analysis(&path, &assessment.kind).is_empty());
+        }
+        let missing = inspect_artifact(&root.path().join("missing.exe"), "windows");
+        assert_eq!(missing.integrity_status, "missing-or-unreadable");
+        assert_eq!(file_kind(&root.path().join("fixture.msi")), "msi_installer");
+        assert!(!path_class(&root.path().join("fixture.sh")).is_empty());
+        assert!(
+            classify_access_control(&root.path().join("fixture.sh"), "owner=1000 mode=700")
+                .contains("user-writable")
+        );
+    }
+
+    #[test]
+    fn scoring_and_text_helpers_are_bounded() {
+        let (_, label) = exposure_score(&[]);
+        assert_eq!(label, "unknown");
+        let (_, label) = exposure_score(&[super::TelemetryExpectation {
+            behavior: "x".into(),
+            expected_telemetry: "y".into(),
+            exposure: "high".into(),
+            read_only_validation: "none".into(),
+        }]);
+        assert!(["low", "moderate", "high"].contains(&label.as_str()));
+        assert_eq!(compact_text("a\n\n b", 3), "  b");
+        assert_eq!(digest_string("fixture").len(), 64);
+    }
+
+    #[test]
+    fn static_analysis_covers_common_binary_headers_and_indicators() {
+        let root = tempfile::tempdir().unwrap();
+        let elf = root.path().join("sample");
+        let mut elf_bytes = b"\x7fELF................dlopen libpython audit ima".to_vec();
+        elf_bytes.resize(32, 0);
+        elf_bytes[18] = 0x3e;
+        std::fs::write(&elf, elf_bytes).unwrap();
+        let elf_report = static_analysis(&elf, "elf_executable");
+        assert!(elf_report.iter().any(|line| line == "format=ELF"));
+        assert!(elf_report
+            .iter()
+            .any(|line| line.contains("static_indicator=dlopen")));
+
+        let ole = root.path().join("sample.msi");
+        std::fs::write(&ole, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).unwrap();
+        assert!(static_analysis(&ole, "msi_installer")
+            .iter()
+            .any(|line| line.contains("OLE")));
+
+        let invalid_pe = root.path().join("invalid.exe");
+        let mut pe = vec![0u8; 80];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[0x3c] = 0x40;
+        std::fs::write(&invalid_pe, pe).unwrap();
+        assert!(static_analysis(&invalid_pe, "windows_executable")
+            .iter()
+            .any(|line| line.contains("pe_header=invalid")));
+    }
+
+    #[test]
+    fn path_and_header_classification_covers_safe_variants() {
+        let root = tempfile::tempdir().unwrap();
+        let cases = [
+            ("#!/usr/bin/python\n", "python_script"),
+            ("#!/usr/bin/perl\n", "perl_script"),
+            ("#!/bin/bash\n", "shell_script"),
+            ("#!/usr/bin/custom\n", "interpreter_script"),
+            ("plain text\n", "file"),
+        ];
+        for (index, (body, expected)) in cases.iter().enumerate() {
+            let path = root.path().join(format!("header{index}"));
+            std::fs::write(&path, body).unwrap();
+            assert_eq!(detect_header_kind(&path), *expected);
+        }
+        assert_eq!(
+            path_class(std::path::Path::new("/tmp/drop")),
+            "user-or-temporary"
+        );
+        assert_eq!(
+            path_class(std::path::Path::new("/usr/bin/tool")),
+            "administrator-controlled-or-system"
+        );
+        assert_eq!(
+            path_class(std::path::Path::new("/opt/tool")),
+            "unclassified"
+        );
+        assert_eq!(
+            classify_access_control(
+                std::path::Path::new("/tmp/drop"),
+                "windows_acl=Everyone:Modify"
+            ),
+            "user-writable-by-acl"
+        );
+        assert_eq!(
+            classify_access_control(
+                std::path::Path::new("/tmp/drop"),
+                "windows_acl=Administrators;SYSTEM"
+            ),
+            "administrator-controlled-by-acl"
+        );
+    }
+
+    #[test]
+    fn public_assessment_paths_cover_platform_and_artifact_variants() {
+        let windows = collect("windows", None);
+        assert_eq!(windows.platform, "windows");
+        assert!(!findings(&windows, "windows.app_control").is_empty());
+        let unsupported = collect("plan9", None);
+        assert_eq!(unsupported.platform, "plan9");
+        assert!(!findings(&unsupported, "unknown.plugin").is_empty());
+
+        let root = tempfile::tempdir().unwrap();
+        let native = root.path().join("module.ko");
+        std::fs::write(&native, b"not a real module").unwrap();
+        assert!(super::inspect_kernel_artifact(&native, "linux").contains("lockdown="));
+        assert_eq!(
+            super::inspect_kernel_artifact(&native, "windows"),
+            "windows_driver_validation=requires_windows_host"
+        );
+        assert_eq!(
+            super::inspect_kernel_artifact(&native, "other"),
+            "kernel_artifact=unsupported_platform"
+        );
+        let missing = root.path().join("missing");
+        assert_eq!(
+            super::static_analysis(&missing, "unknown"),
+            vec!["static_read=unavailable"]
+        );
+        assert_eq!(super::file_kind(&missing), "file");
     }
 }

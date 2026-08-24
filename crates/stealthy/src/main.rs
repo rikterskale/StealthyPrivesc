@@ -20,8 +20,17 @@ use crate::core::ingest;
 use crate::core::output;
 use crate::core::store::EncryptedStore;
 use crate::core::term;
+use crate::core::ux;
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(error) = run_main() {
+        eprintln!("error: {error:#}");
+        print_recovery_hint(&error.to_string());
+        std::process::exit(1);
+    }
+}
+
+fn run_main() -> Result<()> {
     let argv: Vec<String> = std::env::args().collect();
     let overrides = CliOverrides {
         delay_ms_set: arg_was_set(&argv, "--delay-ms"),
@@ -37,6 +46,18 @@ fn main() -> Result<()> {
         Some(Commands::Disclaimer)
             | Some(Commands::Guide)
             | Some(Commands::Doctor { .. })
+            | Some(Commands::Quickstart)
+            | Some(Commands::Demo { .. })
+            | Some(Commands::SecurityLab { .. })
+            | Some(Commands::ExplainPlugin { .. })
+            | Some(Commands::PluginPicker)
+            | Some(Commands::Completions { .. })
+            | Some(Commands::ExplainFinding { .. })
+            | Some(Commands::HtmlReport { .. })
+            | Some(Commands::CoverageCompare { .. })
+            | Some(Commands::Presets)
+            | Some(Commands::Playbook { .. })
+            | Some(Commands::Disposition { .. })
             | Some(Commands::Report { .. })
             | Some(Commands::Diff { .. })
             | Some(Commands::Ingest { .. })
@@ -61,6 +82,8 @@ fn main() -> Result<()> {
         triage: false,
         triage_out: None,
         approve_file: None,
+        save_baseline: None,
+        compare_with: None,
     });
 
     match command {
@@ -73,6 +96,23 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::Doctor { json } => print_doctor(json),
+        Commands::Quickstart => ux::quickstart(&cli, &overrides),
+        Commands::Demo { html } => ux::demo(html),
+        Commands::SecurityLab { root } => ux::security_lab(root),
+        Commands::ExplainPlugin { id } => ux::explain_plugin(&id),
+        Commands::PluginPicker => ux::plugin_picker(),
+        Commands::Completions { shell } => ux::completions(shell),
+        Commands::ExplainFinding { id, report } => ux::explain_finding(&id, report.as_deref()),
+        Commands::HtmlReport { input } => ux::html_report(&input),
+        Commands::CoverageCompare { native, fallback } => ux::coverage_compare(&native, &fallback),
+        Commands::Disposition {
+            report,
+            finding_id,
+            status,
+            out,
+        } => ux::disposition(&report, &finding_id, status, out.as_deref()),
+        Commands::Presets => ux::presets(),
+        Commands::Playbook { id } => ux::playbook(&id),
         Commands::Controls {
             case,
             root,
@@ -176,6 +216,8 @@ fn main() -> Result<()> {
             None,
             None,
             confirm_evasion,
+            None,
+            None,
         ),
         Commands::Enum {
             auto_exploit,
@@ -186,6 +228,8 @@ fn main() -> Result<()> {
             triage,
             triage_out,
             approve_file,
+            save_baseline,
+            compare_with,
         } => run_enum(
             &cli,
             &overrides,
@@ -199,7 +243,33 @@ fn main() -> Result<()> {
             triage_out,
             approve_file,
             confirm_evasion,
+            save_baseline,
+            compare_with,
         ),
+    }
+}
+
+fn print_recovery_hint(message: &str) {
+    let lower = message.to_ascii_lowercase();
+    let hint = if lower.contains("no such file")
+        && (lower.contains("python") || lower.contains("bash") || lower.contains("powershell"))
+    {
+        Some("Interpreter missing or blocked. Verify it with `command -v python3 bash sh perl` (Linux) or `Get-Command powershell` (Windows), then rerun the staged dispatcher.")
+    } else if lower.contains("permission denied")
+        && (lower.contains("ledger") || lower.contains("cache"))
+    {
+        Some("Ledger is not writable. Choose a writable location: `stealthy --ledger-dir ./stealthy-ledger --authorized scan`.")
+    } else if lower.contains("key") && (lower.contains("path") || lower.contains("file")) {
+        Some("Key path is unavailable. Create a protected destination and retry with `--key-output-path ./report.key`.")
+    } else if lower.contains("126") || lower.contains("blocked") {
+        Some("The primary binary was blocked. Use the staged fallback: `bash ./scripts/run.sh --authorized scan` (Linux) or `& .\\scripts\\run.ps1 --authorized scan` (PowerShell).")
+    } else if lower.contains("timeout") || lower.contains("partial") || lower.contains("cancel") {
+        Some("The scan was partial. Preserve the report, inspect coverage errors, then rerun the affected plugin with `--plugins ID`.")
+    } else {
+        None
+    };
+    if let Some(hint) = hint {
+        eprintln!("Recovery: {hint}");
     }
 }
 
@@ -231,6 +301,8 @@ fn run_enum(
     triage_out: Option<std::path::PathBuf>,
     approve_file: Option<std::path::PathBuf>,
     confirm_evasion: bool,
+    save_baseline: Option<std::path::PathBuf>,
+    compare_with: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let approval_resume = if approve_file.is_some() {
         Some(checkpoint.clone().ok_or_else(|| {
@@ -266,6 +338,21 @@ fn run_enum(
         approve_file,
     )?;
     let outcome = engine.run()?;
+    if let Some(path) = save_baseline {
+        std::fs::write(&path, serde_json::to_string_pretty(&outcome.report)?)
+            .with_context(|| format!("write baseline {}", path.display()))?;
+        println!("saved baseline {}", path.display());
+    }
+    if let Some(path) = compare_with {
+        let baseline = crate::core::ingest::ingest_path(&path)?;
+        let diff = crate::core::diff::compare(&baseline, &outcome.report)?;
+        println!(
+            "baseline comparison: {} added, {} removed, {} changed",
+            diff.added.len(),
+            diff.removed.len(),
+            diff.changed.len()
+        );
+    }
     if outcome.fail_on_triggered {
         std::process::exit(4);
     }
@@ -828,4 +915,78 @@ High-impact families require --allow-techniques when ROE permits.
 The operators of this project assume no liability for misuse.
 ================================================================"#
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    #[test]
+    fn local_rendering_and_diagnostics_paths_are_exercised() {
+        assert!(arg_was_set(
+            &["stealthy".into(), "--format=json".into()],
+            "--format"
+        ));
+        assert!(!arg_was_set(&["stealthy".into()], "--format"));
+        assert!(!check(false).is_empty());
+        assert!(!check(true).is_empty());
+        print_recovery_hint("python: no such file or directory");
+        print_recovery_hint("permission denied writing ledger cache");
+        print_recovery_hint("key path unavailable");
+        print_recovery_hint("primary blocked with status 126");
+        print_recovery_hint("scan timeout partial cancel");
+        print_recovery_hint("ordinary error");
+        print_auth_required();
+        print_guide();
+        print_disclaimer();
+        print_plugins(true);
+        print_plugins(false);
+        print_doctor(true).unwrap();
+        print_doctor(false).unwrap();
+    }
+
+    #[test]
+    fn offline_report_commands_cover_all_supported_formats() {
+        let path = fixture("script_report_min.json");
+        print_ingest(&path, ReportFormat::Json).unwrap();
+        print_ingest(&path, ReportFormat::Markdown).unwrap();
+        print_ingest(&path, ReportFormat::Human).unwrap();
+        print_ingest(&path, ReportFormat::Sarif).unwrap();
+        print_diff(&path, &path, ReportFormat::Json).unwrap();
+        print_diff(&path, &path, ReportFormat::Markdown).unwrap();
+        assert!(print_diff(&path, &path, ReportFormat::Sarif).is_err());
+        let empty_ledger = tempfile::tempdir().unwrap();
+        assert!(print_artifacts(Some(empty_ledger.path()), None, true).is_err());
+        assert!(run_cleanup(Some(empty_ledger.path()), None, true, false, false).is_err());
+    }
+
+    #[test]
+    fn safe_control_and_verify_paths_are_exercised() {
+        let cli = Cli::parse_from(["stealthy", "--authorized", "controls"]);
+        print_control_validation(
+            &cli,
+            Some("hash-drift".into()),
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        print_live_controls(&cli).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("verify");
+        std::fs::write(&file, b"verify").unwrap();
+        let hash = crate::core::delivery::sha256_file(&file).unwrap();
+        run_verify(Some(&file), None, &hash).unwrap();
+        assert!(run_verify(None, None, &hash).is_err());
+    }
 }

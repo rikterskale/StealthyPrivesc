@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::cli::{Cli, CliOverrides, OutputMode, ReportFormat};
+use crate::cli::{Cli, CliOverrides, OutputMode, ReportFormat, ScanPreset};
 use crate::core::artifacts::{self, ArtifactLedger};
 use crate::core::attack_path::{assign_path_ranks, build_attack_paths};
 use crate::core::controls;
@@ -53,6 +53,7 @@ pub struct EngineOutcome {
     pub fail_on_triggered: bool,
     #[allow(dead_code)]
     pub run_id: String,
+    pub report: RunReport,
 }
 
 impl Engine {
@@ -70,7 +71,12 @@ impl Engine {
         triage_out: Option<PathBuf>,
         approve_file: Option<PathBuf>,
     ) -> Result<Self> {
-        let profile = cli.profile;
+        let profile = match cli.preset {
+            Some(ScanPreset::Quick) => crate::core::profile::EngagementProfile::Quiet,
+            Some(ScanPreset::Standard) => crate::core::profile::EngagementProfile::Balanced,
+            Some(ScanPreset::Deep) => crate::core::profile::EngagementProfile::Thorough,
+            None => cli.profile,
+        };
         let mut quiet = cli.quiet || profile.force_quiet_console();
         let mut verbose = cli.verbose || profile.force_verbose();
         if quiet {
@@ -709,6 +715,7 @@ impl Engine {
         Ok(EngineOutcome {
             fail_on_triggered,
             run_id,
+            report,
         })
     }
 

@@ -165,3 +165,30 @@ fn check_authorized_keys(path: &Path, findings: &mut Vec<Finding>) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{check_authorized_keys, check_private_key};
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn key_checks_detect_safe_metadata_without_reading_key_material() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = dir.path().join("id_rsa");
+        std::fs::write(&key, b"-----BEGIN OPENSSH PRIVATE KEY-----\nredacted\n").unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut findings = Vec::new();
+        check_private_key(&key, &mut findings);
+        assert_eq!(findings[0].condition, "readable-private-key-weak-mode");
+        assert!(!findings[0].detail.contains("redacted"));
+
+        let authorized = dir.path().join("authorized_keys");
+        std::fs::write(&authorized, b"ssh-ed25519 AAAA").unwrap();
+        std::fs::set_permissions(&authorized, std::fs::Permissions::from_mode(0o666)).unwrap();
+        check_authorized_keys(&authorized, &mut findings);
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "authorized-keys-group-or-world-writable"));
+        check_private_key(&dir.path().join("missing"), &mut findings);
+    }
+}

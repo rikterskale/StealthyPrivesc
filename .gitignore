@@ -20,6 +20,7 @@ Cargo.lock
 
 # Local tool and test output
 .cache-run/
+**/.cache-run/
 .stealthy-artifacts/
 __pycache__/
 .coverage

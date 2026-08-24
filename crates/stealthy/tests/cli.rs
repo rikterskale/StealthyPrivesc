@@ -19,6 +19,132 @@ fn stealthy_in(dir: &std::path::Path) -> Command {
 }
 
 #[test]
+fn beginner_and_offline_cli_helpers_are_executable() {
+    for args in [
+        vec!["quickstart"],
+        vec!["demo"],
+        vec!["demo", "--html"],
+        vec!["presets"],
+        vec!["plugin-picker"],
+        vec!["explain-plugin", "linux.sudo"],
+        vec!["playbook", "linux.sudo"],
+        vec!["completions", "bash"],
+        vec!["completions", "zsh"],
+        vec!["completions", "fish"],
+        vec!["completions", "powershell"],
+    ] {
+        let output = stealthy().args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let report_path = dir.path().join("report.json");
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    std::fs::write(&report_path, &output.stdout).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let finding_id = report["findings"][0]["finding_id"].as_str().unwrap();
+
+    for args in [
+        vec!["html-report", report_path.to_str().unwrap()],
+        vec![
+            "coverage-compare",
+            report_path.to_str().unwrap(),
+            report_path.to_str().unwrap(),
+        ],
+        vec!["explain-finding", finding_id, report_path.to_str().unwrap()],
+        vec![
+            "disposition",
+            report_path.to_str().unwrap(),
+            finding_id,
+            "needs-review",
+        ],
+    ] {
+        let output = stealthy().args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let lab_root = dir.path().join("lab");
+    let output = stealthy()
+        .args(["security-lab", "--root", lab_root.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(lab_root.join("README.txt").is_file());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn authorized_all_linux_plugins_complete_with_structured_coverage() {
+    let plugins = [
+        "linux.app_control",
+        "linux.sudo",
+        "linux.suid",
+        "linux.systemd_cron",
+        "linux.containers",
+        "linux.groups",
+        "linux.polkit",
+        "linux.mounts",
+        "linux.ssh_keys",
+        "linux.path_ld",
+        "linux.kernel_cve",
+        "linux.nfs",
+        "linux.credentials",
+        "linux.services",
+        "linux.wildcard_cron",
+        "linux.endpoint_controls",
+    ];
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--profile",
+            "ci",
+            "enum",
+            "--plugins",
+            &plugins.join(","),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["plugins_run"].as_array().unwrap().len(),
+        plugins.len()
+    );
+    assert_eq!(report["coverage"].as_array().unwrap().len(), plugins.len());
+    assert!(report["coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|entry| entry["status"] == "ok"));
+}
+
+#[test]
 fn refuses_host_commands_without_authorization() {
     let output = stealthy().arg("list-plugins").output().unwrap();
     assert_eq!(output.status.code(), Some(2));

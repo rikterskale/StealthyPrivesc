@@ -25,75 +25,12 @@ impl Plugin for NfsPlugin {
         let mut findings = Vec::new();
 
         if let Some(exports) = read_text_bounded(Path::new("/etc/exports"), 1024 * 1024) {
-            for line in exports.lines() {
-                if ctx.cancelled() {
-                    break;
-                }
-                let t = line.trim();
-                if t.is_empty() || t.starts_with('#') {
-                    continue;
-                }
-                let severity = if t.contains("no_root_squash") {
-                    Severity::Critical
-                } else if t.contains("root_squash") {
-                    Severity::Info
-                } else {
-                    Severity::Low
-                };
-                findings.push(Finding {
-                    plugin: self.id().into(),
-                    kind: if t.contains("no_root_squash") {
-                        FindingKind::Misconfiguration
-                    } else {
-                        FindingKind::Enumeration
-                    },
-                    severity,
-                    title: "NFS export entry".into(),
-                    detail: t.to_string(),
-                    recommendation: if t.contains("no_root_squash") {
-                        "no_root_squash allows remote root to write as local root on the share — classic privesc vector.".into()
-                    } else {
-                        "Review export options and client ACLs.".into()
-                    },
-                    noisy: false,
-                    leaves_artifacts: false,
-                    object: t.split_whitespace().next().unwrap_or(t).into(),
-                    condition: if t.contains("no_root_squash") {
-                        "nfs-export-no-root-squash"
-                    } else {
-                        "nfs-export-observed"
-                    }
-                    .into(),
-                    technique_id: "nfs-export".into(),
-                    ..Default::default()
-                });
-            }
+            scan_exports(&exports, &ctx.cancel, self.id(), &mut findings);
         }
 
         // Mounted NFS from /proc/mounts (no `mount` spawn).
         if let Some(mounts) = read_text_bounded(Path::new("/proc/mounts"), 4 * 1024 * 1024) {
-            for line in mounts.lines() {
-                if ctx.cancelled() {
-                    break;
-                }
-                if line.contains(" nfs") || line.contains(" nfs4") {
-                    findings.push(Finding {
-                        plugin: self.id().into(),
-                        kind: FindingKind::Enumeration,
-                        severity: Severity::Low,
-                        title: "NFS mount present".into(),
-                        detail: line.to_string(),
-                        recommendation: "Check whether the export allows UID remapping abuse."
-                            .into(),
-                        noisy: false,
-                        leaves_artifacts: false,
-                        object: line.split_whitespace().nth(1).unwrap_or(line).into(),
-                        condition: "nfs-mount-present".into(),
-                        technique_id: "nfs-mount".into(),
-                        ..Default::default()
-                    });
-                }
-            }
+            scan_mounts(&mounts, &ctx.cancel, self.id(), &mut findings);
         }
 
         if findings.is_empty() {
@@ -117,9 +54,113 @@ impl Plugin for NfsPlugin {
     }
 }
 
+fn scan_exports(
+    text: &str,
+    cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    plugin: &str,
+    findings: &mut Vec<Finding>,
+) {
+    for line in text.lines() {
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let no_root = t.contains("no_root_squash");
+        findings.push(Finding {
+            plugin: plugin.into(),
+            kind: if no_root { FindingKind::Misconfiguration } else { FindingKind::Enumeration },
+            severity: if no_root { Severity::Critical } else if t.contains("root_squash") { Severity::Info } else { Severity::Low },
+            title: "NFS export entry".into(), detail: t.into(),
+            recommendation: if no_root { "no_root_squash allows remote root to write as local root on the share — classic privesc vector." } else { "Review export options and client ACLs." }.into(),
+            noisy: false, leaves_artifacts: false,
+            object: t.split_whitespace().next().unwrap_or(t).into(),
+            condition: if no_root { "nfs-export-no-root-squash" } else { "nfs-export-observed" }.into(),
+            technique_id: "nfs-export".into(), ..Default::default()
+        });
+    }
+}
+
+fn scan_mounts(
+    text: &str,
+    cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    plugin: &str,
+    findings: &mut Vec<Finding>,
+) {
+    for line in text.lines() {
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        if line.contains(" nfs") || line.contains(" nfs4") {
+            findings.push(Finding {
+                plugin: plugin.into(),
+                kind: FindingKind::Enumeration,
+                severity: Severity::Low,
+                title: "NFS mount present".into(),
+                detail: line.into(),
+                recommendation: "Check whether the export allows UID remapping abuse.".into(),
+                noisy: false,
+                leaves_artifacts: false,
+                object: line.split_whitespace().nth(1).unwrap_or(line).into(),
+                condition: "nfs-mount-present".into(),
+                technique_id: "nfs-mount".into(),
+                ..Default::default()
+            });
+        }
+    }
+}
+
 fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
     file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
     Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_text_bounded, scan_exports, scan_mounts};
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    #[test]
+    fn bounded_reader_handles_missing_and_truncated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("exports");
+        std::fs::write(&path, b"0123456789").unwrap();
+        assert_eq!(read_text_bounded(&path, 4).as_deref(), Some("0123"));
+        assert!(read_text_bounded(&dir.path().join("missing"), 10).is_none());
+    }
+
+    #[test]
+    fn parsers_classify_exports_mounts_and_cancellation() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut findings = Vec::new();
+        scan_exports(
+            "# comment\n/export *(no_root_squash)\n/data *(root_squash)\n",
+            &cancel,
+            "linux.nfs",
+            &mut findings,
+        );
+        scan_mounts(
+            "server:/share /mnt nfs4 rw 0 0\n/dev/sda / ext4 rw 0 0\n",
+            &cancel,
+            "linux.nfs",
+            &mut findings,
+        );
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "nfs-export-no-root-squash"));
+        assert!(findings.iter().any(|f| f.condition == "nfs-mount-present"));
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        let count = findings.len();
+        scan_exports(
+            "/other *(no_root_squash)",
+            &cancel,
+            "linux.nfs",
+            &mut findings,
+        );
+        assert_eq!(findings.len(), count);
+    }
 }

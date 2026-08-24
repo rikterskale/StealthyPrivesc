@@ -459,7 +459,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      COVERAGE_MIN_LINES: "65"
+      COVERAGE_MIN_LINES: "80"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

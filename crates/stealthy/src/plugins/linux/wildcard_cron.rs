@@ -136,3 +136,39 @@ fn scan_cron_script(path: &str, text: &str, cancel: &Arc<AtomicBool>, findings: 
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{read_text_bounded, scan_cron_script};
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    #[test]
+    fn scanner_detects_allowlisted_and_generic_wildcard_commands() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut findings = Vec::new();
+        scan_cron_script(
+            "/fixture/cron",
+            "# comment\n\ntar -cf archive.tar *\nchown root *\nrsync -a * /srv/\nprintf '%s' '*'\n",
+            &cancel,
+            &mut findings,
+        );
+        assert_eq!(findings.len(), 3);
+        assert!(findings.iter().any(|f| f.technique_id == "gtfobins"));
+        assert!(findings
+            .iter()
+            .any(|f| f.technique_id == "cron-wildcard-injection"));
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        let count = findings.len();
+        scan_cron_script("/fixture", "tar -cf archive *", &cancel, &mut findings);
+        assert_eq!(findings.len(), count);
+    }
+
+    #[test]
+    fn bounded_reader_covers_missing_and_limited_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cron");
+        std::fs::write(&path, b"012345").unwrap();
+        assert_eq!(read_text_bounded(&path, 2).as_deref(), Some("01"));
+        assert!(read_text_bounded(&dir.path().join("missing"), 2).is_none());
+    }
+}

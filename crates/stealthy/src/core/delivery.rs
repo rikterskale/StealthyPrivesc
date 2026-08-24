@@ -145,7 +145,12 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     } else {
         "scripts/linux"
     };
-    let mut candidates = vec![PathBuf::from(scripts_rel)];
+    let mut candidates = vec![
+        PathBuf::from(scripts_rel),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join(scripts_rel),
+    ];
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join(scripts_rel));
@@ -312,7 +317,10 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 
 #[cfg(test)]
 mod tests {
-    use super::{one_liners, shell_quote, validate_bundle_name, validate_ssh_target};
+    use super::{
+        one_liners, sha256_file, shell_quote, stage, validate_bundle_name, validate_ssh_target,
+        verify_local, StageOptions,
+    };
 
     #[test]
     fn shell_quote_contains_metacharacters_as_data() {
@@ -342,5 +350,32 @@ mod tests {
         assert!(snippet.contains("PUBLIC"));
         assert!(snippet.contains("Documents\\cache-update"));
         assert!(!snippet.contains("$env:TEMP\\stealthy-drop"));
+    }
+
+    #[test]
+    fn stage_copies_real_binary_writes_manifest_and_verifies_hash() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.bin");
+        std::fs::write(&source, b"fixture binary").unwrap();
+        let out = root.path().join("drop");
+        let ledger = root.path().join("ledger");
+        stage(StageOptions {
+            os: "linux",
+            arch: "x86_64",
+            name: "stealthy",
+            out_dir: &out,
+            binary: Some(&source),
+            run_id: "delivery-test",
+            ledger_dir: &ledger,
+        })
+        .unwrap();
+        let staged = out.join("stealthy");
+        let hash = sha256_file(&staged).unwrap();
+        verify_local(&staged, &hash).unwrap();
+        assert!(verify_local(&staged, "00").is_err());
+        let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+        assert!(manifest.contains("primary_binary=stealthy"));
+        assert!(out.join("OPERATOR.txt").is_file());
+        assert!(ledger.join("delivery-test.json").is_file());
     }
 }

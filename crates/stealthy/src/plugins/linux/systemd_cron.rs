@@ -305,3 +305,61 @@ fn check_writable_tree(
 fn is_writable_by(meta: &fs::Metadata, euid: u32, gids: &[u32]) -> bool {
     util::is_writable_by_euid(meta, euid, gids)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{check_writable_tree, read_text_bounded, scan_timers};
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    #[test]
+    fn scheduler_helpers_report_writable_tree_timer_and_companion() {
+        let dir = tempfile::tempdir().unwrap();
+        let timer = dir.path().join("sample.timer");
+        let service = dir.path().join("sample.service");
+        std::fs::write(&timer, b"[Timer]\nUnit=sample.service\n").unwrap();
+        std::fs::write(&service, b"[Service]\nExecStart=/bin/true\n").unwrap();
+        std::fs::set_permissions(&timer, std::fs::Permissions::from_mode(0o666)).unwrap();
+        std::fs::set_permissions(&service, std::fs::Permissions::from_mode(0o666)).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut findings = Vec::new();
+        let euid = crate::plugins::linux::util::euid();
+        scan_timers(
+            &dir.path().to_string_lossy(),
+            euid,
+            &[],
+            &cancel,
+            &mut findings,
+        );
+        check_writable_tree(
+            &dir.path().to_string_lossy(),
+            euid,
+            &[],
+            "fixture",
+            &cancel,
+            &mut findings,
+        );
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "writable-systemd-timer"));
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "writable-timer-companion-unit"));
+        assert!(findings
+            .iter()
+            .any(|f| f.condition == "writable-scheduler-entry"));
+        assert!(read_text_bounded(&timer, 8).unwrap().len() <= 8);
+
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        let before = findings.len();
+        scan_timers(
+            &dir.path().to_string_lossy(),
+            euid,
+            &[],
+            &cancel,
+            &mut findings,
+        );
+        assert_eq!(findings.len(), before);
+    }
+}

@@ -74,6 +74,22 @@ stealthy doctor --json
 Checks supported OS, compiled plugin availability, and working-directory
 readiness. JSON output is intended for automation.
 
+## Beginner workflows
+
+```text
+stealthy quickstart
+stealthy demo --html > demo.html
+stealthy security-lab --root ./lab
+stealthy presets
+stealthy plugin-picker
+stealthy explain-plugin linux.sudo
+stealthy playbook linux.sudo
+stealthy completions bash
+```
+
+These helpers explain authorization, use inert fixtures where applicable, and
+do not enumerate a host unless `quickstart` is given `--authorized`.
+
 ## `disclaimer`
 
 ```text
@@ -98,6 +114,9 @@ TSV output contains `id`, `name`, and `description` columns.
 stealthy --authorized enum
 stealthy --authorized scan
 stealthy --authorized --profile quiet enum
+stealthy --authorized scan --preset quick
+stealthy --authorized scan --preset standard
+stealthy --authorized scan --preset deep
 stealthy --authorized enum --auto-exploit
 stealthy --authorized enum --allow-techniques kernel-exploit,potato
 stealthy --authorized enum --plugins ID1,ID2
@@ -110,6 +129,9 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 ```
 
 `scan` is a visible alias for `enum`. Options:
+
+- `--save-baseline PATH`: save the completed plaintext JSON report.
+- `--compare-with PATH`: compare the completed report with a prior baseline.
 
 - `--auto-exploit`: enables supported reversible probes.
 - `--allow-techniques`: comma-separated high-impact families when ROE permits.
@@ -328,6 +350,10 @@ stealthy diff BASELINE.json CURRENT.json --format markdown
 Compares plaintext JSON reports offline. It reports added, removed, and
 changed findings. Duplicate finding identities are rejected rather than silently
 overwritten. SARIF is intentionally unsupported for diffs.
+
+Offline report helpers include `html-report`, `explain-finding`,
+`coverage-compare`, and `disposition`; use `playbook ID` for safe verification,
+rollback, and post-fix recheck guidance.
 
 ## Output modes
 

@@ -117,7 +117,7 @@ pub fn validate_probe_ids(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_probe_ids;
+    use super::{load_approve_file, probe_ids, validate_probe_ids, write_triage_stub};
     use crate::core::types::{Finding, FindingKind, Severity, TriageDecision};
 
     #[test]
@@ -134,5 +134,32 @@ mod tests {
             action: "probe".into(),
         }];
         assert!(validate_probe_ids(&decisions, &findings).is_err());
+    }
+
+    #[test]
+    fn triage_stub_round_trips_only_actionable_findings() {
+        let findings = vec![
+            Finding {
+                finding_id: "low".into(),
+                plugin: "linux.sudo".into(),
+                kind: FindingKind::Enumeration,
+                severity: Severity::Low,
+                ..Default::default()
+            },
+            Finding {
+                finding_id: "high".into(),
+                plugin: "linux.sudo".into(),
+                kind: FindingKind::Misconfiguration,
+                severity: Severity::High,
+                ..Default::default()
+            },
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("approve.json");
+        write_triage_stub(&path, "run-1", &findings).unwrap();
+        let loaded = load_approve_file(&path).unwrap();
+        assert_eq!(loaded.run_id, "run-1");
+        assert_eq!(loaded.decisions.len(), 1);
+        assert!(probe_ids(&loaded.decisions).is_empty());
     }
 }

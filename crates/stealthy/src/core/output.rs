@@ -172,6 +172,43 @@ pub fn render_json(report: &RunReport, findings: &[&Finding]) -> Result<String> 
     Ok(serde_json::to_string_pretty(&view)?)
 }
 
+/// Self-contained offline HTML report. Evidence is escaped and placed in
+/// native disclosure widgets so opening the file never executes report data.
+pub fn render_html(report: &RunReport, findings: &[&Finding]) -> String {
+    let counts = count_by_severity(findings);
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    let colors = ["#64748b", "#22c55e", "#eab308", "#f97316", "#ef4444"];
+    let mut bars = String::new();
+    for (i, label) in ["Info", "Low", "Medium", "High", "Critical"]
+        .iter()
+        .enumerate()
+    {
+        bars.push_str(&format!("<div class=bar><span>{label}</span><i style=\"width:{}%;background:{}\"></i><b>{}</b></div>", (counts[i] * 100).max(1), colors[i], counts[i]));
+    }
+    let mut body = String::new();
+    for f in findings {
+        body.push_str(&format!("<details><summary><strong>{}</strong> <em>{}</em> <code>{}</code></summary><p>{}</p><p><strong>Why:</strong> {} observed the condition on <code>{}</code>.</p><p><strong>Remediation:</strong> {}</p><p><strong>Safe verification:</strong> <code>{}</code></p></details>", esc(&f.title), f.severity.as_str(), esc(&f.finding_id), esc(&f.detail), esc(&f.plugin), esc(&f.object), esc(&f.recommendation), esc(&f.next_command())));
+    }
+    let paths = report
+        .attack_paths
+        .iter()
+        .map(|p| {
+            format!(
+                "<li><strong>{}</strong> — {} <small>(noise: {})</small></li>",
+                esc(&p.title),
+                esc(&p.summary),
+                esc(&p.estimated_noise)
+            )
+        })
+        .collect::<String>();
+    format!("<!doctype html><meta charset=utf-8><title>StealthyPrivesc report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;border-radius:10px;padding:1rem;margin:1rem 0}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}</style><h1>StealthyPrivesc report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=card><h2>Findings</h2>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
+}
+
 fn filter_findings(findings: &[Finding], min: Severity) -> Vec<&Finding> {
     let mut v: Vec<&Finding> = findings
         .iter()
@@ -380,7 +417,6 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **Version:** {}\n\
          - **Schema:** {}\n\
          - **Run ID:** `{}`\n\
-         - **Started (Unix):** {}\n\
          - **Host:** `{}`\n\
          - **User:** `{}` (elevated={})\n\
          - **OS:** {} / {} ({})\n\
@@ -395,7 +431,6 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         report.version,
         report.schema_version,
         report.run_id,
-        report.started_at_unix,
         report.identity.hostname,
         report.identity.username,
         report.identity.is_elevated,
@@ -718,4 +753,106 @@ pub fn secure_delete_hint(path: &Path) -> Result<()> {
     }
     std::fs::remove_file(path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ingest::ingest_json;
+
+    fn report() -> RunReport {
+        ingest_json(include_str!("../../tests/fixtures/script_report_min.json")).unwrap()
+    }
+
+    fn options(mode: OutputMode, format: ReportFormat) -> OutputOptions {
+        OutputOptions {
+            mode,
+            path: None,
+            key_output_path: None,
+            plaintext_file: false,
+            also_markdown: false,
+            exfil_url: None,
+            quiet: true,
+            format,
+            min_severity: Severity::Info,
+            run_id: "test".into(),
+            ledger_dir: std::env::temp_dir(),
+        }
+    }
+
+    #[test]
+    fn html_escapes_evidence_and_renders_empty_sections() {
+        let mut report = report();
+        report.findings[0].title = "<script>alert(1)</script>".into();
+        report.findings[0].detail = "a & b".into();
+        let findings = report.findings.iter().collect::<Vec<_>>();
+        let html = render_html(&report, &findings);
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script>alert"));
+        assert!(html.contains("a &amp; b"));
+        assert!(html.contains("Coverage gaps"));
+    }
+
+    #[test]
+    fn emit_rejects_invalid_memory_options_and_writes_plaintext() {
+        let report = report();
+        let store = EncryptedStore::new();
+        let mut invalid = options(OutputMode::Memory, ReportFormat::Json);
+        invalid.plaintext_file = true;
+        assert!(emit(&report, &store, &invalid).is_err());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.json");
+        let mut file = options(OutputMode::File, ReportFormat::Json);
+        file.path = Some(path.clone());
+        file.plaintext_file = true;
+        assert!(emit(&report, &store, &file).is_ok());
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(parsed["schema_version"], "2");
+    }
+
+    #[test]
+    fn secure_delete_removes_files_and_rejects_missing_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret");
+        std::fs::write(&path, b"sensitive fixture").unwrap();
+        assert!(secure_delete_hint(&path).is_ok());
+        assert!(!path.exists());
+        assert!(secure_delete_hint(&path).is_err());
+    }
+
+    #[test]
+    fn renderers_emit_machine_and_operator_views() {
+        let report = report();
+        let findings = report.findings.iter().collect::<Vec<_>>();
+        let markdown = render_markdown(&report, &findings, findings.len());
+        assert!(markdown.contains("# StealthyPrivesc report"));
+        assert!(markdown.contains("What's next"));
+        let sarif: serde_json::Value =
+            serde_json::from_str(&render_sarif(&report, &findings)).unwrap();
+        assert_eq!(sarif["version"], "2.1.0");
+        assert!(!sarif["runs"][0]["results"].as_array().unwrap().is_empty());
+        let json: serde_json::Value =
+            serde_json::from_str(&render_json(&report, &findings).unwrap()).unwrap();
+        assert!(json["findings"][0]["next_command"].is_string());
+    }
+
+    #[test]
+    fn emit_supports_markdown_and_secure_file_output() {
+        let report = report();
+        let store = EncryptedStore::new();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sealed.report");
+        let key = dir.path().join("report.key");
+        let mut opts = options(OutputMode::File, ReportFormat::Markdown);
+        opts.path = Some(path.clone());
+        opts.key_output_path = Some(key.clone());
+        opts.format = ReportFormat::Markdown;
+        opts.also_markdown = true;
+        assert!(emit(&report, &store, &opts).is_ok());
+        assert!(path.exists());
+        assert!(key.exists());
+        assert!(dir.path().join("sealed.report.md").exists());
+    }
 }

@@ -170,11 +170,11 @@ The CI coverage job uses `cargo-llvm-cov` version `0.6.16` and publishes LCOV:
 rustup component add llvm-tools-preview
 cargo install --locked cargo-llvm-cov --version 0.6.16
 cargo llvm-cov --locked --workspace --all-targets \
-  --lcov --output-path lcov.info --fail-under-lines 65
+  --lcov --output-path lcov.info --fail-under-lines 80
 test -s lcov.info
 ```
 
-CI and the tag gate enforce a 65% line-coverage floor. Treat a missing/empty
+CI and the tag gate enforce an 80% line-coverage floor. Treat a missing/empty
 report or a result below the floor as failed validation.
 
 ## Build flavors
@@ -257,7 +257,7 @@ Every `v*` tag must pass the full release gate before build/publish:
 
 - locked metadata, formatting, Clippy with warnings denied, tests, and release build;
 - `enum-only` and `opsec-string-strip` safety-contract checks;
-- the 65% Rust line-coverage floor;
+- the 80% Rust line-coverage floor;
 - Linux/release script parsing;
 - full-history Gitleaks scanning; and
 - `cargo deny check --all-features` for advisories, licenses, bans, and sources.
