@@ -98,7 +98,7 @@ jobs:
           bin=target/x86_64-unknown-linux-gnu/release/stealthy
           # Build a temporary binary for validation
           cargo build --locked -p stealthy --release --target x86_64-unknown-linux-gnu
-          python3 scripts/ci/validate_user_readiness.py "$bin" --repo-root .
+          python3 scripts/ci/validate_user_readiness.py "$bin" --repo-root . --strict-warnings
 
   build:
     name: Build ${{ matrix.target }}

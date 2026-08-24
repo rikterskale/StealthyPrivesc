@@ -770,7 +770,12 @@ jobs:
 
   user-readiness:
     name: User readiness validation
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - name: Check out repository
@@ -790,111 +795,17 @@ jobs:
         run: cargo build --locked -p stealthy --release
 
       - name: User readiness validation
+        if: runner.os != 'Windows'
         run: |
           python3 scripts/ci/validate_user_readiness.py \
-            ./target/release/stealthy --repo-root .
+            ./target/release/stealthy --repo-root . --strict-warnings
 
-      - name: Validate installation scripts
-        shell: bash
+      - name: User readiness validation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          echo "Validating Linux install script..."
-          bash -n scripts/install.sh
-          grep -q "attestation verify" scripts/install.sh
-          grep -q "checksum" scripts/install.sh
-          grep -q "HOME/.local/bin" scripts/install.sh
-          echo "✓ Linux install script validated"
-
-          echo "Validating Windows install script..."
-          # PowerShell syntax check requires Windows, so just verify key content
-          grep -q "attestation verification" scripts/install.ps1
-          grep -q "SHA256" scripts/install.ps1
-          grep -q "LOCALAPPDATA" scripts/install.ps1
-          echo "✓ Windows install script structure validated"
-
-      - name: Validate documentation examples
-        shell: bash
-        run: |
-          python3 << 'PYTHON_EOF'
-          import re
-          from pathlib import Path
-
-          docs = Path("docs")
-          issues = []
-
-          # Check that all docs reference the correct binary
-          for doc in docs.glob("*.md"):
-              content = doc.read_text(encoding="utf-8")
-              # Examples should use correct paths
-              if "stealthy" in content.lower() and "target/release" in content:
-                  if not re.search(r"(?:stealthy|./target/release/stealthy|/target/release/stealthy)", content):
-                      pass  # OK, just references the commands
-              # Check for broken command references
-              if "enum --plugins" in content:
-                  if "enum-only" in content or "plugin-only" not in content.lower():
-                      pass  # OK, likely correct examples
-
-          # Validate key docs exist and have non-empty examples
-          key_docs = {
-              "user-guide.md": ["enum", "guide"],
-              "operator-runbook.md": ["stage", "enum"],
-              "cli-reference.md": ["list-plugins", "enum"],
-          }
-
-          for doc_name, required_examples in key_docs.items():
-              doc_path = docs / doc_name
-              if not doc_path.exists():
-                  issues.append(f"Missing required doc: {doc_name}")
-              else:
-                  content = doc_path.read_text(encoding="utf-8")
-                  for example in required_examples:
-                      if example not in content:
-                          issues.append(f"{doc_name}: missing example for '{example}'")
-
-          if issues:
-              print("Documentation example issues found:")
-              for issue in issues:
-                  print(f"  • {issue}")
-              exit(1)
-          else:
-              print("✓ All documentation examples validated")
-          PYTHON_EOF
-
-      - name: Validate version consistency
-        shell: bash
-        run: |
-          # Get version from Cargo.toml
-          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
-          echo "Cargo.toml version: $cargo_version"
-
-          # Verify format is semantic
-          if ! [[ $cargo_version =~ ^0\.[0-9]+\.[0-9]+$ ]]; then
-              echo "❌ Invalid version format: $cargo_version"
-              exit 1
-          fi
-
-          # Verify it's documented in support-policy.md
-          if ! grep -q "0\.$([[ $cargo_version =~ ([0-9]+) ]] && echo ${BASH_REMATCH[1]})" docs/support-policy.md; then
-              echo "⚠️  Version may not be documented in support-policy.md"
-          fi
-
-          echo "✓ Version consistency validated"
-
-      - name: Validate CLI help references docs
-        shell: bash
-        run: |
-          bin=./target/release/stealthy
-          help_output=$("$bin" --help)
-
-          # Check that help references key commands
-          echo "$help_output" | grep -q "enum" || exit 1
-          echo "$help_output" | grep -q "stage" || exit 1
-          echo "$help_output" | grep -q "doctor" || exit 1
-
-          # Check that error messages are helpful
-          unauthorized=$("$bin" enum 2>&1 || true)
-          echo "$unauthorized" | grep -qi "authorization" || exit 1
-
-          echo "✓ CLI help text validated"
+          python scripts/ci/validate_user_readiness.py `
+            ./target/release/stealthy.exe --repo-root . --strict-warnings
 
   production-readiness:
     name: CI readiness gate

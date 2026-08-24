@@ -168,6 +168,7 @@ Exit codes enable automation. CI/CD systems depend on knowing when to fail or su
   - `coverage` (per-plugin performance)
 - Each finding has required fields:
   - `plugin`, `kind`, `severity`, `title`, `detail`, `recommendation`
+- `coverage` has one entry per plugin in `plugins_run`, and all plugin references are valid
 
 **Why it matters:**
 External systems parse the JSON report. Missing fields break downstream analysis.
@@ -220,9 +221,13 @@ Users discover commands through help. Truncated or incomplete help limits featur
 The `user-readiness` job:
 - Runs on every commit to PR branches
 - Builds the release binary
-- Runs all validation categories above
-- Reports warnings (non-blocking) and errors (blocking)
+- Runs a single validation script (`scripts/ci/validate_user_readiness.py`) on
+  both `ubuntu-latest` and `windows-latest` runners
+- Enforces strict readiness checks (all listed checks are treated as failures)
 - Gates the `production-readiness` aggregate job
+
+The workflow no longer duplicates installation/doc/version validation in shell scripts;
+all checks above are centralized in the Python validator.
 
 **Run time:** ~10 minutes
 
@@ -259,20 +264,12 @@ The user readiness validation also runs in the tag-gate:
 
 **Action:** Safe to merge or release.
 
-### Warnings (non-blocking) ⚠️
+### Warnings (compatibility)
 
-**Meaning:** Non-critical user experience issues that should be fixed before release but don't block merging to `main`.
+**Meaning:** The warning channel is intentionally not used for current readiness
+contracts. `--strict-warnings` is retained for compatibility with existing CI scripts.
 
-**Examples:**
-- "guide command does not mention authorization" — fix the guide text
-- "Unknown plugin error should suggest list-plugins" — improve error message
-- "NO_COLOR environment variable not respected" — fix color handling
-
-**Action:**
-1. Review each warning
-2. Fix the underlying issue in code or docs
-3. Commit and push
-4. Re-run validation
+CI currently enforces all listed checks as errors.
 
 ### Errors (blocking) ❌
 
@@ -301,6 +298,8 @@ cargo build --locked -p stealthy --release
 
 # Run user readiness checks
 python3 scripts/ci/validate_user_readiness.py ./target/release/stealthy --repo-root .
+# Optional strict mode (recommended for merge/readiness confidence)
+python3 scripts/ci/validate_user_readiness.py ./target/release/stealthy --repo-root . --strict-warnings
 ```
 
 ### Debugging a failing check
@@ -321,6 +320,7 @@ After making changes, re-run:
 ```bash
 cargo build --locked -p stealthy --release
 python3 scripts/ci/validate_user_readiness.py ./target/release/stealthy --repo-root .
+python3 scripts/ci/validate_user_readiness.py ./target/release/stealthy --repo-root . --strict-warnings
 ```
 
 ## Extending the Validator
