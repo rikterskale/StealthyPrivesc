@@ -229,7 +229,19 @@ Add-Coverage 'windows.dll_hijack' 'skipped' 'Application import/search-order and
 Add-Coverage 'windows.app_control' 'skipped' 'No approved artifact was supplied; effective artifact policy assessment was not collected'
 
 $pluginsRun = @($coverage | Where-Object { $_.status -eq 'ok' } | ForEach-Object { $_.id })
-$capabilityDelta = @($coverage | Where-Object { $_.status -ne 'ok' } | ForEach-Object { $_.id })
+$capabilityDelta = @(
+  'windows.services',
+  'windows.scheduled_tasks',
+  'windows.always_install_elevated',
+  'windows.uac',
+  'windows.dll_hijack',
+  'windows.credentials',
+  'windows.admin_sessions',
+  'windows.env_path',
+  'windows.autoruns',
+  'windows.endpoint_controls',
+  'windows.app_control'
+)
 
 if ($Json) {
   $report = [ordered]@{

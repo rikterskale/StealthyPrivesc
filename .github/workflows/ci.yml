@@ -561,7 +561,23 @@ jobs:
 
           $fallback = & powershell.exe -NoProfile -File .\scripts\windows\enum.ps1 -Authorized -Json | ConvertFrom-Json
           if ($fallback.coverage_mode -ne 'script') { throw 'PowerShell fallback coverage mode mismatch' }
-          if ($fallback.capability_delta.Count -ne 11) { throw 'PowerShell fallback capability delta mismatch' }
+          $expectedDelta = @(
+            'windows.services',
+            'windows.scheduled_tasks',
+            'windows.always_install_elevated',
+            'windows.uac',
+            'windows.dll_hijack',
+            'windows.credentials',
+            'windows.admin_sessions',
+            'windows.env_path',
+            'windows.autoruns',
+            'windows.endpoint_controls',
+            'windows.app_control'
+          )
+          $deltaDifference = @(Compare-Object $expectedDelta @($fallback.capability_delta))
+          if ($fallback.capability_delta.Count -ne $expectedDelta.Count -or $deltaDifference.Count -ne 0) {
+            throw 'PowerShell fallback capability delta mismatch'
+          }
 
           # Stage under the workspace, not %TEMP%: Defender real-time scanning
           # often quarantines freshly copied unsigned PEs in TEMP before verify.
