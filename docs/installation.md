@@ -354,8 +354,14 @@ families. See `docs/techniques.md`.
 **Linux** (ELF blocked, `noexec` drop path, AppArmor/SELinux constraint):
 
 ```bash
-bash scripts/linux/enum.sh --authorized | tee enum-shell.txt
+# Prefer staged dispatcher: python → bash → sh → perl
+bash scripts/linux/run.sh --authorized --profile balanced enum
+
+# Direct scripts (troubleshooting)
 python3 scripts/linux/enum.py --authorized | tee enum-python.txt
+bash scripts/linux/enum.sh --authorized | tee enum-shell.txt
+sh scripts/linux/enum-posix.sh --authorized | tee enum-posix.txt
+perl scripts/linux/enum.pl --authorized | tee enum-perl.txt
 ```
 
 **Windows** (PE blocked by AppLocker/WDAC/SmartScreen/AV; prefer allowlisted hosts):
@@ -395,7 +401,7 @@ After a successful PE run on Windows/Linux, still collect control inventory:
 | `doctor` reports unsupported OS | Stop and use an approved matching build or script fallback; do not bypass the platform check. |
 | `doctor` reports no plugins | Confirm that the binary matches the target OS and architecture, then use `list-plugins` only after authorization. |
 | Windows executable is blocked or quarantined | Record SmartScreen/AppLocker/WDAC/AV; prefer non-`TEMP` drop + lab exclusion/org signing; run `scripts\run.ps1` or `enum.ps1` / `enum.js` / `EnumTasks.csproj` if ROE permits. |
-| Linux ELF fails with `Permission denied` on `noexec` | Record the mount; run `enum.sh` / `enum.py` from an executable path. |
+| Linux ELF fails with `Permission denied` on `noexec` | Record the mount; run staged `run.sh` or `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl` from an executable path. |
 | Build fails with a locked dependency error | Run from the reviewed repository with the existing `Cargo.lock`; do not silently update dependencies during an engagement build. |
 
 ### Quick recovery ladder

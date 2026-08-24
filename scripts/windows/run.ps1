@@ -2,6 +2,10 @@
 # The launcher may select an approved script fallback when the primary PE
 # cannot start. Under today's endpoint-bypass contract it does not disable
 # or bypass host controls (see docs/techniques.md for Planned families).
+#
+# Fallback hosts are fixed enumerate-only reduced coverage. Only auth
+# (via STEALTHY_AUTHORIZED) and --json / -Json are forwarded; binary flags
+# such as --profile / --plugins are not applied to script hosts.
 [CmdletBinding(PositionalBinding = $false)]
 param(
   [string]$Manifest = $(if ($env:STEALTHY_MANIFEST) { $env:STEALTHY_MANIFEST } else { Join-Path $PSScriptRoot 'stealthy-run.conf' }),
@@ -31,6 +35,14 @@ function Read-Manifest([string]$Path) {
     if ($parts.Count -eq 2) { $result[$parts[0].Trim()] = $parts[1].Trim() }
   }
   return $result
+}
+
+function Test-BlockStatus([int]$Status) {
+  # 126/127: not executable / not found. >128: signal-style / forced kill.
+  # Preserve tool contracts 0 / 2 / 4 and ordinary CLI failures.
+  if ($Status -in @(126, 127)) { return $true }
+  if ($Status -gt 128) { return $true }
+  return $false
 }
 
 $cfg = Read-Manifest $Manifest
@@ -139,13 +151,25 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved powershell fallback')
-        if ($isJson) {
-          & powershell.exe -NoProfile -File $script -Json
-        } else {
-          & powershell.exe -NoProfile -File $script
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved powershell fallback')
+        # -ExecutionPolicy Bypass applies only to this approved enum.ps1 path;
+        # it does not disable AppLocker/WDAC/AMSI/ETW or other host controls.
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Authorized')
+        if ($isJson) { $psArgs += '-Json' }
+        try {
+          & powershell.exe @psArgs
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: powershell fallback launch failed: $($_.Exception.Message)")
+          $status = 126
         }
-        exit $LASTEXITCODE
+        if ($status -eq 0) { exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: powershell fallback blocked (exit $status); trying next host")
+          break
+        }
+        exit $status
       }
       'jscript' {
         $script = Resolve-FallbackPath 'enum.js'
@@ -159,11 +183,23 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'jscript-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved jscript fallback')
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved jscript fallback')
         $jsArgs = @('//nologo', $script, '--authorized')
         if ($isJson) { $jsArgs += '--json' }
-        & cscript.exe @jsArgs
-        exit $LASTEXITCODE
+        try {
+          & cscript.exe @jsArgs
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: jscript fallback launch failed: $($_.Exception.Message)")
+          $status = 126
+        }
+        if ($status -eq 0) { exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: jscript fallback blocked (exit $status); trying next host")
+          break
+        }
+        exit $status
       }
       'msbuild' {
         $project = Resolve-FallbackPath 'EnumTasks.csproj'
@@ -177,13 +213,25 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; using approved msbuild fallback')
-        if ($isJson) {
-          & msbuild.exe $project /nologo /v:minimal /p:StealthyJson=true
-        } else {
-          & msbuild.exe $project /nologo /v:minimal
+        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved msbuild fallback')
+        try {
+          if ($isJson) {
+            & msbuild.exe $project /nologo /v:minimal /p:StealthyJson=true
+          } else {
+            & msbuild.exe $project /nologo /v:minimal
+          }
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: msbuild fallback launch failed: $($_.Exception.Message)")
+          $status = 126
         }
-        exit $LASTEXITCODE
+        if ($status -eq 0) { exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: msbuild fallback blocked (exit $status); trying next host")
+          break
+        }
+        exit $status
       }
       default {
         [Console]::Error.WriteLine("dispatcher: ignoring unknown fallback '$fallback'")
@@ -200,7 +248,11 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
     & $primary @argsToRun
     $status = $LASTEXITCODE
     if ($null -eq $status) { $status = 0 }
-    if ($status -in @(126, 127)) {
+    if (Test-BlockStatus $status) {
+      [Console]::Error.WriteLine("dispatcher: primary launch blocked (exit $status)")
+      $primaryBlocked = $true
+    } elseif (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
+      [Console]::Error.WriteLine('dispatcher: primary vanished after launch (possible quarantine)')
       $primaryBlocked = $true
     } else {
       exit $status
@@ -216,5 +268,3 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
 if ($primaryBlocked) {
   Invoke-ApprovedFallbacks
 }
-
-Invoke-ApprovedFallbacks

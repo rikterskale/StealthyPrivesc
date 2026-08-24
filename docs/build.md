@@ -231,7 +231,7 @@ STAGE=release-staging/stealthy-linux-x86_64
 rm -rf "$STAGE"
 mkdir -p "$STAGE/scripts/linux" "$STAGE/docs"
 cp target/release/stealthy "$STAGE/"
-cp scripts/linux/enum.sh scripts/linux/enum.py "$STAGE/scripts/linux/"
+cp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl scripts/linux/run.sh "$STAGE/scripts/linux/"
 cp README.md docs/installation.md docs/user-guide.md \
   docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
 chmod 0755 "$STAGE/stealthy" "$STAGE/scripts/linux/"*

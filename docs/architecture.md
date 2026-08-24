@@ -56,10 +56,14 @@ separate gated technique families. See `docs/techniques.md`.
 Under AppLocker/WDAC/SmartScreen/AV/`noexec`/AppArmor or missing binary execution,
 the staged dispatcher walks an ordered, manifest-approved host list:
 
-- Linux (`run.sh`): `python,bash` → `enum.py` / `enum.sh`
+- Linux (`run.sh`): `python,bash,sh,perl` → `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl`
 - Windows (`run.ps1`): `powershell,jscript,msbuild` → `enum.ps1` / `enum.js` / `EnumTasks.csproj`
 
-These mirror the highest-value checks — including endpoint-control inventory —
-without shipping a custom `.exe`. Weaker tiers declare honest reduced
-`capability_delta`. Stronger AV interference is Planned under separate gated
-technique families (see `docs/techniques.md`).
+When the primary is blocked (missing, not executable, exit 126/127, signal
+death, or vanished after launch), the dispatcher walks the list and continues
+to the next host if a tier is itself blocked. Script tiers are fixed
+enumerate-only reduced coverage: only authorization and `--json` / `-Json` are
+forwarded from the binary CLI (`--profile`, `--plugins`, and similar flags are
+not applied). Weaker tiers declare honest reduced `capability_delta`. Stronger
+AV interference is Planned under separate gated technique families (see
+`docs/techniques.md`).

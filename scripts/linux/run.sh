@@ -2,6 +2,10 @@
 # StealthyPrivesc policy-bound dispatcher — authorized assessments only.
 # This launcher may select an approved script fallback when the primary
 # executable cannot start. It never disables or bypasses host controls.
+#
+# Fallback hosts are fixed enumerate-only reduced coverage. Only auth
+# (via STEALTHY_AUTHORIZED) and --json / --format json are forwarded;
+# binary flags such as --profile / --plugins are not applied to scripts.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,7 +76,7 @@ primary="$drop_dir/$primary_name"
 if [[ -f "$primary_src" && "$primary_src" != "$primary" ]]; then
   install -m 0750 "$primary_src" "$primary"
 fi
-for file in enum.py enum.sh; do
+for file in enum.py enum.sh enum-posix.sh enum.pl; do
   source="$script_dir/$file"
   [[ -f "$source" ]] || source="$bundle_dir/scripts/linux/$file"
   [[ -f "$source" ]] && install -m 0750 "$source" "$drop_dir/$file"
@@ -101,18 +105,55 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 
-run_fallback() {
-  local interpreter="$1"
-  local script="$2"
-  export STEALTHY_EXECUTION_PATH="$interpreter-fallback"
+# Launch/block statuses: not-executable / not-found (126/127) and signal
+# deaths (e.g. 137 = SIGKILL / AV). Preserve tool contracts 0 / 2 / 4 and
+# ordinary non-zero CLI failures by not treating those as blocked.
+is_block_status() {
+  local status="$1"
+  case "$status" in
+    126|127) return 0 ;;
+  esac
+  if [[ "$status" -gt 128 ]]; then
+    return 0
+  fi
+  return 1
+}
+
+# Returns 0 if the fallback should be treated as blocked (try next host).
+# Non-block script failures are terminal for that host attempt only when
+# status is not a block code — caller decides whether to continue.
+try_fallback() {
+  local label="$1"
+  local interpreter="$2"
+  local script="$3"
+  shift 3
+  local -a extra_args=("$@")
+
+  export STEALTHY_EXECUTION_PATH="${label}-fallback"
   export STEALTHY_PRIMARY_LAUNCH="blocked"
   export STEALTHY_MANIFEST_ROE_REF="${STEALTHY_ROE_REF:-${cfg[roe_ref]}}"
-  echo "dispatcher: primary executable blocked; using approved $interpreter fallback" >&2
+  echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2
+
+  local -a cmd=("$interpreter" "$script" --authorized)
   if [[ "$is_json" == true ]]; then
-    "$interpreter" "$script" --json
-  else
-    "$interpreter" "$script"
+    cmd+=(--json)
   fi
+  cmd+=("${extra_args[@]}")
+
+  set +e
+  "${cmd[@]}"
+  local status=$?
+  set -e
+
+  if [[ "$status" -eq 0 ]]; then
+    exit 0
+  fi
+  if is_block_status "$status"; then
+    echo "dispatcher: $label fallback blocked (exit $status); trying next host" >&2
+    return 0
+  fi
+  # Auth or fail-on style outcomes from the script itself.
+  exit "$status"
 }
 
 primary_blocked=false
@@ -121,31 +162,76 @@ if [[ -x "$primary" ]]; then
   "$primary" "${primary_args[@]}"
   status=$?
   set -e
-  case "$status" in
-    126|127) primary_blocked=true ;;
-    *) exit "$status" ;;
-  esac
+  if is_block_status "$status"; then
+    echo "dispatcher: primary launch blocked (exit $status)" >&2
+    primary_blocked=true
+  elif [[ ! -e "$primary" ]]; then
+    echo "dispatcher: primary vanished after launch (possible quarantine)" >&2
+    primary_blocked=true
+  else
+    exit "$status"
+  fi
 else
   primary_blocked=true
 fi
 
-if [[ "$primary_blocked" == true ]]; then
-  IFS=',' read -ra fallbacks <<< "${cfg[linux_fallbacks]:-python,bash}"
-  for fallback in "${fallbacks[@]}"; do
-    case "$fallback" in
-      python)
-        if command -v python3 >/dev/null 2>&1 && [[ -f "$drop_dir/enum.py" ]]; then
-          run_fallback python3 "$drop_dir/enum.py"
-          exit $?
-        fi ;;
-      bash)
-        if command -v bash >/dev/null 2>&1 && [[ -f "$drop_dir/enum.sh" ]]; then
-          run_fallback bash "$drop_dir/enum.sh"
-          exit $?
-        fi ;;
-      *) echo "dispatcher: ignoring unknown fallback '$fallback'" >&2 ;;
-    esac
-  done
-  echo "dispatcher: no approved executable or fallback is available" >&2
-  exit 126
+if [[ "$primary_blocked" != true ]]; then
+  exit 0
 fi
+
+IFS=',' read -ra fallbacks <<< "${cfg[linux_fallbacks]:-python,bash,sh,perl}"
+for fallback in "${fallbacks[@]}"; do
+  fallback="${fallback//[[:space:]]/}"
+  case "$fallback" in
+    python)
+      if ! command -v python3 >/dev/null 2>&1; then
+        echo "dispatcher: skipping python fallback (python3 unavailable)" >&2
+        continue
+      fi
+      if [[ ! -f "$drop_dir/enum.py" ]]; then
+        echo "dispatcher: skipping python fallback (enum.py missing)" >&2
+        continue
+      fi
+      try_fallback python python3 "$drop_dir/enum.py"
+      ;;
+    bash)
+      if ! command -v bash >/dev/null 2>&1; then
+        echo "dispatcher: skipping bash fallback (bash unavailable)" >&2
+        continue
+      fi
+      if [[ ! -f "$drop_dir/enum.sh" ]]; then
+        echo "dispatcher: skipping bash fallback (enum.sh missing)" >&2
+        continue
+      fi
+      try_fallback bash bash "$drop_dir/enum.sh"
+      ;;
+    sh)
+      if ! command -v sh >/dev/null 2>&1; then
+        echo "dispatcher: skipping sh fallback (sh unavailable)" >&2
+        continue
+      fi
+      if [[ ! -f "$drop_dir/enum-posix.sh" ]]; then
+        echo "dispatcher: skipping sh fallback (enum-posix.sh missing)" >&2
+        continue
+      fi
+      try_fallback sh sh "$drop_dir/enum-posix.sh"
+      ;;
+    perl)
+      if ! command -v perl >/dev/null 2>&1; then
+        echo "dispatcher: skipping perl fallback (perl unavailable)" >&2
+        continue
+      fi
+      if [[ ! -f "$drop_dir/enum.pl" ]]; then
+        echo "dispatcher: skipping perl fallback (enum.pl missing)" >&2
+        continue
+      fi
+      try_fallback perl perl "$drop_dir/enum.pl"
+      ;;
+    *)
+      echo "dispatcher: ignoring unknown fallback '$fallback'" >&2
+      ;;
+  esac
+done
+
+echo "dispatcher: no approved executable or fallback is available" >&2
+exit 126

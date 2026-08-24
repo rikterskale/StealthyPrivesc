@@ -608,17 +608,24 @@ fn linux_direct_fallbacks_require_authorization() {
     let scripts = [
         ("bash", "scripts/linux/enum.sh"),
         ("python3", "scripts/linux/enum.py"),
+        ("sh", "scripts/linux/enum-posix.sh"),
+        ("perl", "scripts/linux/enum.pl"),
     ];
     for (interpreter, script) in scripts {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join(script);
-        let output = std::process::Command::new(interpreter)
-            .arg(path)
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(output) = std::process::Command::new(interpreter)
+            .arg(&path)
             .arg("--json")
             .env_remove("STEALTHY_AUTHORIZED")
             .output()
-            .unwrap();
+        else {
+            continue;
+        };
         assert_eq!(output.status.code(), Some(2), "{interpreter} {script}");
         assert!(String::from_utf8_lossy(&output.stderr).contains("Authorization required"));
     }
@@ -688,6 +695,9 @@ fn stage_and_verify_local_bundle() {
     assert!(manifest.contains("authorization_ack=true"));
     assert!(manifest.contains("operator_ack_required=true"));
     assert!(manifest.contains("primary_binary=cache-update"));
+    assert!(manifest.contains("linux_fallbacks=python,bash,sh,perl"));
+    assert!(out.join("scripts/enum-posix.sh").is_file());
+    assert!(out.join("scripts/enum.pl").is_file());
     let sums = std::fs::read_to_string(out.join("SHA256SUMS")).unwrap();
     let expect = sums.split_whitespace().next().unwrap();
     let verify = stealthy()
@@ -771,6 +781,237 @@ fn staged_dispatcher_requires_fresh_authorization() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("Authorization required"));
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_windows_manifest_lists_script_hosts() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin.exe");
+    std::fs::write(&bin, b"MZ-fake").unwrap();
+    let output = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "windows",
+            "--arch",
+            "x86_64",
+            "--name",
+            "stealthy",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+    assert!(manifest.contains("windows_fallbacks=powershell,jscript,msbuild"));
+    assert!(out.join("scripts/run.ps1").is_file());
+    assert!(out.join("scripts/enum.ps1").is_file());
+    assert!(out.join("scripts/enum.js").is_file());
+    assert!(out.join("scripts/EnumTasks.csproj").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_falls_back_when_primary_exits_126() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 126\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .arg("--authorized")
+        .arg("--json")
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stderr={stderr}\nstdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(stderr.contains("primary launch blocked"));
+    assert!(
+        stderr.contains("trying approved python fallback")
+            || stderr.contains("trying approved bash fallback")
+            || stderr.contains("trying approved sh fallback")
+            || stderr.contains("trying approved perl fallback"),
+        "stderr={stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"coverage_mode\"") || stdout.contains("schema_version"),
+        "stdout={stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_chains_past_blocked_first_fallback() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 126\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+
+    // Force python tier to look available but blocked so the chain continues.
+    std::fs::write(
+        out.join("scripts/enum.py"),
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(126)\n",
+    )
+    .unwrap();
+    let mut py_perms = std::fs::metadata(out.join("scripts/enum.py"))
+        .unwrap()
+        .permissions();
+    py_perms.set_mode(0o750);
+    std::fs::set_permissions(out.join("scripts/enum.py"), py_perms).unwrap();
+
+    let conf = out.join("scripts/stealthy-run.conf");
+    let mut manifest = std::fs::read_to_string(&conf).unwrap();
+    manifest = manifest
+        .lines()
+        .map(|line| {
+            if line.starts_with("linux_fallbacks=") {
+                "linux_fallbacks=python,bash".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !manifest.ends_with('\n') {
+        manifest.push('\n');
+    }
+    std::fs::write(&conf, manifest).unwrap();
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .arg("--authorized")
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stderr={stderr}\nstdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        stderr.contains("trying approved python fallback"),
+        "stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("python fallback blocked") && stderr.contains("trying next host"),
+        "stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("trying approved bash fallback"),
+        "stderr={stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("StealthyPrivesc Linux shell enum") || stdout.contains("LEGAL"),
+        "stdout={stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_falls_back_on_signal_death() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    // 137 = 128 + SIGKILL — treated as primary blocked.
+    std::fs::write(&bin, b"#!/bin/sh\nkill -9 $$\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .arg("--authorized")
+        .arg("--json")
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stderr={stderr}\nstdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(stderr.contains("primary launch blocked"), "stderr={stderr}");
 }
 
 #[cfg(unix)]

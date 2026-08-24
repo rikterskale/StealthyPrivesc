@@ -37,7 +37,7 @@ approved-fixture validation).
 
 | Constraint | Approved path (today) |
 | --- | --- |
-| Linux ELF blocked / `noexec` / AppArmor | `scripts/linux/enum.sh` or `enum.py` |
+| Linux ELF blocked / `noexec` / AppArmor | staged `run.sh` (`python → bash → sh → perl`) or direct `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl` |
 | Windows PE blocked (AppLocker/WDAC/SmartScreen/AV) | Dispatcher `run.ps1` chain, or `enum.ps1` / `enum.js` / `EnumTasks.csproj` |
 | Defender/AV quarantines the staged PE | Prefer non-`TEMP` drop path + lab exclusion/signing; use dispatcher fallback. Stronger interference is Planned (separate family) |
 | PowerShell constrained but `cscript` allowed | `enum.js` |

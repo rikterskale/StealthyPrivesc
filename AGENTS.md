@@ -26,7 +26,7 @@ crates/stealthy/          Rust core (single workspace member)
   src/plugins/linux/      Linux plugins (16)
   src/plugins/windows/    Windows plugins (12)
   src/exploit/            Reversible probes + technique scaffolding
-scripts/linux/            Bash + Python fallbacks
+scripts/linux/            Python + Bash + POSIX sh + Perl fallbacks
 scripts/windows/          PowerShell + JScript + MSBuild host stubs
 docs/                     Operator/architecture docs
 tests/                    Test assets

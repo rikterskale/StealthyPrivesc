@@ -153,7 +153,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     let fallback_order = if opts.os == "windows" {
         "powershell,jscript,msbuild"
     } else {
-        "python,bash"
+        "python,bash,sh,perl"
     };
     let manifest = format!(
         "# Generated dispatcher manifest — inherits the primary-run authorization context.\n\
@@ -194,7 +194,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              binary_sha256={}\n\n\
              Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
              Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
-             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: powershell,jscript,msbuild)\n\n\
+             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: powershell,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             opts.os, opts.arch, opts.name, hash
@@ -206,6 +206,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              binary_sha256={}\n\n\
              Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
              Enumerate (requires a fresh operator acknowledgment):\n  bash ./scripts/run.sh --authorized --profile balanced enum\n\n\
+             If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             opts.os, opts.arch, opts.name, hash
         )

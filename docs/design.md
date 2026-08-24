@@ -53,8 +53,8 @@ describe the behavior users can rely on today.
    contract, allowing platform-specific selection and targeted reruns.
 6. **Memory-first output** — findings stay in the encrypted in-memory store by
    default. File and remote modes require an explicit operator choice.
-7. **Script fallbacks** — approved Bash, Python, PowerShell, JScript, and
-   MSBuild-hosted fallbacks cover restricted binary environments with reduced
+7. **Script fallbacks** — approved Python, Bash, POSIX sh, Perl, PowerShell,
+   JScript, and MSBuild-hosted fallbacks cover restricted binary environments with reduced
    coverage and a separate evidence contract.
 
 ## Current architecture
@@ -148,7 +148,7 @@ Every behavior change should preserve or update these checks:
   output, diff, and failure semantics
 - Markdown structure, local links, required headings, and pinned workflow
   actions
-- Linux/Python and Windows PowerShell fallback syntax checks
+- Linux (Python/Bash/POSIX sh/Perl) and Windows PowerShell fallback syntax checks
 - Security/supply-chain checks and the final CI readiness gate
 
 When a design decision changes, update this document and the linked

@@ -15,5 +15,7 @@ target_hostname=AUTO
 target_username=
 drop_dir=
 primary_binary=stealthy
-linux_fallbacks=python,bash
-windows_fallbacks=powershell
+# Ordered hosts tried after a blocked primary. Script tiers are fixed
+# enumerate-only reduced coverage (only auth + --json are forwarded).
+linux_fallbacks=python,bash,sh,perl
+windows_fallbacks=powershell,jscript,msbuild

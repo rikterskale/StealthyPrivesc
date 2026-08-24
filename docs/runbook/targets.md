@@ -23,10 +23,10 @@ and [run](../operator-runbook.md#3-run-on-a-linux-target).
    ```
 
 6. Inspect identity, mode, plugin coverage, and errors before narrowing scope.
-7. Run the staged dispatcher. It reuses the approved manifest, stages the
-   bundle, tries the binary, and automatically selects the approved script
-   fallback if the binary cannot launch. Record reduced coverage rather than
-   bypassing the control.
+7. Run the staged dispatcher. It reuses the approved manifest, tries the
+   binary, and walks approved script hosts if the binary cannot launch
+   (`python → bash → sh → perl`). Record reduced coverage rather than
+   bypassing the control. Script tiers only forward auth and `--json`.
 
 ## Windows
 
@@ -47,8 +47,10 @@ and [run](../operator-runbook.md#5-run-on-a-windows-target).
 
 5. Run `scripts\run.ps1` from the staged bundle. If SmartScreen, AppLocker,
    WDAC, or another policy blocks the executable, the dispatcher records the
-   launch failure and invokes the manifest-approved PowerShell fallback. Use
-   `--allow-techniques endpoint-bypass` only when ROE explicitly permits
+   launch failure and walks the manifest-approved hosts in order:
+   **powershell → jscript → msbuild**. Each blocked tier continues to the
+   next; script coverage is reduced and only auth / `--json` are forwarded.
+   Use `--allow-techniques endpoint-bypass` only when ROE explicitly permits
    alternate-path tracking and approved-fixture validation — this tool does
    not disable, unhook, or kill those controls (see `docs/techniques.md`).
 

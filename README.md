@@ -38,7 +38,7 @@ crates/stealthy/          Rust core (static-friendly release profile)
   src/plugins/linux/      Linux checks (16): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls, app-control assessment
   src/plugins/windows/    Windows checks (12): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls, app-control assessment
   src/exploit/            Reversible probes + `--allow-techniques` scaffolding
-scripts/linux/            Bash + Python fallbacks (no custom binary; includes control checks)
+scripts/linux/            Python + Bash + POSIX sh + Perl fallbacks (no custom binary; includes control checks)
 scripts/windows/          PowerShell + JScript + MSBuild host stubs (includes control checks)
 docs/                     Architecture, build, technique risk notes
 ```
@@ -139,20 +139,26 @@ bash ./drop/scripts/run.sh --authorized --profile balanced enum
 ### Script-only fallbacks
 
 Use the staged dispatcher as the normal entrypoint. It verifies the approved
-manifest, stages the bundle, tries the primary executable, and automatically
-selects an approved script fallback only when the executable cannot launch.
-The manifest carries inherited ROE context and binds execution to the current
-host; it does not grant permission or override host policy. The dispatcher
-requires a fresh authorization acknowledgment and forwards it to the selected
-execution path.
+manifest, tries the primary executable, and walks an ordered list of approved
+script hosts only when the executable cannot launch (missing, not executable,
+exit 126/127, signal death, or vanished after launch). A blocked script tier
+continues to the next host. The manifest carries inherited ROE context and
+binds execution to the current host; it does not grant permission or override
+host policy. The dispatcher requires a fresh authorization acknowledgment.
+
+Script tiers are fixed enumerate-only reduced coverage: only authorization and
+`--json` / `-Json` are forwarded. Binary flags such as `--profile` /
+`--plugins` are not applied to fallbacks.
 
 ```bash
+# Linux default walk: python → bash → sh → perl
 bash ./drop/scripts/run.sh --authorized --profile balanced enum
 ```
 
 On Windows:
 
 ```powershell
+# Windows default walk: powershell → jscript → msbuild
 & .\drop\scripts\run.ps1 --authorized --profile balanced enum
 ```
 
@@ -165,8 +171,10 @@ not an approved execution path.
 
 ```bash
 # Linux
-bash scripts/linux/enum.sh --authorized
 python3 scripts/linux/enum.py --authorized
+bash scripts/linux/enum.sh --authorized
+sh scripts/linux/enum-posix.sh --authorized
+perl scripts/linux/enum.pl --authorized
 
 # Windows — prefer staged dispatcher (PE → powershell → jscript → msbuild)
 # & .\drop\scripts\run.ps1 --authorized enum
