@@ -45,3 +45,18 @@ are available through `--auto-exploit`, and high-impact families through
 - Triage flow (`--triage`, `--triage-out`, `--approve-file`) for stepwise probes.
 - Script JSON parity (`enum.py --json`) and `stealthy ingest`.
 - Delivery kit: `stage`, `verify`, `one-liners`.
+
+## Roadmap hardening (implemented)
+
+- Stable semantic finding identities from `plugin` + `object` + `condition`
+  and a distinct `scaffold` finding kind.
+- Finding-scoped approve-file probes and preserved isolated-worker notes.
+- Profile noise budgets and bounded/cancellable Linux SUID/SGID/capability
+  traversal, with structured recommend-only GTFOBins annotations.
+- Distro/package-aware kernel CVE hints with backport uncertainty.
+- Native Windows service/task object-security evaluation, read-only DLL
+  candidate ACL enumeration, and explicit per-script coverage deltas.
+- Protected sealed-report key output on Unix and Windows.
+- Full release kits, SPDX SBOMs, GitHub attestations, Linux aarch64 GNU,
+  full tag gates, cargo-deny/Gitleaks, a 65% coverage floor, constrained build
+  flavors, and a nightly safe fixture matrix.

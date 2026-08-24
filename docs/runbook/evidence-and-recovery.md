@@ -19,24 +19,28 @@ operations.
 
 ## Sealed output and key custody
 
-Use `--verbose` without `--quiet` so the key is printed to stderr. Move the
-key immediately into the approved secret store. Do not store the key beside
+Supply a protected key destination with `--key-output-path` or
+`STEALTHY_KEY_OUTPUT_PATH`. The full key is never printed to stderr. Move the
+key file immediately into the approved secret store. Do not store it beside
 the sealed file, in shell history, or in an ordinary ticket.
 
 ```bash
 BIN=/approved/drop/stealthy
 OUT=/approved/evidence/findings.seal
+KEY_OUT=/approved/keys/findings.key
 STEALTHY_AUTHORIZED=1 "$BIN" --verbose \
-  --output file --output-path "$OUT" --also-markdown enum \
-  2> /approved/evidence/run.stderr.txt
+  --output file --output-path "$OUT" --key-output-path "$KEY_OUT" \
+  --also-markdown enum
 sha256sum "$OUT"
 ```
 
 Decrypt sealed reports on an approved operator workstation:
 
 ```bash
-"$BIN" report "$SEALED" --key-hex "$KEY_HEX" --format json > findings.json
-"$BIN" report "$SEALED" --key-hex "$KEY_HEX" --format markdown > review.md
+SEALED=/approved/evidence/findings.seal
+KEY_FILE=/approved/keys/findings.key
+"$BIN" report "$SEALED" --key-file "$KEY_FILE" --format json > findings.json
+"$BIN" report "$SEALED" --key-file "$KEY_FILE" --format markdown > review.md
 ```
 
 ## Cleanup

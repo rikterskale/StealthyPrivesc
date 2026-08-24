@@ -1,0 +1,5 @@
+# representative readable sudoers rules; never executed by tests
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+alice ALL=(root) NOPASSWD: /usr/bin/find /var/log -type f
+%wheel ALL=(ALL:ALL) /usr/bin/systemctl status *
+bob ALL=(root) NOPASSWD: /usr/bin/vim /etc/hosts

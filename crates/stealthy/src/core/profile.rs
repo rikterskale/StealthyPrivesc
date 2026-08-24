@@ -1,6 +1,14 @@
 //! Named engagement / OPSEC profiles.
 
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoiseBudget {
+    pub allow_external_helpers: bool,
+    pub max_walk_entries: usize,
+    pub max_helper_records: usize,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
 pub enum EngagementProfile {
@@ -37,7 +45,32 @@ impl EngagementProfile {
     }
 
     pub fn prefer_quiet(self) -> bool {
-        matches!(self, Self::Quiet)
+        !matches!(self, Self::Thorough)
+    }
+
+    pub fn noise_budget(self) -> NoiseBudget {
+        match self {
+            Self::Quiet => NoiseBudget {
+                allow_external_helpers: false,
+                max_walk_entries: 2_000,
+                max_helper_records: 50,
+            },
+            Self::Balanced => NoiseBudget {
+                allow_external_helpers: false,
+                max_walk_entries: 10_000,
+                max_helper_records: 200,
+            },
+            Self::Thorough => NoiseBudget {
+                allow_external_helpers: true,
+                max_walk_entries: 100_000,
+                max_helper_records: 2_000,
+            },
+            Self::Ci => NoiseBudget {
+                allow_external_helpers: false,
+                max_walk_entries: 5_000,
+                max_helper_records: 100,
+            },
+        }
     }
 
     pub fn force_quiet_console(self) -> bool {
@@ -57,7 +90,9 @@ impl EngagementProfile {
             Self::Quiet => {
                 "Low-noise reads; skip sudo helpers/getcap/getfacl; slim control collect; higher delay"
             }
-            Self::Balanced => "Default enumerate posture",
+            Self::Balanced => {
+                "High-signal read-only checks; external helper scans require the thorough profile"
+            }
             Self::Thorough => "Full plugin set, no delay, verbose progress",
             Self::Ci => "Quiet JSON automation posture",
         }

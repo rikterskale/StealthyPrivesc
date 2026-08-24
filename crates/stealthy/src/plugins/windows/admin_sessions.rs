@@ -19,10 +19,10 @@ impl Plugin for AdminSessionsPlugin {
         &["windows"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        match local_admins() {
+        match local_admins(ctx.cancel.as_ref()) {
             Ok(members) => {
                 if members.is_empty() {
                     findings.push(Finding {
@@ -34,20 +34,27 @@ impl Plugin for AdminSessionsPlugin {
                         recommendation: "Cross-check with scripts/windows/enum.ps1.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: "local-group:Administrators".into(),
+                        condition: "local-administrators-empty".into(),
                         ..Default::default()
                     });
                 }
                 for m in members {
+                    if ctx.cancelled() {
+                        break;
+                    }
                     findings.push(Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Enumeration,
                         severity: Severity::Low,
                         title: format!("Local Administrators member: {m}"),
-                        detail: m,
+                        detail: m.clone(),
                         recommendation:
                             "Cross-check for active sessions / tokens of these principals.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: format!("local-group:Administrators|member:{m}"),
+                        condition: "local-administrators-member".into(),
                         ..Default::default()
                     });
                 }
@@ -63,6 +70,8 @@ impl Plugin for AdminSessionsPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: "local-group:Administrators".into(),
+                    condition: "local-administrators-enumeration-unavailable".into(),
                     ..Default::default()
                 });
             }
@@ -79,6 +88,8 @@ impl Plugin for AdminSessionsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "environment:SESSIONNAME".into(),
+                condition: "session-name-present".into(),
                 ..Default::default()
             });
         }
@@ -93,6 +104,8 @@ impl Plugin for AdminSessionsPlugin {
                 recommendation: "Compare against Administrators membership list.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "environment:USERNAME".into(),
+                condition: "current-username-present".into(),
                 ..Default::default()
             });
         }
@@ -107,6 +120,8 @@ impl Plugin for AdminSessionsPlugin {
                 recommendation: "Retry with elevated context or script fallback.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-admin-session-inventory".into(),
+                condition: "no-admin-session-finding".into(),
                 ..Default::default()
             });
         }
@@ -116,7 +131,7 @@ impl Plugin for AdminSessionsPlugin {
 }
 
 #[cfg(windows)]
-fn local_admins() -> Result<Vec<String>> {
+fn local_admins(cancel: &std::sync::atomic::AtomicBool) -> Result<Vec<String>> {
     use std::ptr;
     use windows_sys::Win32::NetworkManagement::NetManagement::{
         NetApiBufferFree, NetLocalGroupGetMembers, MAX_PREFERRED_LENGTH,
@@ -152,6 +167,9 @@ fn local_admins() -> Result<Vec<String>> {
             let slice =
                 std::slice::from_raw_parts(buf as *const LocalGroupMembersInfo3, entries as usize);
             for m in slice {
+                if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 if m.domainandname.is_null() {
                     continue;
                 }
@@ -178,6 +196,6 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 #[cfg(not(windows))]
-fn local_admins() -> Result<Vec<String>> {
+fn local_admins(_cancel: &std::sync::atomic::AtomicBool) -> Result<Vec<String>> {
     Ok(vec![])
 }

@@ -62,6 +62,8 @@ mod tests {
             recommendation: "review".into(),
             noisy: true,
             leaves_artifacts: false,
+            object: "/etc/sudoers.d/example".into(),
+            condition: "nopasswd-rule".into(),
             ..Default::default()
         });
         assert_eq!(finding.finding_id.len(), 16);
@@ -71,13 +73,32 @@ mod tests {
             plugin: "linux.sudo".into(),
             kind: FindingKind::Misconfiguration,
             severity: Severity::High,
-            title: "NOPASSWD sudo rule(s) present".into(),
+            title: "Sudo rule permits passwordless execution".into(),
             detail: "different detail".into(),
             recommendation: "review".into(),
             noisy: true,
             leaves_artifacts: false,
+            object: "/etc/sudoers.d/example".into(),
+            condition: "nopasswd-rule".into(),
             ..Default::default()
         });
         assert_eq!(finding.finding_id, again.finding_id);
+    }
+
+    #[test]
+    fn legacy_fallback_does_not_depend_on_title_wording() {
+        let first = finalize_finding(Finding {
+            plugin: "legacy.script".into(),
+            title: "Original wording".into(),
+            detail: "path=/tmp/example state=readable".into(),
+            ..Default::default()
+        });
+        let second = finalize_finding(Finding {
+            plugin: "legacy.script".into(),
+            title: "Reworded title".into(),
+            detail: "path=/tmp/example state=readable".into(),
+            ..Default::default()
+        });
+        assert_eq!(first.finding_id, second.finding_id);
     }
 }

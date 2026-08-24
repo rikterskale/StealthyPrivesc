@@ -1,0 +1,75 @@
+name: Nightly safe lab fixtures
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-safe-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-fixtures:
+    name: Local fixture tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: nightly-${{ matrix.os }}
+
+      - name: Run safe local Rust fixtures and tests
+        run: cargo test --locked --workspace
+
+      - name: Build enumeration-only flavor marker
+        run: |
+          cargo build --locked -p stealthy --profile enum-only --no-default-features --features enum-only
+          cargo test --locked -p stealthy --no-default-features --features enum-only enum_only_build_rejects_probe_flags
+
+      - name: Validate local Linux fallback fixtures
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m py_compile scripts/linux/enum.py scripts/release/package.py
+          find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Validate local Windows fallback syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $scripts = Get-ChildItem scripts\windows -Filter *.ps1
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+          }
+
+      - name: Confirm authorization gate remains closed by default
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bin=target/enum-only/stealthy
+          set +e
+          "$bin" enum >/dev/null 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2

@@ -19,7 +19,7 @@ impl Plugin for UacPlugin {
         &["windows"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
         let keys = [
             ("EnableLUA", "UAC master switch (0 = disabled)"),
@@ -36,6 +36,9 @@ impl Plugin for UacPlugin {
         ];
 
         for (name, desc) in keys {
+            if ctx.cancelled() {
+                break;
+            }
             if let Some(v) = read_u32(name)? {
                 let severity = match (name, v) {
                     ("EnableLUA", 0) => Severity::High,
@@ -52,6 +55,8 @@ impl Plugin for UacPlugin {
                         recommendation: "Weak UAC settings enable auto-elevation / token abuse paths; validate against hardening baselines.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\{name}"),
+                        condition: format!("uac-policy-value:{v}"),
                         ..Default::default()
                     });
             }
@@ -67,6 +72,8 @@ impl Plugin for UacPlugin {
                 recommendation: "Confirm registry access; use script fallback if needed.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System".into(),
+                condition: "no-uac-policy-value-readable".into(),
                 ..Default::default()
             });
         }

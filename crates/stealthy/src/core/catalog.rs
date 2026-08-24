@@ -1,6 +1,7 @@
 //! Internal technique catalog and default MITRE ATT&CK mappings.
 
 use crate::core::types::{Finding, FindingKind, Severity};
+use sha2::{Digest, Sha256};
 
 /// Default MITRE technique IDs for a plugin.
 pub fn mitre_for_plugin(plugin: &str) -> &'static [&'static str] {
@@ -66,6 +67,7 @@ pub fn exploitability_for(finding: &Finding) -> u8 {
         FindingKind::Misconfiguration | FindingKind::Credential => 5,
         FindingKind::Enumeration => 0,
         FindingKind::Recommendation => -15,
+        FindingKind::Scaffold => -20,
     };
     let noisy_adj = if finding.noisy { -5 } else { 0 };
     ((base as i16) + kind_adj + noisy_adj).clamp(0, 100) as u8
@@ -82,10 +84,14 @@ pub fn time_to_impact_for(finding: &Finding) -> String {
     }
 }
 
-/// Normalize object/condition when plugins leave them empty.
+/// Supply deterministic compatibility identities for legacy/ingested findings.
+///
+/// Native findings are expected to provide both fields. The fallback avoids
+/// title-derived identities so wording-only title changes do not create drift.
 pub fn derive_object_condition(finding: &Finding) -> (String, String) {
     let object = if finding.object.is_empty() {
-        normalize_token(&finding.title)
+        let digest = Sha256::digest(finding.detail.as_bytes());
+        format!("legacy:{}:{}", finding.plugin, hex::encode(&digest[..8]))
     } else {
         finding.object.clone()
     };
@@ -95,20 +101,4 @@ pub fn derive_object_condition(finding: &Finding) -> (String, String) {
         finding.condition.clone()
     };
     (object, condition)
-}
-
-fn normalize_token(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('_')
-        .chars()
-        .take(64)
-        .collect()
 }

@@ -1,6 +1,9 @@
 use anyhow::Result;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -35,8 +38,18 @@ impl Plugin for SystemdCronPlugin {
             "/run/systemd/system",
         ];
         for dir in unit_dirs {
-            check_writable_tree(dir, euid, &gids, "systemd unit path", &mut findings);
-            scan_timers(dir, euid, &gids, &mut findings);
+            if ctx.cancelled() {
+                break;
+            }
+            check_writable_tree(
+                dir,
+                euid,
+                &gids,
+                "systemd unit path",
+                &ctx.cancel,
+                &mut findings,
+            );
+            scan_timers(dir, euid, &gids, &ctx.cancel, &mut findings);
         }
 
         if let Ok(home) = std::env::var("HOME") {
@@ -44,8 +57,18 @@ impl Plugin for SystemdCronPlugin {
                 format!("{home}/.config/systemd/user"),
                 format!("{home}/.local/share/systemd/user"),
             ] {
-                check_writable_tree(&dir, euid, &gids, "user systemd unit path", &mut findings);
-                scan_timers(&dir, euid, &gids, &mut findings);
+                if ctx.cancelled() {
+                    break;
+                }
+                check_writable_tree(
+                    &dir,
+                    euid,
+                    &gids,
+                    "user systemd unit path",
+                    &ctx.cancel,
+                    &mut findings,
+                );
+                scan_timers(&dir, euid, &gids, &ctx.cancel, &mut findings);
             }
         }
 
@@ -59,7 +82,10 @@ impl Plugin for SystemdCronPlugin {
             "/var/spool/cron/crontabs",
         ];
         for p in cron_paths {
-            check_writable_tree(p, euid, &gids, "cron path", &mut findings);
+            if ctx.cancelled() {
+                break;
+            }
+            check_writable_tree(p, euid, &gids, "cron path", &ctx.cancel, &mut findings);
         }
         if let Ok(user) = std::env::var("USER").or_else(|_| std::env::var("LOGNAME")) {
             check_writable_tree(
@@ -67,6 +93,7 @@ impl Plugin for SystemdCronPlugin {
                 euid,
                 &gids,
                 "current-user crontab",
+                &ctx.cancel,
                 &mut findings,
             );
         }
@@ -74,7 +101,10 @@ impl Plugin for SystemdCronPlugin {
         if ctx.auto_exploit {
             // Only probe directories we ourselves can write — reversible marker.
             for f in findings.clone() {
-                if ctx.probe_allowed_for(&f) && f.title.contains("Writable") {
+                if ctx.cancelled() {
+                    break;
+                }
+                if ctx.probe_allowed_for(&f) && f.condition.starts_with("writable-") {
                     if let Some(path) = f.detail.strip_prefix("path=") {
                         let path = Path::new(path.trim());
                         if path.is_dir() {
@@ -88,6 +118,8 @@ impl Plugin for SystemdCronPlugin {
                                     recommendation: "Persistence via cron/systemd is noisy; obtain explicit approval first.".into(),
                                     noisy: true,
                                     leaves_artifacts: false,
+                                    object: path.display().to_string(),
+                                    condition: "reversible-writable-probe-confirmed".into(),
                                     ..Default::default()
                                 }),
                                 Ok(false) => {}
@@ -109,6 +141,8 @@ impl Plugin for SystemdCronPlugin {
                 recommendation: "Also review user crontab and timers with systemctl --user list-timers if in scope.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "common-systemd-and-cron-paths".into(),
+                condition: "no-writable-scheduler-paths".into(),
                 ..Default::default()
             });
         }
@@ -117,7 +151,13 @@ impl Plugin for SystemdCronPlugin {
     }
 }
 
-fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) {
+fn scan_timers(
+    dir: &str,
+    euid: u32,
+    gids: &[u32],
+    cancel: &Arc<AtomicBool>,
+    findings: &mut Vec<Finding>,
+) {
     let p = Path::new(dir);
     if !p.is_dir() {
         return;
@@ -126,6 +166,9 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
         return;
     };
     for entry in rd.flatten().take(300) {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
         let path = entry.path();
         let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if !name.ends_with(".timer") {
@@ -143,13 +186,18 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: path.display().to_string(),
+                    condition: "writable-systemd-timer".into(),
                     ..Default::default()
                 });
             }
         }
         // Companion service unit next to timer
-        if let Ok(text) = fs::read_to_string(&path) {
+        if let Some(text) = read_text_bounded(&path, 256 * 1024) {
             for line in text.lines() {
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
                 let t = line.trim();
                 if let Some(unit) = t.strip_prefix("Unit=") {
                     let unit = unit.trim();
@@ -170,6 +218,8 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
                                         "Modify/replace the unit only with ROE approval.".into(),
                                     noisy: false,
                                     leaves_artifacts: false,
+                                    object: companion.display().to_string(),
+                                    condition: "writable-timer-companion-unit".into(),
                                     ..Default::default()
                                 });
                             }
@@ -181,13 +231,24 @@ fn scan_timers(dir: &str, euid: u32, gids: &[u32], findings: &mut Vec<Finding>) 
     }
 }
 
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 fn check_writable_tree(
     path: &str,
     euid: u32,
     gids: &[u32],
     label: &str,
+    cancel: &Arc<AtomicBool>,
     findings: &mut Vec<Finding>,
 ) {
+    if cancel.load(Ordering::SeqCst) {
+        return;
+    }
     let p = Path::new(path);
     let meta = match fs::metadata(p) {
         Ok(m) => m,
@@ -204,6 +265,8 @@ fn check_writable_tree(
             recommendation: "Writable scheduled-task configuration often yields root at next run. Confirm ownership and timers carefully.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: path.into(),
+            condition: "writable-scheduler-root".into(),
             ..Default::default()
         });
     }
@@ -211,7 +274,13 @@ fn check_writable_tree(
     if meta.is_dir() {
         if let Ok(rd) = fs::read_dir(p) {
             for entry in rd.flatten().take(200) {
-                if let Ok(m) = entry.metadata() {
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
+                if let Ok(m) = fs::symlink_metadata(entry.path()) {
+                    if m.file_type().is_symlink() {
+                        continue;
+                    }
                     if is_writable_by(&m, euid, gids) {
                         findings.push(Finding {
                             plugin: "linux.systemd_cron".into(),
@@ -222,6 +291,8 @@ fn check_writable_tree(
                             recommendation: "Inspect unit/cron contents and ExecStart/command lines for injection.".into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            object: entry.path().display().to_string(),
+                            condition: "writable-scheduler-entry".into(),
                             ..Default::default()
                         });
                     }

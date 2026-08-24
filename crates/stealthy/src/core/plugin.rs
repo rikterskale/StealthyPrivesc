@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::core::profile::NoiseBudget;
 use crate::core::store::EncryptedStore;
 use crate::core::types::{ControlAssessment, Finding};
 use crate::exploit::TechniqueAllowlist;
@@ -16,6 +17,7 @@ pub struct PluginContext<'a> {
     /// When true, plugins should skip known-audited helpers (e.g. `sudo -l`, `getcap`).
     #[allow(dead_code)]
     pub prefer_quiet: bool,
+    pub noise_budget: NoiseBudget,
     pub allow_techniques: &'a TechniqueAllowlist,
     #[allow(dead_code)]
     pub store: &'a mut EncryptedStore,

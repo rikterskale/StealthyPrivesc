@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::Path;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -13,7 +14,7 @@ impl Plugin for ServicesPlugin {
         "Service misconfigurations"
     }
     fn description(&self) -> &'static str {
-        "Unquoted service paths and writable service binaries (quiet registry/file checks)"
+        "Read-only service path, binary ACL, and service-object DACL checks"
     }
     fn platforms(&self) -> &'static [&'static str] {
         &["windows"]
@@ -22,32 +23,72 @@ impl Plugin for ServicesPlugin {
     fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        for (name, image_path, account) in list_service_image_paths()? {
+        for (name, image_path, account) in
+            list_service_image_paths(ctx.cancel.as_ref(), ctx.noise_budget.max_walk_entries)?
+        {
+            if ctx.cancelled() {
+                break;
+            }
+            let service_object = format!("service:{name}");
+            let lolbas = super::lolbas_annotation(&image_path);
             if is_unquoted_path(&image_path) {
                 findings.push(Finding {
                     plugin: self.id().into(),
-                    kind: FindingKind::Misconfiguration,
-                    severity: Severity::High,
+                    kind: FindingKind::Enumeration,
+                    severity: Severity::Low,
                     title: format!("Unquoted service path: {name}"),
-                    detail: format!("account={account} image_path={image_path}"),
-                    recommendation: "Unquoted paths with spaces can allow binary planting in parent dirs if writable. Verify the service account and directory ACLs under the approved scope.".into(),
+                    detail: append_annotation(
+                        format!("account={account} image_path={image_path}"),
+                        lolbas.as_deref(),
+                    ),
+                    recommendation: "An unquoted path is exploitable only when an intermediate plant location is writable; review the read-only ACL results below.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: service_object.clone(),
+                    condition: "unquoted-service-image-path".into(),
+                    technique_id: if lolbas.is_some() { "lolbas" } else { "service-path" }.into(),
                     ..Default::default()
                 });
 
                 if let Some(bin) = super::executable_path(&image_path) {
-                    for parent in unquoted_plant_dirs(&bin) {
+                    for (candidate_exe, parent) in unquoted_plant_candidates(&bin) {
+                        if ctx.cancelled() {
+                            break;
+                        }
+                        let acl_state = super::acl::AclState::from_check(
+                            super::acl::is_writable_for_current_user(Path::new(&parent)),
+                        );
                         let candidate = Finding {
                             plugin: self.id().into(),
-                            kind: FindingKind::Recommendation,
-                            severity: Severity::Medium,
-                            title: format!("Unquoted plant candidate dir ({name}): {parent}"),
-                            detail: "Verify ACLs on this intermediate directory.".into(),
-                            recommendation: "If writable by low-priv users, plant a matching .exe name ahead of the real binary."
-                                .into(),
+                            kind: if acl_state == super::acl::AclState::Writable {
+                                FindingKind::Misconfiguration
+                            } else {
+                                FindingKind::Enumeration
+                            },
+                            severity: if acl_state == super::acl::AclState::Writable {
+                                Severity::High
+                            } else {
+                                Severity::Info
+                            },
+                            title: format!("Unquoted service candidate ({name}): {candidate_exe}"),
+                            detail: format!(
+                                "account={account} candidate_executable={candidate_exe} parent_directory={parent} directory_acl=current_token:{}",
+                                acl_state.as_str()
+                            ),
+                            recommendation: if acl_state == super::acl::AclState::Writable {
+                                "Quote the service image path and restrict the intermediate directory ACL; no binary was planted."
+                                    .into()
+                            } else {
+                                "Confirm group-specific rights if the current-token ACL check is unavailable; do not plant a binary without explicit approval."
+                                    .into()
+                            },
                             noisy: false,
                             leaves_artifacts: false,
+                            object: format!("{service_object}|candidate:{candidate_exe}"),
+                            condition: format!(
+                                "unquoted-plant-directory-acl:{}",
+                                acl_state.as_str()
+                            ),
                             ..Default::default()
                         };
                         let probe_allowed = ctx.probe_allowed_for(&candidate);
@@ -68,6 +109,11 @@ impl Plugin for ServicesPlugin {
                                             .into(),
                                         noisy: true,
                                         leaves_artifacts: false,
+                                        object: format!(
+                                            "{service_object}|candidate:{candidate_exe}"
+                                        ),
+                                        condition: "writable-unquoted-plant-directory-probe"
+                                            .into(),
                                         ..Default::default()
                                     });
                                 }
@@ -78,18 +124,29 @@ impl Plugin for ServicesPlugin {
             }
 
             if let Some(bin) = super::executable_path(&image_path) {
-                if super::acl::is_writable_for_current_user(std::path::Path::new(&bin))
-                    .unwrap_or(false)
+                if super::acl::AclState::from_check(super::acl::is_writable_for_current_user(
+                    Path::new(&bin),
+                )) == super::acl::AclState::Writable
                 {
                     findings.push(Finding {
                         plugin: self.id().into(),
                         kind: FindingKind::Misconfiguration,
-                        severity: Severity::Critical,
+                        severity: if is_high_priv_account(&account) {
+                            Severity::Critical
+                        } else {
+                            Severity::High
+                        },
                         title: format!("Writable service binary: {name}"),
-                        detail: format!("account={account} binary={bin}"),
+                        detail: append_annotation(
+                            format!("account={account} binary={bin} binary_acl=current_token:writable"),
+                            lolbas.as_deref(),
+                        ),
                         recommendation: "Replacing a service binary is high-impact and noisy — opt in with --allow-techniques service-replace when ROE permits.".into(),
                         noisy: false,
                         leaves_artifacts: true,
+                        object: format!("{service_object}|binary:{bin}"),
+                        condition: "writable-service-binary-acl".into(),
+                        technique_id: if lolbas.is_some() { "lolbas" } else { "service-replace" }.into(),
                         ..Default::default()
                     });
                     let tech = crate::exploit::TechniqueFamily::ServiceReplace;
@@ -97,6 +154,33 @@ impl Plugin for ServicesPlugin {
                     if allowed || ctx.auto_exploit {
                         findings.push(crate::exploit::technique_status(self.id(), tech, allowed));
                     }
+                }
+            }
+
+            if let Some(access) = super::acl::service_object_access(&name) {
+                let rights = access.dangerous_rights();
+                if !rights.is_empty() {
+                    findings.push(Finding {
+                        plugin: self.id().into(),
+                        kind: FindingKind::Misconfiguration,
+                        severity: if is_high_priv_account(&account) {
+                            Severity::Critical
+                        } else {
+                            Severity::High
+                        },
+                        title: format!("Current token can modify service object: {name}"),
+                        detail: format!(
+                            "account={account} service_object_dacl=current_token:{}",
+                            rights.join(",")
+                        ),
+                        recommendation: "Remove unnecessary service-object change-config, ownership, DACL, or delete rights from low-privilege principals. No service state was changed."
+                            .into(),
+                        noisy: false,
+                        leaves_artifacts: false,
+                        object: service_object,
+                        condition: "dangerous-service-object-dacl-right".into(),
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -107,12 +191,14 @@ impl Plugin for ServicesPlugin {
                 kind: FindingKind::Enumeration,
                 severity: Severity::Info,
                 title: "No unquoted/writable service issues found in scan".into(),
-                detail: "Enumerated service ImagePath values from the SCM/registry.".into(),
-                recommendation:
-                    "Also review service DACLs with accesschk when permitted (SDDL enum deferred)."
-                        .into(),
+                detail: "Enumerated service ImagePath values, file ACLs, and readable service-object DACLs. Services whose READ_CONTROL access was denied were not claimed as checked."
+                    .into(),
+                recommendation: "Review any inaccessible service objects from an approved administrative context if complete DACL coverage is required."
+                    .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-service-control-manager".into(),
+                condition: "no-service-risk-observed".into(),
                 ..Default::default()
             });
         }
@@ -121,33 +207,53 @@ impl Plugin for ServicesPlugin {
     }
 }
 
-/// Intermediate directories that Windows may search for an unquoted spaced path.
-fn unquoted_plant_dirs(bin: &str) -> Vec<String> {
-    // Example: C:\Program Files\Vendor\svc.exe → try "C:\Program.exe" plant via "C:\"
-    // and "C:\Program Files\Vendor" parents that exist before the final component.
+fn is_high_priv_account(account: &str) -> bool {
+    let account = account.to_ascii_lowercase();
+    account.contains("localsystem")
+        || account.contains(r"nt authority\system")
+        || account == "system"
+}
+
+fn append_annotation(mut detail: String, annotation: Option<&str>) -> String {
+    if let Some(annotation) = annotation {
+        detail.push_str("; ");
+        detail.push_str(annotation);
+    }
+    detail
+}
+
+/// Candidate executable names and parent directories Windows may consider for
+/// an unquoted service image path. The intended executable itself is excluded.
+fn unquoted_plant_candidates(bin: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let normalized = bin.replace('/', "\\");
     if !normalized.contains(' ') {
         return out;
     }
-    // For each space-separated prefix that looks like a path root, add its parent.
-    // Practical approach: walk parents of the resolved path and also the truncated
-    // "C:\Program" style prefix commonly abused.
-    if let Some(parent) = std::path::Path::new(&normalized).parent() {
-        out.push(parent.to_string_lossy().to_string());
-        if let Some(gp) = parent.parent() {
-            out.push(gp.to_string_lossy().to_string());
+    for (index, character) in normalized.char_indices() {
+        if !character.is_whitespace() {
+            continue;
+        }
+        let prefix = normalized[..index].trim_end_matches('\\');
+        if prefix.is_empty() {
+            continue;
+        }
+        let candidate = format!("{prefix}.exe");
+        if candidate.eq_ignore_ascii_case(&normalized) {
+            continue;
+        }
+        if let Some(separator) = candidate.rfind('\\') {
+            let raw_parent = &candidate[..separator];
+            let parent = if raw_parent.ends_with(':') {
+                format!("{raw_parent}\\")
+            } else {
+                raw_parent.to_string()
+            };
+            out.push((candidate, parent));
         }
     }
-    // Classic: path starts with "C:\Program Files\..." → "C:\" is plant root for Program.exe
-    if let Some(idx) = normalized.find(' ') {
-        let prefix = &normalized[..idx];
-        if let Some(parent) = std::path::Path::new(prefix).parent() {
-            out.push(parent.to_string_lossy().to_string());
-        }
-    }
-    out.sort();
-    out.dedup();
+    out.sort_by(|left, right| left.0.cmp(&right.0));
+    out.dedup_by(|left, right| left.0.eq_ignore_ascii_case(&right.0));
     out
 }
 
@@ -166,7 +272,10 @@ fn is_unquoted_path(image: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
+fn list_service_image_paths(
+    cancel: &std::sync::atomic::AtomicBool,
+    max_entries: usize,
+) -> Result<Vec<(String, String, String)>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
@@ -182,6 +291,9 @@ fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
 
         let mut index = 0u32;
         loop {
+            if cancel.load(std::sync::atomic::Ordering::SeqCst) || index as usize >= max_entries {
+                break;
+            }
             let mut name_buf = vec![0u16; 256];
             let mut name_len = name_buf.len() as u32;
             let status = RegEnumKeyExW(
@@ -270,13 +382,26 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 #[cfg(not(windows))]
-fn list_service_image_paths() -> Result<Vec<(String, String, String)>> {
+fn list_service_image_paths(
+    _cancel: &std::sync::atomic::AtomicBool,
+    _max_entries: usize,
+) -> Result<Vec<(String, String, String)>> {
     Ok(vec![])
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_unquoted_path;
+    use super::{is_unquoted_path, unquoted_plant_candidates};
+    use crate::plugins::windows::acl::AclState;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct ServiceAclFixture {
+        image_path: String,
+        acl_writable: Option<bool>,
+        expected_unquoted: bool,
+        expected_acl: String,
+    }
 
     #[test]
     fn detects_unquoted_spaced_service_paths() {
@@ -287,5 +412,39 @@ mod tests {
             r#""C:\Program Files\Vendor\service.exe" -k run"#
         ));
         assert!(!is_unquoted_path(r"C:\Windows\System32\service.exe"));
+    }
+
+    #[test]
+    fn derives_only_truncated_unquoted_executable_candidates() {
+        assert_eq!(
+            unquoted_plant_candidates(r"C:\Program Files\Acme Tools\service.exe"),
+            vec![
+                (
+                    r"C:\Program Files\Acme.exe".into(),
+                    r"C:\Program Files".into()
+                ),
+                (r"C:\Program.exe".into(), r"C:\".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn golden_service_path_acl_interpretation() {
+        let fixtures: Vec<ServiceAclFixture> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/windows/service_path_acl_cases.json"
+        ))
+        .unwrap();
+        for fixture in fixtures {
+            assert_eq!(
+                is_unquoted_path(&fixture.image_path),
+                fixture.expected_unquoted,
+                "{}",
+                fixture.image_path
+            );
+            assert_eq!(
+                AclState::from_check(fixture.acl_writable).as_str(),
+                fixture.expected_acl
+            );
+        }
     }
 }

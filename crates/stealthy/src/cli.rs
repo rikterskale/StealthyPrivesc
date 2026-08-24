@@ -78,6 +78,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub output_path: Option<std::path::PathBuf>,
 
+    /// Protected file that receives the generated sealed-report key.
+    /// Required for encrypted file/remote output. Env: STEALTHY_KEY_OUTPUT_PATH
+    #[arg(long, global = true, env = "STEALTHY_KEY_OUTPUT_PATH")]
+    pub key_output_path: Option<std::path::PathBuf>,
+
     /// Write plaintext JSON instead of encrypted blob (still requires explicit --output=file).
     #[arg(long, global = true)]
     pub plaintext_file: bool,
@@ -94,8 +99,8 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub checkpoint: Option<std::path::PathBuf>,
 
-    /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
-    /// Requires explicit ROE approval. Env: STEALTHY_EVASION_CONFIRMED=1
+    /// Extra confirmation for planned evasion-family scaffold markers.
+    /// Does not enable an implementation. Env: STEALTHY_EVASION_CONFIRMED=1
     #[arg(
         long = "confirm-evasion",
         global = true,
@@ -159,13 +164,21 @@ pub enum Commands {
     #[command(visible_alias = "collect-controls")]
     LiveControls,
 
-    /// Decode an encrypted report using its operator-held hex key.
+    /// Decode an encrypted report using an operator-held key file or environment value.
     Report {
         /// Sealed report path.
         input: std::path::PathBuf,
-        /// Hex key printed when the report was created with --verbose.
-        #[arg(long)]
-        key_hex: String,
+        /// Hex key value. Prefer STEALTHY_KEY_HEX or --key-file over a command-line value.
+        #[arg(
+            long,
+            env = "STEALTHY_KEY_HEX",
+            hide_env_values = true,
+            conflicts_with = "key_file"
+        )]
+        key_hex: Option<String>,
+        /// Protected file containing the generated hex key. Env: STEALTHY_KEY_FILE
+        #[arg(long, env = "STEALTHY_KEY_FILE", conflicts_with = "key_hex")]
+        key_file: Option<std::path::PathBuf>,
         /// Report format to print.
         #[arg(long, value_enum, default_value_t = ReportFormat::Json)]
         format: ReportFormat,
@@ -286,7 +299,7 @@ pub enum Commands {
         /// Opt-in high-impact technique families when ROE permits.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
-        /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
+        /// Extra confirmation for planned evasion-family scaffold markers; no implementation exists.
         #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
         confirm_evasion: bool,
         /// Comma-separated plugin IDs to run (default: all for this OS).
@@ -316,7 +329,7 @@ pub enum Commands {
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
 
-        /// Extra confirmation for evasion techniques (AMSI bypass, ETW unhook, AV/EDR manipulation).
+        /// Extra confirmation for planned evasion-family scaffold markers; no implementation exists.
         /// Env: STEALTHY_EVASION_CONFIRMED=1
         #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
         confirm_evasion: bool,

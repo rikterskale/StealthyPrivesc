@@ -1,4 +1,6 @@
 use anyhow::Result;
+use std::io::Read;
+use std::path::Path;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -19,11 +21,14 @@ impl Plugin for NfsPlugin {
         &["linux"]
     }
 
-    fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+    fn run(&self, ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        if let Ok(exports) = std::fs::read_to_string("/etc/exports") {
+        if let Some(exports) = read_text_bounded(Path::new("/etc/exports"), 1024 * 1024) {
             for line in exports.lines() {
+                if ctx.cancelled() {
+                    break;
+                }
                 let t = line.trim();
                 if t.is_empty() || t.starts_with('#') {
                     continue;
@@ -52,14 +57,25 @@ impl Plugin for NfsPlugin {
                     },
                     noisy: false,
                     leaves_artifacts: false,
+                    object: t.split_whitespace().next().unwrap_or(t).into(),
+                    condition: if t.contains("no_root_squash") {
+                        "nfs-export-no-root-squash"
+                    } else {
+                        "nfs-export-observed"
+                    }
+                    .into(),
+                    technique_id: "nfs-export".into(),
                     ..Default::default()
                 });
             }
         }
 
         // Mounted NFS from /proc/mounts (no `mount` spawn).
-        if let Ok(mounts) = std::fs::read_to_string("/proc/mounts") {
+        if let Some(mounts) = read_text_bounded(Path::new("/proc/mounts"), 4 * 1024 * 1024) {
             for line in mounts.lines() {
+                if ctx.cancelled() {
+                    break;
+                }
                 if line.contains(" nfs") || line.contains(" nfs4") {
                     findings.push(Finding {
                         plugin: self.id().into(),
@@ -71,6 +87,9 @@ impl Plugin for NfsPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: line.split_whitespace().nth(1).unwrap_or(line).into(),
+                        condition: "nfs-mount-present".into(),
+                        technique_id: "nfs-mount".into(),
                         ..Default::default()
                     });
                 }
@@ -88,10 +107,19 @@ impl Plugin for NfsPlugin {
                     "Remote share discovery is out of scope for this quiet local plugin.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "local-nfs-configuration".into(),
+                condition: "no-local-nfs-observed".into(),
                 ..Default::default()
             });
         }
 
         Ok(findings)
     }
+}
+
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }

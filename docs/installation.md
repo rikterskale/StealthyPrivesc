@@ -58,6 +58,11 @@ checksum, then installs to
 current shell only. Add the same directory through your normal shell profile
 process if you want it available in future terminals.
 
+The verified archive is a full delivery kit containing the binary, Linux
+fallbacks, selected operator docs, a release manifest, and internal checksums.
+Tagged releases also publish an SPDX JSON SBOM. Linux x86-64 and aarch64 GNU
+kits are release-supported; see the [Support Policy](support-policy.md).
+
 If `curl` is unavailable, download the installer with an approved alternative
 and still review it before execution. If the release installer cannot be used,
 use Path B or the script fallback described in the
@@ -88,6 +93,11 @@ checksum, then installs to
 `$env:LOCALAPPDATA\StealthyPrivesc\stealthy.exe` by default. If you prefer to
 call `stealthy` without its full path, add that directory to your user `PATH`
 through your normal Windows administration process, then open a new terminal.
+
+The verified archive is a full Windows x86-64 MSVC delivery kit containing the
+binary, Windows fallbacks, selected operator docs, a release manifest, and
+internal checksums. The release also publishes an SPDX JSON SBOM; see the
+[Support Policy](support-policy.md).
 
 ### Path B — build from source
 

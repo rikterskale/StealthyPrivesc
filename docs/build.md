@@ -24,7 +24,10 @@ Keep `Cargo.lock` unchanged for reviewed builds. Use `--locked` for every
 release, test, and coverage command below so dependency resolution cannot drift
 silently.
 
-## Supported build matrix
+## Build and test matrix
+
+This table includes developer/cross-build targets. Only artifacts listed in
+the [Support Policy](support-policy.md) are release-supported.
 
 | Artifact / target | Build environment | Command | Runtime validation |
 | --- | --- | --- | --- |
@@ -33,11 +36,20 @@ silently.
 | Windows x64 GNU | Linux with MinGW | `cargo build --locked --workspace --release --target x86_64-pc-windows-gnu` | Windows CI or approved Windows host |
 | Windows x64 MSVC | Windows with MSVC toolchain | `cargo build --locked --workspace --release --target x86_64-pc-windows-msvc` | Windows CI or approved Windows host |
 
-The repository's release installers expect these published asset names:
+The tagged release workflow publishes these supported assets:
 
-- `stealthy-linux-x86_64.tar.gz`, containing `stealthy` at the archive root
-- `stealthy-windows-x86_64.zip`, containing `stealthy.exe` at the archive root
-- `SHA256SUMS`, containing one checksum entry for each published asset
+- `stealthy-linux-x86_64.tar.gz`
+- `stealthy-linux-aarch64.tar.gz`
+- `stealthy-windows-x86_64.zip`
+- one `.spdx.json` SBOM per kit
+- `SHA256SUMS` for kits and SBOMs
+
+Each archive is a full delivery kit rather than a binary-only asset: the
+binary, platform fallback scripts, selected operator documentation,
+`RELEASE-MANIFEST.json`, and an internal `SHA256SUMS` are included. See the
+[Support Policy](support-policy.md) for the release-supported matrix. Windows
+GNU and Linux musl can be developer builds but are not published/support
+claims in the current release workflow.
 
 ## Native Linux build
 
@@ -158,12 +170,30 @@ The CI coverage job uses `cargo-llvm-cov` version `0.6.16` and publishes LCOV:
 rustup component add llvm-tools-preview
 cargo install --locked cargo-llvm-cov --version 0.6.16
 cargo llvm-cov --locked --workspace --all-targets \
-  --lcov --output-path lcov.info
+  --lcov --output-path lcov.info --fail-under-lines 65
 test -s lcov.info
 ```
 
-Treat a missing or empty `lcov.info` as a failed validation, even if the build
-itself succeeded.
+CI and the tag gate enforce a 65% line-coverage floor. Treat a missing/empty
+report or a result below the floor as failed validation.
+
+## Build flavors
+
+The normal `release` profile uses the default `full` feature. Two constrained
+profiles are validated in CI:
+
+```bash
+cargo check --locked -p stealthy --profile enum-only \
+  --no-default-features --features enum-only
+cargo build --locked -p stealthy --profile opsec-string-strip \
+  --no-default-features --features opsec-string-strip
+```
+
+`enum-only` rejects `--auto-exploit`, every `--allow-techniques` family, and
+executable control fixtures. `opsec-string-strip` includes `enum-only` and may
+remove only non-semantic operator hint strings. Both retain authorization
+gates, safety disclaimers, and report/audit fields; neither is permission to
+hide execution or weaken the evidence contract.
 
 ## Windows CI validation
 
@@ -210,58 +240,37 @@ validation does not prove that a target's policy permits execution.
 
 ## Release packaging
 
-Build and verify the artifact before assembling a drop bundle:
+`scripts/release/package.py` is the canonical kit builder used by the release
+workflow. For example:
 
 ```bash
-set -euo pipefail
-REV=$(git rev-parse HEAD)
-RUST_VERSION=$(rustc --version)
-cargo build --locked --workspace --release
-sha256sum target/release/stealthy
-file target/release/stealthy
-printf '%s\n' "$REV" > build-commit.txt
-printf '%s\n' "$RUST_VERSION" > build-toolchain.txt
+cargo build --locked -p stealthy --release --target x86_64-unknown-linux-gnu
+python3 scripts/release/package.py \
+  --platform linux --arch x86_64 \
+  --target x86_64-unknown-linux-gnu \
+  --binary target/x86_64-unknown-linux-gnu/release/stealthy \
+  --output stealthy-linux-x86_64.tar.gz \
+  --version local --commit "$(git rev-parse HEAD)"
 ```
 
-Linux bundle:
+Every `v*` tag must pass the full release gate before build/publish:
 
-```bash
-set -euo pipefail
-STAGE=release-staging/stealthy-linux-x86_64
-rm -rf "$STAGE"
-mkdir -p "$STAGE/scripts/linux" "$STAGE/docs"
-cp target/release/stealthy "$STAGE/"
-cp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl scripts/linux/run.sh "$STAGE/scripts/linux/"
-cp README.md docs/installation.md docs/user-guide.md \
-  docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
-chmod 0755 "$STAGE/stealthy" "$STAGE/scripts/linux/"*
-# Archive the stage contents so the installer finds ./stealthy at the root.
-tar -C "$STAGE" -czf stealthy-linux-x86_64.tar.gz .
-sha256sum stealthy-linux-x86_64.tar.gz > SHA256SUMS
-```
+- locked metadata, formatting, Clippy with warnings denied, tests, and release build;
+- `enum-only` and `opsec-string-strip` safety-contract checks;
+- the 65% Rust line-coverage floor;
+- Linux/release script parsing;
+- full-history Gitleaks scanning; and
+- `cargo deny check --all-features` for advisories, licenses, bans, and sources.
 
-Windows bundle from Linux after the GNU cross-build:
+After the gate, the workflow builds and smoke-tests Linux x86-64, Linux aarch64
+GNU under QEMU, and Windows x86-64 MSVC. It creates full kits, SPDX JSON SBOMs,
+and a top-level checksum manifest, then uses GitHub artifact attestations for
+the kits, SBOMs, and checksums before creating the release.
 
-```bash
-set -euo pipefail
-STAGE=release-staging/stealthy-windows-x86_64
-rm -rf "$STAGE"
-mkdir -p "$STAGE/scripts/windows" "$STAGE/docs"
-cp target/x86_64-pc-windows-gnu/release/stealthy.exe "$STAGE/"
-cp scripts/windows/enum.ps1 scripts/windows/enum.js \
-  scripts/windows/EnumTasks.csproj "$STAGE/scripts/windows/"
-cp README.md docs/installation.md docs/user-guide.md \
-  docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
-# Archive the stage contents so the installer finds ./stealthy.exe at the root.
-(cd "$STAGE" && zip -r ../../stealthy-windows-x86_64.zip .)
-sha256sum stealthy-windows-x86_64.zip >> SHA256SUMS
-```
-
-Before publishing, confirm that each archive has the expected executable at
-its root, the checksum file names the exact archive bytes, and the artifact
-was runtime-tested on its target platform. Keep source revision, target
-triple, Rust toolchain, build command, hashes, and validation results with the
-release record.
+The scheduled nightly safe-lab workflow runs the Rust fixture suite on Linux
+and Windows, validates the enumeration-only flavor, parses platform fallback
+scripts, and confirms the authorization gate remains closed. It uses local,
+non-privileged fixtures; it is not a destructive vulnerable-host exploit lab.
 
 ## Script fallbacks without Rust
 

@@ -42,14 +42,17 @@ file target/release/stealthy
 
 ## Package safely
 
-Published installers expect:
+Published releases contain:
 
-- `stealthy-linux-x86_64.tar.gz` with `stealthy` at the archive root
-- `stealthy-windows-x86_64.zip` with `stealthy.exe` at the archive root
-- `SHA256SUMS` containing the exact archive checksums
+- Linux x86-64 and aarch64 GNU kits and a Windows x86-64 MSVC kit;
+- the native binary, platform fallback scripts, selected operator docs,
+  `RELEASE-MANIFEST.json`, and internal checksums in each kit;
+- one SPDX JSON SBOM per kit; and
+- a top-level `SHA256SUMS` plus GitHub artifact attestations.
 
-Keep documentation and fallback scripts in a separate approved bundle when the
-target needs them. Do not place reports, keys, or target data in the package.
+Use the matching full kit or `scripts/release/package.py` for a local kit. Do
+not place reports, keys, or target data in the package. See the
+[Support Policy](../support-policy.md) for the supported artifact matrix.
 
 ## Before deployment
 

@@ -38,6 +38,9 @@ impl Plugin for CredentialsPlugin {
         ];
 
         for p in paths {
+            if ctx.cancelled() {
+                break;
+            }
             if Path::new(p).is_file() {
                 let readable = std::fs::File::open(p).is_ok();
                 findings.push(Finding {
@@ -59,6 +62,13 @@ impl Plugin for CredentialsPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: p.into(),
+                    condition: if readable {
+                        "credential-file-present-readable"
+                    } else {
+                        "credential-file-present-unreadable"
+                    }
+                    .into(),
                     ..Default::default()
                 });
             }
@@ -75,6 +85,8 @@ impl Plugin for CredentialsPlugin {
                 recommendation: "DefaultPassword in Winlogon is a classic credential leak.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon".into(),
+                condition: "autologon-credential-configuration-present".into(),
                 ..Default::default()
             });
         }
@@ -86,6 +98,9 @@ impl Plugin for CredentialsPlugin {
                 r".aws\credentials",
                 r".azure\MSAL_TokenCache.json",
             ] {
+                if ctx.cancelled() {
+                    break;
+                }
                 let p = Path::new(&userprofile).join(rel);
                 if p.exists() {
                     findings.push(Finding {
@@ -97,6 +112,8 @@ impl Plugin for CredentialsPlugin {
                         recommendation: "Review offline with approved tooling.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: p.display().to_string(),
+                        condition: "user-credential-material-path-present".into(),
                         ..Default::default()
                     });
                 }
@@ -114,6 +131,8 @@ impl Plugin for CredentialsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-common-credential-locations".into(),
+                condition: "no-common-credential-file-observed".into(),
                 ..Default::default()
             });
         }

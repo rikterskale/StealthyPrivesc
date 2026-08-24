@@ -28,6 +28,9 @@ impl Plugin for PolkitPlugin {
         let euid = util::euid();
 
         for cand in ["/usr/bin/pkexec", "/bin/pkexec"] {
+            if ctx.cancelled() {
+                break;
+            }
             let p = Path::new(cand);
             if p.is_file() {
                 use std::os::unix::fs::MetadataExt;
@@ -47,6 +50,10 @@ impl Plugin for PolkitPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: cand.into(),
+                    condition: if suid { "pkexec-suid-present" } else { "pkexec-present" }.into(),
+                    mitre_techniques: vec!["T1068".into()],
+                    technique_id: "polkit".into(),
                     ..Default::default()
                 });
             }
@@ -60,6 +67,9 @@ impl Plugin for PolkitPlugin {
         ];
 
         for dir in rule_dirs {
+            if ctx.cancelled() {
+                break;
+            }
             let p = Path::new(dir);
             if !p.exists() {
                 continue;
@@ -76,6 +86,9 @@ impl Plugin for PolkitPlugin {
                             "Writable polkit rules can grant root actions to low-priv users.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: dir.into(),
+                        condition: "writable-polkit-path".into(),
+                        technique_id: "polkit-rule".into(),
                         ..Default::default()
                     };
                     let probe_allowed = ctx.probe_allowed_for(&candidate);
@@ -92,6 +105,8 @@ impl Plugin for PolkitPlugin {
                                     .into(),
                                 noisy: true,
                                 leaves_artifacts: false,
+                                object: dir.into(),
+                                condition: "reversible-writable-probe-confirmed".into(),
                                 ..Default::default()
                             });
                         }
@@ -102,6 +117,9 @@ impl Plugin for PolkitPlugin {
             if p.is_dir() {
                 if let Ok(rd) = fs::read_dir(p) {
                     for entry in rd.flatten().take(100) {
+                        if ctx.cancelled() {
+                            break;
+                        }
                         if let Ok(meta) = entry.metadata() {
                             if util::is_writable_by_euid(&meta, euid, &util::current_gids()) {
                                 findings.push(Finding {
@@ -118,6 +136,9 @@ impl Plugin for PolkitPlugin {
                                             .into(),
                                     noisy: false,
                                     leaves_artifacts: false,
+                                    object: entry.path().display().to_string(),
+                                    condition: "writable-polkit-rule-entry".into(),
+                                    technique_id: "polkit-rule".into(),
                                     ..Default::default()
                                 });
                             }
@@ -137,6 +158,8 @@ impl Plugin for PolkitPlugin {
                 recommendation: "Review custom .rules files manually if present.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "common-polkit-paths".into(),
+                condition: "no-polkit-misconfiguration".into(),
                 ..Default::default()
             });
         }

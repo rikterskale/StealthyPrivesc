@@ -36,6 +36,9 @@ impl Plugin for PrivilegesPlugin {
                     "SeTcbPrivilege",
                 ];
                 for p in &privs {
+                    if ctx.cancelled() {
+                        break;
+                    }
                     let high = interesting.iter().any(|i| p.name == *i);
                     findings.push(Finding {
                         plugin: self.id().into(),
@@ -58,6 +61,13 @@ impl Plugin for PrivilegesPlugin {
                         },
                         noisy: false,
                         leaves_artifacts: false,
+                        object: format!("token-privilege:{}", p.name),
+                        condition: if p.enabled {
+                            "token-privilege-enabled"
+                        } else {
+                            "token-privilege-disabled"
+                        }
+                        .into(),
                         ..Default::default()
                     });
                 }
@@ -78,6 +88,8 @@ impl Plugin for PrivilegesPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: "token-privilege:impersonation".into(),
+                        condition: "token-impersonation-privilege-enabled".into(),
                         ..Default::default()
                     });
                     let potato_tech = TechniqueFamily::Potato;
@@ -97,6 +109,8 @@ impl Plugin for PrivilegesPlugin {
                         recommendation: "Verify process token access rights.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: "current-process-token".into(),
+                        condition: "no-token-privileges-returned".into(),
                         ..Default::default()
                     });
                 }
@@ -112,6 +126,8 @@ impl Plugin for PrivilegesPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: "current-process-token".into(),
+                    condition: "token-privilege-enumeration-failed".into(),
                     ..Default::default()
                 });
             }

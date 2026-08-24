@@ -72,10 +72,7 @@ fn key(finding: &Finding) -> String {
     if !finding.finding_id.is_empty() {
         return finding.finding_id.clone();
     }
-    format!(
-        "{}\u{1f}{}\u{1f}{:?}",
-        finding.plugin, finding.title, finding.kind
-    )
+    crate::core::finalize::finalize_finding(finding.clone()).finding_id
 }
 
 #[cfg(test)]
@@ -135,6 +132,8 @@ mod tests {
             recommendation: "review".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: title.into(),
+            condition: "test-observation".into(),
             ..Default::default()
         }
     }

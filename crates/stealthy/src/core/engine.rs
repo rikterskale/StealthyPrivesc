@@ -1,15 +1,8 @@
 use anyhow::{bail, Context, Result};
-use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
-use serde::{Deserialize, Serialize};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cli::{Cli, CliOverrides, OutputMode, ReportFormat};
 use crate::core::artifacts::{self, ArtifactLedger};
@@ -20,15 +13,16 @@ use crate::core::finalize::finalize_finding;
 use crate::core::identity;
 use crate::core::os;
 use crate::core::output::{self, OutputOptions};
-use crate::core::plugin::{filter_plugins, PluginContext};
-use crate::core::profile::EngagementProfile;
+use crate::core::plugin::filter_plugins;
+use crate::core::plugin_worker::{self, PluginOutcome, PluginWorkerRequest};
+use crate::core::profile::{EngagementProfile, NoiseBudget};
+use crate::core::reporting::{
+    assess_finding, build_report, store_into_parts, with_operator_next_step,
+};
 use crate::core::store::EncryptedStore;
 use crate::core::term;
 use crate::core::triage;
-use crate::core::types::{
-    ControlAssessment, Finding, FindingAssessment, FindingKind, PluginCoverage, RunReport,
-    Severity, TriageDecision,
-};
+use crate::core::types::{ControlAssessment, PluginCoverage, RunReport, Severity, TriageDecision};
 use crate::exploit::TechniqueAllowlist;
 use crate::plugins;
 
@@ -39,6 +33,7 @@ pub struct Engine {
     plugin_timeout_ms: u64,
     profile: EngagementProfile,
     prefer_quiet: bool,
+    noise_budget: NoiseBudget,
     auto_exploit: bool,
     allow_techniques: TechniqueAllowlist,
     only: Option<Vec<String>>,
@@ -58,33 +53,6 @@ pub struct EngineOutcome {
     pub fail_on_triggered: bool,
     #[allow(dead_code)]
     pub run_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PluginWorkerRequest {
-    pub plugin: String,
-    pub verbose: bool,
-    pub auto_exploit: bool,
-    pub prefer_quiet: bool,
-    pub allow_techniques: Vec<String>,
-    pub approved_probe_ids: Vec<String>,
-    pub artifact_path: Option<PathBuf>,
-    pub control_assessment: Option<ControlAssessment>,
-}
-
-pub(crate) fn run_plugin_worker(request: PluginWorkerRequest) -> Result<Vec<Finding>> {
-    let allow = TechniqueAllowlist::from_ids(&request.allow_techniques)?;
-    run_plugin_blocking(
-        &request.plugin,
-        request.verbose,
-        request.auto_exploit,
-        request.prefer_quiet,
-        &allow,
-        &request.approved_probe_ids,
-        request.artifact_path,
-        request.control_assessment,
-        Arc::new(AtomicBool::new(false)),
-    )
 }
 
 impl Engine {
@@ -123,6 +91,33 @@ impl Engine {
             format = ReportFormat::Json;
             quiet = true;
         }
+        match cli.output {
+            OutputMode::Memory => {
+                if cli.plaintext_file {
+                    bail!("--plaintext-file requires --output=file");
+                }
+                if cli.also_markdown {
+                    bail!("--also-markdown requires --output=file");
+                }
+            }
+            OutputMode::File if cli.output_path.is_none() => {
+                bail!("--output=file requires --output-path");
+            }
+            OutputMode::Remote if cli.exfil_url.is_none() => {
+                bail!("--output=remote requires --exfil-url");
+            }
+            OutputMode::File | OutputMode::Remote => {}
+        }
+        let encrypted_output = (cli.output == OutputMode::File && !cli.plaintext_file)
+            || cli.output == OutputMode::Remote;
+        if encrypted_output && cli.key_output_path.is_none() {
+            bail!(
+                "encrypted output requires --key-output-path (or STEALTHY_KEY_OUTPUT_PATH); keys are never printed to stderr"
+            );
+        }
+        if cli.output_path.is_some() && cli.output_path == cli.key_output_path {
+            bail!("--key-output-path must differ from --output-path");
+        }
 
         Ok(Self {
             quiet,
@@ -131,6 +126,7 @@ impl Engine {
             plugin_timeout_ms,
             profile,
             prefer_quiet: profile.prefer_quiet(),
+            noise_budget: profile.noise_budget(),
             auto_exploit,
             allow_techniques,
             only,
@@ -149,13 +145,13 @@ impl Engine {
             output: OutputOptions {
                 mode: cli.output,
                 path: cli.output_path.clone(),
+                key_output_path: cli.key_output_path.clone(),
                 plaintext_file: cli.plaintext_file,
                 also_markdown: cli.also_markdown,
                 exfil_url: cli.exfil_url.clone(),
                 quiet,
                 format,
                 min_severity: cli.min_severity.to_severity(),
-                verbose,
                 run_id: String::new(),
                 ledger_dir: cli
                     .ledger_dir
@@ -448,48 +444,66 @@ impl Engine {
             );
 
             match outcome {
-                PluginOutcome::Ok(findings) => {
-                    let findings = findings
-                        .into_iter()
-                        .map(with_operator_next_step)
-                        .map(finalize_finding)
-                        .collect::<Vec<_>>();
-                    let n = findings.len();
-                    let max = findings
-                        .iter()
-                        .map(|f| f.severity)
-                        .max()
-                        .unwrap_or(Severity::Info);
-                    for f in findings {
-                        if self.verbose && !self.quiet {
+                PluginOutcome::Completed(result) => {
+                    for note in result.notes {
+                        store.note(format!("{}: {note}", plugin.id()));
+                    }
+                    if let Some(error) = result.error {
+                        store.note(format!("plugin {} error: {error}", plugin.id()));
+                        coverage.push(PluginCoverage {
+                            id: plugin.id().to_string(),
+                            status: "error".into(),
+                            findings: 0,
+                            error: Some(error.clone()),
+                            duration_ms: plugin_started.elapsed().as_millis(),
+                        });
+                        if !self.quiet {
+                            eprintln!("    {} plugin failed: {error}", term::err("[!]"));
+                        }
+                    } else {
+                        let findings = result
+                            .findings
+                            .into_iter()
+                            .map(with_operator_next_step)
+                            .map(finalize_finding)
+                            .collect::<Vec<_>>();
+                        let n = findings.len();
+                        let max = findings
+                            .iter()
+                            .map(|f| f.severity)
+                            .max()
+                            .unwrap_or(Severity::Info);
+                        for f in findings {
+                            if self.verbose && !self.quiet {
+                                eprintln!(
+                                    "    {} {} {} ({})",
+                                    term::severity_tag(f.severity),
+                                    term::dim("+"),
+                                    f.title,
+                                    term::dim(&f.finding_id)
+                                );
+                            }
+                            store.push(f);
+                        }
+                        if !self.quiet && n > 0 {
                             eprintln!(
-                                "    {} {} {} ({})",
-                                term::severity_tag(f.severity),
-                                term::dim("+"),
-                                f.title,
-                                term::dim(&f.finding_id)
+                                "    {} {} finding(s) · max {}",
+                                term::dim("↳"),
+                                n,
+                                term::severity_tag(max)
                             );
                         }
-                        store.push(f);
+                        plugins_run.push(plugin.id().to_string());
+                        coverage.push(PluginCoverage {
+                            id: plugin.id().to_string(),
+                            status: "ok".into(),
+                            findings: n,
+                            error: None,
+                            duration_ms: plugin_started.elapsed().as_millis(),
+                        });
                     }
-                    if !self.quiet && n > 0 {
-                        eprintln!(
-                            "    {} {} finding(s) · max {}",
-                            term::dim("↳"),
-                            n,
-                            term::severity_tag(max)
-                        );
-                    }
-                    plugins_run.push(plugin.id().to_string());
-                    coverage.push(PluginCoverage {
-                        id: plugin.id().to_string(),
-                        status: "ok".into(),
-                        findings: n,
-                        error: None,
-                        duration_ms: plugin_started.elapsed().as_millis(),
-                    });
                 }
-                PluginOutcome::Err(error) => {
+                PluginOutcome::Error(error) => {
                     store.note(format!("plugin {} error: {error}", plugin.id()));
                     coverage.push(PluginCoverage {
                         id: plugin.id().to_string(),
@@ -666,19 +680,16 @@ impl Engine {
                 }
             }
         }
+        if self.output.mode != OutputMode::Memory {
+            if let Some(key_path) = &self.output.key_output_path {
+                ledger.register("report-key", key_path, true, "sealed report key");
+            }
+        }
         if let Some(path) = &self.checkpoint {
             ledger.register("checkpoint", path, true, "checkpoint");
         }
         if !ledger.entries.is_empty() {
             artifacts::save_ledger(&self.ledger_dir, &ledger).context("persist artifact ledger")?;
-        }
-
-        if self.verbose && self.output.mode == OutputMode::Memory && !self.quiet {
-            eprintln!(
-                "{} seal key (hex): {}",
-                term::dim("[memory]"),
-                store.key_hex()
-            );
         }
 
         let fail_on_triggered = self
@@ -709,29 +720,12 @@ impl Engine {
         control_assessment: Option<&ControlAssessment>,
         cancel: Arc<AtomicBool>,
     ) -> PluginOutcome {
-        let timeout = self.plugin_timeout_ms;
-        if timeout == 0 {
-            return match run_plugin_blocking(
-                plugin_id,
-                self.verbose,
-                auto_exploit,
-                self.prefer_quiet,
-                &self.allow_techniques,
-                approved_probe_ids,
-                self.artifact.clone(),
-                control_assessment.cloned(),
-                cancel,
-            ) {
-                Ok(f) => PluginOutcome::Ok(f),
-                Err(e) => PluginOutcome::Err(format!("{e:#}")),
-            };
-        }
-
         let request = PluginWorkerRequest {
             plugin: plugin_id.into(),
             verbose: self.verbose,
             auto_exploit,
             prefer_quiet: self.prefer_quiet,
+            noise_budget: self.noise_budget,
             allow_techniques: self
                 .allow_techniques
                 .ids()
@@ -742,146 +736,8 @@ impl Engine {
             artifact_path: self.artifact.clone(),
             control_assessment: control_assessment.cloned(),
         };
-        let mut child = match std::env::current_exe()
-            .context("locate plugin worker executable")
-            .and_then(|exe| {
-                let mut command = Command::new(exe);
-                command
-                    .args([
-                        "--authorized",
-                        "--quiet",
-                        "__plugin-worker",
-                        "--plugin",
-                        plugin_id,
-                    ])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
-                #[cfg(unix)]
-                unsafe {
-                    command.pre_exec(|| {
-                        if setsid() == -1 {
-                            return Err(std::io::Error::last_os_error());
-                        }
-                        Ok(())
-                    });
-                }
-                command.spawn().context("spawn isolated plugin worker")
-            }) {
-            Ok(child) => child,
-            Err(error) => return PluginOutcome::Err(format!("{error:#}")),
-        };
-        if let Some(mut stdin) = child.stdin.take() {
-            match serde_json::to_vec(&request) {
-                Ok(body) => {
-                    if let Err(error) = stdin.write_all(&body) {
-                        terminate_worker(&mut child);
-                        return PluginOutcome::Err(format!("write plugin worker request: {error}"));
-                    }
-                }
-                Err(error) => {
-                    terminate_worker(&mut child);
-                    return PluginOutcome::Err(format!("serialize plugin worker request: {error}"));
-                }
-            }
-        }
-        let deadline = Instant::now() + Duration::from_millis(timeout);
-        loop {
-            if cancel.load(Ordering::SeqCst) || Instant::now() >= deadline {
-                cancel.store(true, Ordering::SeqCst);
-                terminate_worker(&mut child);
-                return PluginOutcome::Timeout;
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let mut stdout = Vec::new();
-                    let mut stderr = Vec::new();
-                    if let Some(mut pipe) = child.stdout.take() {
-                        use std::io::Read;
-                        let _ = pipe.read_to_end(&mut stdout);
-                    }
-                    if let Some(mut pipe) = child.stderr.take() {
-                        use std::io::Read;
-                        let _ = pipe.read_to_end(&mut stderr);
-                    }
-                    if !status.success() {
-                        return PluginOutcome::Err(format!(
-                            "plugin worker failed: {}",
-                            String::from_utf8_lossy(&stderr)
-                        ));
-                    }
-                    return match serde_json::from_slice::<Vec<Finding>>(&stdout) {
-                        Ok(findings) => PluginOutcome::Ok(findings),
-                        Err(error) => {
-                            PluginOutcome::Err(format!("parse plugin worker output: {error}"))
-                        }
-                    };
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-                Err(error) => {
-                    terminate_worker(&mut child);
-                    return PluginOutcome::Err(format!("poll plugin worker: {error}"));
-                }
-            }
-        }
+        plugin_worker::run_with_timeout(request, self.plugin_timeout_ms, cancel)
     }
-}
-
-fn terminate_worker(child: &mut Child) {
-    #[cfg(unix)]
-    if let Ok(pid) = i32::try_from(child.id()) {
-        unsafe {
-            // The worker creates a private process group so helper commands do not
-            // survive a timeout as orphaned host activity.
-            let _ = kill(-pid, 9);
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(unix)]
-unsafe extern "C" {
-    fn kill(pid: i32, signal: i32) -> i32;
-    fn setsid() -> i32;
-}
-
-enum PluginOutcome {
-    Ok(Vec<Finding>),
-    Err(String),
-    Timeout,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn run_plugin_blocking(
-    plugin_id: &str,
-    verbose: bool,
-    auto_exploit: bool,
-    prefer_quiet: bool,
-    allow_techniques: &TechniqueAllowlist,
-    approved_probe_ids: &[String],
-    artifact_path: Option<PathBuf>,
-    control_assessment: Option<ControlAssessment>,
-    cancel: Arc<AtomicBool>,
-) -> Result<Vec<Finding>> {
-    let registry = plugins::registry();
-    let plugin = registry
-        .iter()
-        .find(|p| p.id() == plugin_id)
-        .ok_or_else(|| anyhow::anyhow!("plugin not found: {plugin_id}"))?;
-    let mut local_store = EncryptedStore::new();
-    let mut ctx = PluginContext {
-        verbose,
-        auto_exploit,
-        prefer_quiet,
-        allow_techniques,
-        store: &mut local_store,
-        approved_probe_ids,
-        artifact_path,
-        control_assessment,
-        cancel,
-    };
-    plugin.run(&mut ctx)
 }
 
 fn mode_label(auto_exploit: bool, allow_empty: bool, triage: bool) -> &'static str {
@@ -892,87 +748,4 @@ fn mode_label(auto_exploit: bool, allow_empty: bool, triage: bool) -> &'static s
         (false, false, _) => "enumerate+allow-techniques",
         (false, true, _) => "enumerate-only",
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_report(
-    run_id: &str,
-    started_at_unix: u64,
-    profile: &str,
-    mode: &str,
-    os_info: crate::core::types::OsInfo,
-    ident: crate::core::types::IdentityInfo,
-    mut findings: Vec<Finding>,
-    plugins_run: Vec<String>,
-    coverage: Vec<PluginCoverage>,
-    notes: Vec<String>,
-    triage_decisions: Vec<TriageDecision>,
-    control_assessment: Option<ControlAssessment>,
-) -> RunReport {
-    let attack_paths = build_attack_paths(&findings);
-    assign_path_ranks(&mut findings, &attack_paths);
-    let assessments = findings
-        .iter()
-        .enumerate()
-        .map(|(i, f)| assess_finding(i, f))
-        .collect();
-    RunReport {
-        schema_version: "2".into(),
-        run_id: run_id.into(),
-        started_at_unix,
-        tool: "stealthy".into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        authorized_use_ack: true,
-        mode: mode.into(),
-        execution_path: "binary".into(),
-        primary_launch: "ok".into(),
-        roe_ref: std::env::var("STEALTHY_MANIFEST_ROE_REF").unwrap_or_default(),
-        profile: profile.into(),
-        coverage_mode: "native".into(),
-        capability_delta: vec![],
-        control_assessment,
-        os: os_info,
-        identity: ident,
-        findings,
-        assessments,
-        attack_paths,
-        triage_decisions,
-        plugins_run,
-        coverage,
-        notes,
-    }
-}
-
-fn assess_finding(finding_index: usize, finding: &Finding) -> FindingAssessment {
-    let (confidence, evidence_quality) = match finding.kind {
-        FindingKind::ExploitAttempt => ("high", "direct_probe"),
-        FindingKind::Misconfiguration | FindingKind::Credential => ("medium", "local_observation"),
-        FindingKind::Enumeration => ("medium", "local_observation"),
-        FindingKind::Recommendation => ("low", "heuristic"),
-    };
-    let applicability = if matches!(finding.kind, FindingKind::Recommendation) {
-        "requires_validation"
-    } else if finding.leaves_artifacts {
-        "potentially_actionable"
-    } else {
-        "current_context"
-    };
-    FindingAssessment {
-        finding_index,
-        confidence: confidence.into(),
-        applicability: applicability.into(),
-        evidence_quality: evidence_quality.into(),
-    }
-}
-
-fn with_operator_next_step(mut finding: Finding) -> Finding {
-    if finding.needs_next_step() {
-        finding.recommendation =
-            "Validate this observation against the target and ROE before taking action; preserve evidence and document the stop condition.".into();
-    }
-    finding
-}
-
-fn store_into_parts(store: &EncryptedStore) -> (Vec<Finding>, Vec<String>) {
-    (store.findings(), store.notes().to_vec())
 }

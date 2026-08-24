@@ -10,13 +10,13 @@ use crate::core::types::{Finding, RunReport, Severity};
 pub struct OutputOptions {
     pub mode: OutputMode,
     pub path: Option<std::path::PathBuf>,
+    pub key_output_path: Option<std::path::PathBuf>,
     pub plaintext_file: bool,
     pub also_markdown: bool,
     pub exfil_url: Option<String>,
     pub quiet: bool,
     pub format: ReportFormat,
     pub min_severity: Severity,
-    pub verbose: bool,
     #[allow(dead_code)]
     pub run_id: String,
     #[allow(dead_code)]
@@ -33,6 +33,13 @@ pub fn emit(
     store: &EncryptedStore,
     opts: &OutputOptions,
 ) -> Result<EmitResult> {
+    if ((opts.mode == OutputMode::File && !opts.plaintext_file) || opts.mode == OutputMode::Remote)
+        && opts.key_output_path.is_none()
+    {
+        bail!(
+            "encrypted output requires --key-output-path (or STEALTHY_KEY_OUTPUT_PATH); keys are never printed to stderr"
+        );
+    }
     let filtered = filter_findings(&report.findings, opts.min_severity);
     let max_severity = filtered
         .iter()
@@ -72,15 +79,10 @@ pub fn emit(
             }
             if !opts.quiet && matches!(opts.format, ReportFormat::Human) {
                 eprintln!(
-                    "\n{} {} finding(s) in memory ({} shown) · seal key prefix {}",
+                    "\n{} {} finding(s) in memory ({} shown) · nothing written to disk",
                     term::dim("[memory]"),
                     total,
-                    shown,
-                    term::cyan(&store.key_hex()[..16.min(store.key_hex().len())])
-                );
-                eprintln!(
-                    "{} Full key with -v · nothing written to disk by default",
-                    term::dim("[memory]")
+                    shown
                 );
             }
         }
@@ -90,14 +92,21 @@ pub fn emit(
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("--output=file requires --output-path"))?;
             write_file(report, store, path, opts.plaintext_file)?;
+            if !opts.plaintext_file {
+                let key_path = opts.key_output_path.as_ref().expect("validated key path");
+                if key_path == path {
+                    bail!("--key-output-path must differ from --output-path");
+                }
+                write_sensitive_file(key_path, store.key_hex().as_bytes())?;
+            }
             if !opts.quiet {
                 eprintln!("{} wrote {}", term::ok("[file]"), path.display());
-                if !opts.plaintext_file && opts.verbose {
+                if !opts.plaintext_file {
+                    let key_path = opts.key_output_path.as_ref().expect("validated key path");
                     eprintln!(
-                        "{} decrypt key (hex): {}\n{} treat this key as sensitive",
-                        term::warn("[file]"),
-                        store.key_hex(),
-                        term::warn("[warn]")
+                        "{} wrote protected report key {}",
+                        term::warn("[key]"),
+                        key_path.display()
                     );
                 }
             }
@@ -110,7 +119,7 @@ pub fn emit(
                     .write(true)
                     .open(&md_path)
                     .with_context(|| format!("write {}", md_path.display()))?;
-                restrict_file_permissions(&md_file)?;
+                restrict_file_permissions(&md_file, &md_path)?;
                 md_file.write_all(md.as_bytes())?;
                 if !opts.quiet {
                     eprintln!("{} wrote {}", term::ok("[file]"), md_path.display());
@@ -123,6 +132,8 @@ pub fn emit(
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("--output=remote requires --exfil-url"))?;
             let sealed = store.seal_report(report)?;
+            let key_path = opts.key_output_path.as_ref().expect("validated key path");
+            write_sensitive_file(key_path, store.key_hex().as_bytes())?;
             if !opts.quiet {
                 eprintln!(
                     "{}\n  target: {}\n  POST body (base64 nonce||ciphertext):\n{}",
@@ -130,14 +141,11 @@ pub fn emit(
                     url,
                     sealed
                 );
-                if opts.verbose {
-                    eprintln!("  decrypt key (sensitive): {}", store.key_hex());
-                } else {
-                    eprintln!(
-                        "{} decrypt key suppressed; use --verbose only with secure handling",
-                        term::warn("[remote]")
-                    );
-                }
+                eprintln!(
+                    "{} wrote protected report key {}",
+                    term::warn("[key]"),
+                    key_path.display()
+                );
             }
         }
     }
@@ -622,7 +630,7 @@ fn write_file(
         .write(true)
         .open(path)
         .with_context(|| format!("create {}", path.display()))?;
-    restrict_file_permissions(&f)?;
+    restrict_file_permissions(&f, path)?;
 
     if plaintext {
         let findings = report.findings.iter().collect::<Vec<_>>();
@@ -636,11 +644,57 @@ fn write_file(
     Ok(())
 }
 
-fn restrict_file_permissions(_file: &std::fs::File) -> Result<()> {
+fn write_sensitive_file(path: &Path, contents: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("create key directory {}", parent.display()))?;
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)
+        .with_context(|| format!("create protected key file {}", path.display()))?;
+    restrict_file_permissions(&file, path)?;
+    file.write_all(contents)?;
+    file.write_all(b"\n")?;
+    file.flush()?;
+    Ok(())
+}
+
+fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         _file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(windows)]
+    {
+        let whoami = crate::core::command::trusted_command("whoami.exe")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .context("resolve current Windows SID for output ACL")?;
+        if !whoami.status.success() {
+            bail!("whoami.exe could not resolve the current Windows SID");
+        }
+        let text = String::from_utf8_lossy(&whoami.stdout);
+        let sid = text
+            .split(',')
+            .nth(1)
+            .map(|value| value.trim().trim_matches('"'))
+            .filter(|value| value.starts_with("S-1-"))
+            .ok_or_else(|| anyhow::anyhow!("could not parse current Windows SID"))?;
+        let grant = format!("*{sid}:(F)");
+        let status = crate::core::command::trusted_command("icacls.exe")
+            .arg(_path)
+            .args(["/inheritance:r", "/grant:r", &grant])
+            .status()
+            .context("apply restrictive Windows output ACL")?;
+        if !status.success() {
+            bail!("icacls.exe failed to restrict output to the current Windows SID");
+        }
     }
     Ok(())
 }

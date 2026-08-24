@@ -2,6 +2,8 @@ use anyhow::Result;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -49,7 +51,7 @@ impl Plugin for ServicesPlugin {
             if !p.exists() {
                 continue;
             }
-            scan_writable(p, 2, euid, &gids, allow_getfacl, &mut findings);
+            scan_writable(p, 2, euid, &gids, allow_getfacl, &ctx.cancel, &mut findings);
         }
 
         // World-writable files under /etc (shallow) — high signal, keep capped.
@@ -71,6 +73,8 @@ impl Plugin for ServicesPlugin {
                                 recommendation: "World-writable config under /etc can yield privilege or persistence.".into(),
                                 noisy: false,
                                 leaves_artifacts: false,
+                                object: entry.path().display().to_string(),
+                                condition: "world-writable-etc-file".into(),
                                 ..Default::default()
                             });
                         }
@@ -89,6 +93,8 @@ impl Plugin for ServicesPlugin {
                 recommendation: "Review package-specific paths for the target role.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "common-service-config-paths".into(),
+                condition: "no-writable-service-config".into(),
                 ..Default::default()
             });
         }
@@ -103,9 +109,10 @@ fn scan_writable(
     euid: u32,
     gids: &[u32],
     allow_getfacl: bool,
+    cancel: &Arc<AtomicBool>,
     findings: &mut Vec<Finding>,
 ) {
-    if depth == 0 {
+    if depth == 0 || cancel.load(Ordering::SeqCst) {
         return;
     }
     let rd = match fs::read_dir(dir) {
@@ -113,27 +120,43 @@ fn scan_writable(
         Err(_) => return,
     };
     for entry in rd.flatten().take(100) {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
         let path = entry.path();
-        let meta = match entry.metadata() {
+        let meta = match fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(_) => continue,
         };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
         let mode = meta.permissions().mode();
         if util::is_effectively_writable_opts(&path, euid, gids, allow_getfacl).unwrap_or(false) {
             findings.push(Finding {
                 plugin: "linux.services".into(),
                 kind: FindingKind::Misconfiguration,
                 severity: Severity::High,
-                title: format!("World-writable service path: {}", path.display()),
+                title: format!("Current-user writable service path: {}", path.display()),
                 detail: format!("mode={mode:o}"),
                 recommendation: "Determine which privileged process reads this path.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: path.display().to_string(),
+                condition: "service-path-current-user-writable".into(),
                 ..Default::default()
             });
         }
         if meta.is_dir() {
-            scan_writable(&path, depth - 1, euid, gids, allow_getfacl, findings);
+            scan_writable(
+                &path,
+                depth - 1,
+                euid,
+                gids,
+                allow_getfacl,
+                cancel,
+                findings,
+            );
         }
     }
 }

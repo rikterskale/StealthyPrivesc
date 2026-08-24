@@ -24,7 +24,11 @@ impl Plugin for AutorunsPlugin {
         let mut findings = Vec::new();
 
         for (hive, path) in run_key_values() {
+            if ctx.cancelled() {
+                break;
+            }
             let target = extract_path_from_command(&path);
+            let lolbas = super::lolbas_annotation(&path);
             let writable = target
                 .as_ref()
                 .map(|t| is_writable_file(t))
@@ -42,7 +46,10 @@ impl Plugin for AutorunsPlugin {
                     Severity::Low
                 },
                 title: format!("Autorun ({hive}): {path}"),
-                detail: target.unwrap_or_else(|| "(unparsed)".into()),
+                detail: append_annotation(
+                    target.clone().unwrap_or_else(|| "(unparsed)".into()),
+                    lolbas.as_deref(),
+                ),
                 recommendation: if writable {
                     "Writable autorun target can yield code execution in the Run-key principal context."
                         .into()
@@ -51,23 +58,50 @@ impl Plugin for AutorunsPlugin {
                 },
                 noisy: false,
                 leaves_artifacts: false,
+                object: format!(
+                    "autorun:{hive}|target:{}",
+                    target.as_deref().unwrap_or("unparsed")
+                ),
+                condition: if writable {
+                    "writable-autorun-target-file-acl"
+                } else {
+                    "autorun-target-enumerated"
+                }
+                .into(),
+                technique_id: if lolbas.is_some() { "lolbas" } else { "autorun" }.into(),
                 ..Default::default()
             });
         }
 
         for dir in startup_dirs() {
+            if ctx.cancelled() {
+                break;
+            }
             if !dir.is_dir() {
                 continue;
             }
+            let acl_state =
+                super::acl::AclState::from_check(super::acl::is_writable_for_current_user(&dir));
             let candidate = Finding {
                 plugin: self.id().into(),
-                kind: FindingKind::Enumeration,
-                severity: Severity::Info,
+                kind: if acl_state == super::acl::AclState::Writable {
+                    FindingKind::Misconfiguration
+                } else {
+                    FindingKind::Enumeration
+                },
+                severity: if acl_state == super::acl::AclState::Writable {
+                    Severity::High
+                } else {
+                    Severity::Info
+                },
                 title: format!("Startup folder: {}", dir.display()),
-                detail: "Present.".into(),
-                recommendation: "Use --auto-exploit to probe directory writability.".into(),
+                detail: format!("directory_acl=current_token:{}", acl_state.as_str()),
+                recommendation: "Use an approved finding-scoped probe only if the read-only ACL result is unavailable or requires confirmation."
+                    .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: dir.display().to_string(),
+                condition: format!("startup-folder-acl:{}", acl_state.as_str()),
                 ..Default::default()
             };
             let probe_allowed = ctx.probe_allowed_for(&candidate);
@@ -83,11 +117,19 @@ impl Plugin for AutorunsPlugin {
                         .into(),
                     noisy: true,
                     leaves_artifacts: false,
+                    object: dir.display().to_string(),
+                    condition: "writable-startup-folder-probe".into(),
                     ..Default::default()
                 });
             }
             if let Ok(rd) = std::fs::read_dir(&dir) {
-                for entry in rd.flatten().take(50) {
+                for entry in rd
+                    .flatten()
+                    .take(ctx.noise_budget.max_helper_records.min(50))
+                {
+                    if ctx.cancelled() {
+                        break;
+                    }
                     let p = entry.path();
                     if p.is_file() && is_writable_file(&p.to_string_lossy()) {
                         findings.push(Finding {
@@ -99,6 +141,8 @@ impl Plugin for AutorunsPlugin {
                             recommendation: "Replace/modify only with ROE approval.".into(),
                             noisy: false,
                             leaves_artifacts: true,
+                            object: p.display().to_string(),
+                            condition: "writable-startup-entry-file-acl".into(),
                             ..Default::default()
                         });
                     }
@@ -117,12 +161,22 @@ impl Plugin for AutorunsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-autorun-locations".into(),
+                condition: "no-writable-autorun-observed".into(),
                 ..Default::default()
             });
         }
 
         Ok(findings)
     }
+}
+
+fn append_annotation(mut detail: String, annotation: Option<&str>) -> String {
+    if let Some(annotation) = annotation {
+        detail.push_str("; ");
+        detail.push_str(annotation);
+    }
+    detail
 }
 
 fn extract_path_from_command(cmd: &str) -> Option<String> {

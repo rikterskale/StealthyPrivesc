@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use crate::core::plugin::{Plugin, PluginContext};
@@ -51,6 +52,9 @@ impl Plugin for MountsPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: true,
+                object: "/etc/passwd".into(),
+                condition: "current-user-writable".into(),
+                technique_id: "writable-passwd".into(),
                 ..Default::default()
             });
         } else {
@@ -63,13 +67,18 @@ impl Plugin for MountsPlugin {
                 recommendation: "Continue with sudo/SUID/container checks.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "/etc/passwd".into(),
+                condition: "not-current-user-writable".into(),
                 ..Default::default()
             });
         }
 
         // Parse /proc/self/mountinfo for user-interesting mounts
-        if let Ok(text) = fs::read_to_string("/proc/self/mountinfo") {
+        if let Some(text) = read_text_bounded(Path::new("/proc/self/mountinfo"), 4 * 1024 * 1024) {
             for line in text.lines() {
+                if ctx.cancelled() {
+                    break;
+                }
                 // mountinfo: ... - fstype source superopts
                 let lower = line.to_lowercase();
                 let interesting_fs = lower.contains(" fuse")
@@ -102,6 +111,14 @@ impl Plugin for MountsPlugin {
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: mountinfo_target(line).into(),
+                        condition: if missing_nosuid {
+                            "user-area-mount-without-nosuid"
+                        } else {
+                            "interesting-filesystem-mount"
+                        }
+                        .into(),
+                        technique_id: "mount-options".into(),
                         ..Default::default()
                     });
                 }
@@ -128,6 +145,9 @@ impl Plugin for MountsPlugin {
                         "Informational — opt in with --allow-techniques kernel-exploit when ROE permits.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: "/proc/sys/kernel/unprivileged_userns_clone".into(),
+                    condition: format!("unprivileged-userns-{v}"),
+                    technique_id: "user-namespaces".into(),
                     ..Default::default()
                 });
             }
@@ -135,6 +155,17 @@ impl Plugin for MountsPlugin {
 
         Ok(findings)
     }
+}
+
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn mountinfo_target(line: &str) -> &str {
+    line.split_whitespace().nth(4).unwrap_or("unknown")
 }
 
 fn truncate(s: &str, max: usize) -> String {

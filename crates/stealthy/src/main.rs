@@ -8,7 +8,7 @@ mod core;
 mod exploit;
 mod plugins;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use crate::cli::{Cli, CliOverrides, Commands, ReportFormat};
@@ -55,6 +55,7 @@ fn main() -> Result<()> {
     let command = cli.command.take().unwrap_or(Commands::Enum {
         auto_exploit: false,
         allow_techniques: None,
+        confirm_evasion: false,
         plugins: None,
         skip: None,
         triage: false,
@@ -79,21 +80,28 @@ fn main() -> Result<()> {
             baseline,
             execute,
             keep_fixtures,
-        } => print_control_validation(
-            &cli,
-            case,
-            root,
-            signed_artifact,
-            baseline,
-            execute,
-            keep_fixtures,
-        ),
+        } => {
+            #[cfg(feature = "enum-only")]
+            if execute {
+                anyhow::bail!("the enum-only build disables executable fixture probes");
+            }
+            print_control_validation(
+                &cli,
+                case,
+                root,
+                signed_artifact,
+                baseline,
+                execute,
+                keep_fixtures,
+            )
+        }
         Commands::LiveControls => print_live_controls(&cli),
         Commands::Report {
             input,
             key_hex,
+            key_file,
             format,
-        } => print_report(&input, &key_hex, format),
+        } => print_report(&input, key_hex.as_deref(), key_file.as_deref(), format),
         Commands::Diff {
             baseline,
             current,
@@ -152,6 +160,7 @@ fn main() -> Result<()> {
             checkpoint,
             auto_exploit,
             allow_techniques,
+            confirm_evasion,
             plugins: only,
             skip,
         } => run_enum(
@@ -166,10 +175,12 @@ fn main() -> Result<()> {
             false,
             None,
             None,
+            confirm_evasion,
         ),
         Commands::Enum {
             auto_exploit,
             allow_techniques,
+            confirm_evasion,
             plugins: only,
             skip,
             triage,
@@ -187,6 +198,7 @@ fn main() -> Result<()> {
             triage,
             triage_out,
             approve_file,
+            confirm_evasion,
         ),
     }
 }
@@ -196,12 +208,12 @@ fn run_plugin_worker(plugin: &str) -> Result<()> {
 
     let mut body = String::new();
     std::io::stdin().read_to_string(&mut body)?;
-    let request: crate::core::engine::PluginWorkerRequest = serde_json::from_str(&body)?;
+    let request: crate::core::plugin_worker::PluginWorkerRequest = serde_json::from_str(&body)?;
     if request.plugin != plugin {
         anyhow::bail!("plugin worker request mismatch");
     }
-    let findings = crate::core::engine::run_plugin_worker(request)?;
-    println!("{}", serde_json::to_string(&findings)?);
+    let result = crate::core::plugin_worker::run_plugin_worker(request)?;
+    println!("{}", serde_json::to_string(&result)?);
     Ok(())
 }
 
@@ -218,6 +230,7 @@ fn run_enum(
     triage: bool,
     triage_out: Option<std::path::PathBuf>,
     approve_file: Option<std::path::PathBuf>,
+    confirm_evasion: bool,
 ) -> Result<()> {
     let approval_resume = if approve_file.is_some() {
         Some(checkpoint.clone().ok_or_else(|| {
@@ -228,6 +241,17 @@ fn run_enum(
     };
     let allow =
         crate::exploit::TechniqueAllowlist::from_ids(allow_techniques.as_deref().unwrap_or(&[]))?;
+    #[cfg(feature = "enum-only")]
+    if auto_exploit || !allow.is_empty() {
+        anyhow::bail!(
+            "the enum-only build disables --auto-exploit and every --allow-techniques family"
+        );
+    }
+    if allow.contains_evasion_family() && !(cli.confirm_evasion || confirm_evasion) {
+        anyhow::bail!(
+            "evasion technique families require --confirm-evasion in addition to --allow-techniques"
+        );
+    }
     let mut engine = Engine::from_cli(
         cli,
         overrides,
@@ -545,9 +569,29 @@ fn arg_was_set(argv: &[String], option: &str) -> bool {
         .any(|arg| arg == option || arg.starts_with(&format!("{option}=")))
 }
 
-fn print_report(path: &std::path::Path, key_hex: &str, format: ReportFormat) -> Result<()> {
+fn print_report(
+    path: &std::path::Path,
+    key_hex: Option<&str>,
+    key_file: Option<&std::path::Path>,
+    format: ReportFormat,
+) -> Result<()> {
+    use zeroize::Zeroizing;
+
+    let key = match (key_hex, key_file) {
+        (Some(key), None) => Zeroizing::new(key.trim().to_string()),
+        (None, Some(key_path)) => Zeroizing::new(
+            std::fs::read_to_string(key_path)
+                .with_context(|| format!("read report key {}", key_path.display()))?
+                .trim()
+                .to_string(),
+        ),
+        (None, None) => anyhow::bail!(
+            "report requires --key-file, --key-hex, STEALTHY_KEY_FILE, or STEALTHY_KEY_HEX"
+        ),
+        (Some(_), Some(_)) => anyhow::bail!("provide only one report key source"),
+    };
     let sealed = std::fs::read_to_string(path)?;
-    let report = EncryptedStore::open_sealed_report(&sealed, key_hex)?;
+    let report = EncryptedStore::open_sealed_report(&sealed, &key)?;
     let findings = report.findings.iter().collect::<Vec<_>>();
     match format {
         ReportFormat::Json => println!("{}", output::render_json(&report, &findings)?),

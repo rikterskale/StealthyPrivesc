@@ -13,6 +13,7 @@ Use this page as the navigation hub for the project.
 - Defender or reviewer: read [Capabilities](capabilities.md) and [Technique Risk Notes](techniques.md).
 - CI/integration user: use `--format json` or `--format sarif` and review the [Build](build.md) contract.
 - Report consumer: use the [Report schema](report-schema.md) and inspect coverage before comparing runs.
+- Release consumer: review the [Support Policy](support-policy.md) before selecting a version or artifact.
 
 ## Safe first run
 
@@ -36,6 +37,7 @@ authorization and remains enumeration-only unless `--auto-exploit` is chosen.
 | Choose a focused runbook workflow | [Runbook Modules](runbook/README.md) |
 | Understand the design | [Architecture](architecture.md), [Architecture Diagram](architecture-diagram.md), [Design](design.md) |
 | Review coverage and risk | [Capabilities](capabilities.md), [Technique Risk Notes](techniques.md) |
+| Check supported releases and schemas | [Support Policy](support-policy.md) |
 
 ## Evidence workflow
 
@@ -43,9 +45,13 @@ Create an encrypted report with a securely handled key:
 
 ```bash
 stealthy --authorized --verbose --output file \
-  --output-path ./findings.seal scan
-stealthy report ./findings.seal --key-hex "$STEALTHY_REPORT_KEY" --format sarif
+  --output-path ./findings.seal \
+  --key-output-path /approved/keys/findings.key scan
+stealthy report ./findings.seal --key-file /approved/keys/findings.key --format sarif
 ```
 
-Keep the key separate from the sealed report. Do not place keys, reports, or
-assessment data in Git.
+The full key is never printed to stderr. The key file is created with mode
+`0600` on Unix; on Windows, inheritance is removed and full control is granted
+only to the current SID. Move it into the approved secret store and keep it
+separate from the sealed report. Do not place keys, reports, or assessment data
+in Git.

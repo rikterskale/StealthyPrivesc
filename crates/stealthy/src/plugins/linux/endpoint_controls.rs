@@ -8,6 +8,7 @@
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
@@ -35,7 +36,7 @@ impl Plugin for EndpointControlsPlugin {
 
         findings.extend(apparmor_findings(&mut blocking));
         findings.extend(selinux_findings());
-        findings.extend(noexec_findings(&mut blocking));
+        findings.extend(noexec_findings(&mut blocking, &ctx.cancel));
         findings.extend(hardening_signals());
 
         if findings.is_empty() {
@@ -48,6 +49,8 @@ impl Plugin for EndpointControlsPlugin {
                 recommendation: "Confirm /proc and securityfs access; use scripts/linux fallbacks if the binary cannot run.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "linux-endpoint-controls".into(),
+                condition: "control-evidence-unavailable".into(),
                 ..Default::default()
             });
         }
@@ -110,6 +113,8 @@ fn apparmor_findings(blocking: &mut bool) -> Vec<Finding> {
             recommendation: "Continue; record SELinux/noexec results separately.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: "apparmor".into(),
+            condition: "module-not-observed".into(),
             ..Default::default()
         });
         return out;
@@ -141,6 +146,13 @@ fn apparmor_findings(blocking: &mut bool) -> Vec<Finding> {
         },
         noisy: false,
         leaves_artifacts: false,
+        object: "apparmor-current-profile".into(),
+        condition: if enforce_like {
+            "profile-enforcing"
+        } else {
+            "profile-present"
+        }
+        .into(),
         ..Default::default()
     });
     out
@@ -172,12 +184,19 @@ fn selinux_findings() -> Vec<Finding> {
                 .into(),
         noisy: false,
         leaves_artifacts: false,
+        object: enforce_path.display().to_string(),
+        condition: match mode.as_str() {
+            "1" => "selinux-enforcing",
+            "0" => "selinux-permissive",
+            _ => "selinux-state-unreadable",
+        }
+        .into(),
         ..Default::default()
     });
     out
 }
 
-fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
+fn noexec_findings(blocking: &mut bool, cancel: &AtomicBool) -> Vec<Finding> {
     let mut out = Vec::new();
     let text = match fs::read_to_string("/proc/self/mountinfo") {
         Ok(t) => t,
@@ -191,6 +210,9 @@ fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
     }
 
     for line in text.lines() {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
         // mountinfo fields: ... mountpoint ... - fstype source superopts
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 5 {
@@ -224,6 +246,8 @@ fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
                 recommendation: "Custom ELF drops on this mount will fail exec. Prefer script fallbacks (bash/python) or an approved executable mount.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: mountpoint.into(),
+                condition: "noexec-affects-drop-path".into(),
                 ..Default::default()
             });
         }
@@ -240,6 +264,8 @@ fn noexec_findings(blocking: &mut bool) -> Vec<Finding> {
             recommendation: "Still verify the intended drop path before writing a binary.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: "common-drop-mounts".into(),
+            condition: "no-noexec-observed".into(),
             ..Default::default()
         });
     }
@@ -265,6 +291,13 @@ fn hardening_signals() -> Vec<Finding> {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "/proc/sys/kernel/yama/ptrace_scope".into(),
+                condition: if v == "0" {
+                    "ptrace-scope-unrestricted"
+                } else {
+                    "ptrace-scope-restricted"
+                }
+                .into(),
                 ..Default::default()
             });
         }
@@ -279,6 +312,8 @@ fn hardening_signals() -> Vec<Finding> {
             recommendation: "Prefer low-noise reads; expect telemetry on helper spawns.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: "auditd".into(),
+            condition: "audit-service-present".into(),
             ..Default::default()
         });
     }

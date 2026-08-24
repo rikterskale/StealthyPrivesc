@@ -1,162 +1,69 @@
-# Evasion Techniques
+# Evasion-family status
 
-This document describes the evasion technique families implemented in Stealthy. These techniques are **explicitly gated** and require both `--authorized` and `--allow-techniques <id>` plus `--confirm-evasion` for use.
+StealthyPrivesc does not execute AMSI bypasses, ETW unhooking, or AV/EDR
+service manipulation. The IDs `amsi-bypass`, `etw-unhook`, and
+`av-edr-service` are retained as separately gated, scaffold/planned technique
+families so an operator can record ROE intent without running a payload.
 
-## ⚠️ Warning
+Dormant source prototypes for those families are retained for future review,
+but they are not declared by the Rust module tree, compiled into the binary,
+dispatched by the CLI, or included in release kits. An allowlisted family
+produces a `scaffold` finding with low-confidence scaffold evidence; it is not
+an `exploit_attempt`, does not patch memory, does not alter providers, and does
+not change service state.
 
-**These techniques are for authorized red team engagements only** and require explicit Rules of Engagement (ROE) approval. They may:
+## Gates and resulting behavior
 
-- Trigger security alerts
-- Leave forensic artifacts  
-- Crash systems or services
-- Violate compliance requirements if not properly authorized
+All three IDs require:
 
-## Technique Families
+1. `--authorized` or `STEALTHY_AUTHORIZED=1`;
+2. the exact family in `--allow-techniques`; and
+3. `--confirm-evasion` or `STEALTHY_EVASION_CONFIRMED=1`.
 
-### AMSI Bypass (`amsi-bypass`)
-
-**What it does**: Disables Microsoft's Antimalware Scan Interface (AMSI) for the current process via memory patching.
-
-**Implementation**: Patches the `AmsiScanBuffer` function in `amsi.dll` to return success immediately.
-
-**Methods**:
-- **Memory patching**: Modifies the first bytes of `AmsiScanBuffer` to `mov al, 0x01; ret`
-- Future: COM-based bypass, registry manipulation
-
-**Gate**: `--allow-techniques amsi-bypass --confirm-evasion`
-
-**Risk**: High - evasion technique that will be detected by EDR sensors monitoring memory modifications.
-
-**Restoration**: Original bytes are backed up and should be restored after completing authorized actions.
-
-**Detection risks**:
-- Memory protection changes (VirtualProtect calls)
-- DLL function hooking/unhooking
-- AMSI integrity checks
-- EDR behavioral analysis
-
----
-
-### ETW Unhooking (`etw-unhook`)
-
-**What it does**: Disables Event Tracing for Windows (ETW) for the current process by patching ETW-related functions.
-
-**Implementation**: Patches `NtTraceEvent` or `EtwEventWrite` in `ntdll.dll` to return `STATUS_SUCCESS` immediately.
-
-**Methods**:
-- **NtTraceEvent patch**: `xor eax, eax; ret`
-- **EtwEventWrite patch**: Alternative target
-
-**Gate**: `--allow-techniques etw-unhook --confirm-evasion`
-
-**Risk**: High - evasion technique that disables audit logging.
-
-**Restoration**: Original bytes are backed up and should be restored after completing authorized actions.
-
-**Detection risks**:
-- Memory protection changes
-- Function integrity verification
-- Out-of-process ETW providers
-- Alternative logging paths
-
----
-
-### AV/EDR Service Manipulation (`av-edr-service`)
-
-**What it does**: Suspends, disables, or unloads AV/EDR services and drivers.
-
-**Implementation**: Uses Windows Service Control Manager APIs to manipulate security services.
-
-**Methods**:
-- **Service suspend**: Pause service execution (if supported)
-- **Service stop**: Terminate service completely
-- **Service restore**: Restart previously stopped services
-
-**Known targets**:
-- `WinDefend` - Windows Defender
-- `WdNisSvc` - Windows Defender Network Inspection
-- `SecurityHealthService` - Windows Security Health
-- `Sense` - Windows Defender ATP
-- `WdFilter` - Windows Defender Filter
-
-**Gate**: `--allow-techniques av-edr-service --confirm-evasion`
-
-**Risk**: Critical - may crash systems, trigger immediate alerts, or leave system unprotected.
-
-**Restoration**: Services should be restarted immediately after completing authorized actions.
-
-**Detection risks**:
-- Service control events logged in Security event log
-- Protected Process Light (PPL) restrictions
-- Driver signature enforcement
-- Watchdog timers and service recovery
-
-**Privilege requirements**: 
-- `SeDebugPrivilege` often required
-- Administrative privileges typically needed
-- Some services may be protected (PPL)
-
----
-
-## Usage
+The third gate is an explicit acknowledgment for the planned family. It does
+not enable an implementation.
 
 ```bash
-# Enable single evasion technique
-stealthy --authorized --confirm-evasion enum --allow-techniques amsi-bypass
-
-# Enable multiple evasion techniques
 stealthy --authorized --confirm-evasion enum \
   --allow-techniques amsi-bypass,etw-unhook,av-edr-service
-
-# Using environment variable for confirmation
-export STEALTHY_EVASION_CONFIRMED=1
-stealthy --authorized enum --allow-techniques amsi-bypass
 ```
 
-## Approval Gates
+The command records scaffold findings only. There is no restoration workflow
+because no protection or service is modified.
 
-Evasion techniques require three layers of approval:
+## Family contracts
 
-| Layer | Mechanism | Purpose |
-|-------|-----------|---------|
-| 1. Global Auth | `--authorized` / `STEALTHY_AUTHORIZED=1` | Acknowledge authorized use |
-| 2. Technique Opt-in | `--allow-techniques <id>` | Explicitly opt into the technique family |
-| 3. Evasion Confirmation | `--confirm-evasion` / `STEALTHY_EVASION_CONFIRMED=1` | Extra acknowledgment for evasion techniques |
+| ID | Current contract | Explicitly not performed |
+| --- | --- | --- |
+| `amsi-bypass` | Separately gated scaffold/planned marker | AMSI patching, registry weakening, COM hijacking, or blinding |
+| `etw-unhook` | Separately gated scaffold/planned marker | `NtTraceEvent`/`EtwEventWrite` patching, provider disablement, or unhooking |
+| `av-edr-service` | Separately gated scaffold/planned marker | Service stop/pause/disable, driver unload, sensor tamper, or quarantine interference |
 
-## Best Practices
+Any future implementation would require a new safety and restoration review,
+tests, explicit release notes, and an update to this contract. The existence of
+an allowlist ID must never be interpreted as payload availability.
 
-1. **Document everything**: Record timestamps, techniques used, and restoration steps
-2. **Restore immediately**: Always restore original state after completing authorized actions
-3. **Test in lab**: Validate techniques in a controlled environment before production use
-4. **Monitor alerts**: Have Blue Team monitor for expected detections
-5. **Have rollback plan**: Know how to manually restore if automated restoration fails
-6. **Check ROE**: Ensure Rules of Engagement explicitly permit these techniques
+## `endpoint-bypass` remains separate
 
-## Integration Points
+`--allow-techniques endpoint-bypass` means alternate-path tracking plus
+approved-fixture validation only. It can direct an operator to script
+fallbacks, read-only artifact trust prediction, and benign disposable control
+fixtures. It never authorizes or performs AMSI/ETW/AV/EDR/AppLocker/WDAC
+disablement, unhooking, killing, or quarantine tampering.
 
-### Rust API
+See [Technique risk notes](techniques.md) for the authoritative endpoint and
+high-impact-family contract.
 
-```rust
-use stealthy::exploit::{amsi_bypass, etw_unhook, av_edr_service};
+## Script fallbacks
 
-// Check gates first
-amsi_bypass::check_evasion_gate(authorized, allowed, confirm_evasion)?;
+Windows PowerShell, JScript, and MSBuild-hosted enumeration fallbacks are
+reduced, enumerate-only collectors. The dispatcher and enumeration scripts do
+not import or invoke the dormant evasion prototype. Their JSON must report the
+data actually collected and make native coverage gaps explicit.
 
-// Execute bypass
-let result = amsi_bypass::amsi_bypass_patch()?;
+## Related documentation
 
-// ... perform authorized actions ...
-
-// Restore original state
-result.restore()?;
-```
-
-### PowerShell Fallbacks
-
-See `scripts/windows/evasion.ps1` for PowerShell equivalents when the Rust binary cannot run.
-
-## Related Documentation
-
-- [`docs/techniques.md`](techniques.md) - Overall technique catalog
-- [`docs/cli-reference.md`](cli-reference.md) - CLI options including `--allow-techniques`
-- [`docs/capabilities.md`](capabilities.md) - Capability matrix
+- [Technique risk notes](techniques.md)
+- [CLI reference](cli-reference.md)
+- [Capabilities](capabilities.md)
+- [Support policy](support-policy.md)

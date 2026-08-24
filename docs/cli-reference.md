@@ -12,7 +12,7 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--authorized` | Alias for the full authorization acknowledgment | Off |
 | `--i-understand-authorized-use-only` | Required authorization acknowledgment | Off |
 | `-q`, `--quiet` | Suppress progress and human summaries | Off |
-| `-v`, `--verbose` | Add diagnostic/finding progress; may expose sealed keys for file workflows | Off |
+| `-v`, `--verbose` | Add diagnostic/finding progress; full sealed-report keys are never printed | Off |
 | `--no-color` | Disable ANSI color output; `NO_COLOR` is also honored | Off |
 | `--delay-ms N` | Randomized delay budget between plugins | `50` |
 | `--format human|json|markdown|sarif` | Console/report format | `human` |
@@ -20,6 +20,7 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--fail-on LEVEL` | Exit `4` when the displayed maximum reaches the level | None |
 | `--output memory|file|remote` | Result destination | `memory` |
 | `--output-path PATH` | File destination for `--output file` | None |
+| `--key-output-path PATH` | Protected key destination required for encrypted file/remote output; env: `STEALTHY_KEY_OUTPUT_PATH` | None |
 | `--plaintext-file` | Write JSON instead of an encrypted file | Off |
 | `--also-markdown` | Write `PATH.md` beside a file output | Off |
 | `--exfil-url URL` | Operator-controlled destination metadata for remote output | None |
@@ -32,9 +33,15 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 Severity levels, from least to greatest, are `info`, `low`, `medium`, `high`,
 and `critical`.
 
-Profiles: `quiet` (skip `sudo --version`/`sudo -l`, `getcap`, `getfacl`; slim
-control collection when `*.app_control` is selected; higher delay),
-`balanced` (default), `thorough` (no delay, verbose), `ci` (quiet JSON).
+Profiles apply centralized noise budgets:
+
+| Profile | External helpers | Walk entries | Helper records | Other behavior |
+| --- | ---: | ---: | ---: | --- |
+| `quiet` | No | 2,000 | 50 | 250 ms delay; slim control collection |
+| `balanced` | No | 10,000 | 200 | 50 ms delay; high-signal read-only checks |
+| `thorough` | Yes | 100,000 | 2,000 | No delay; verbose |
+| `ci` | No | 5,000 | 100 | Quiet JSON |
+
 Explicit profile overrides work with both `--option value` and
 `--option=value` forms.
 
@@ -114,8 +121,10 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
   (pair with `--artifact` and/or `controls --execute`).
   **Evasion techniques** (`amsi-bypass`, `etw-unhook`, `av-edr-service`) require
   `--confirm-evasion` (or `STEALTHY_EVASION_CONFIRMED=1`) in addition to
-  `--authorized` and `--allow-techniques`. See `docs/techniques.md` and
-  `docs/evasion.md`.
+  `--authorized` and `--allow-techniques`. Even with all gates, they emit
+  `scaffold` findings only. Dormant source prototypes are not declared,
+  compiled, dispatched, or packaged, so no runtime path executes AMSI, ETW,
+  or AV/EDR interference. See `docs/techniques.md` and `docs/evasion.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
@@ -123,6 +132,30 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
   `--approve-file`. Approval files are bound to the checkpoint `run_id`; a
   missing, mismatched, or unknown `finding_id` is rejected. Approved probe IDs
   are scoped to their owning finding/plugin; they do not enable probes globally.
+
+Linux SUID/SGID/capability traversal is bounded, same-filesystem,
+non-symlink-following, and cancellation-aware. It honors:
+
+- `STEALTHY_SUID_ROOTS`: colon-separated roots;
+- `STEALTHY_SUID_MAX_DEPTH`: maximum depth per root; and
+- `STEALTHY_SUID_MAX_ENTRIES`: hard inspected-entry cap, further constrained
+  by the active profile's walk budget.
+
+The Linux sudo, SUID, and selected wildcard-cron checks can add structured
+`gtfobins.*` recommend-only annotations from a local allowlist. Windows service
+images, scheduled-task actions, and autoruns can similarly add allowlisted,
+machine-readable `lolbas.*` metadata. Both catalogs set
+`recommend_only=true`; no catalog technique is executed.
+
+Windows native coverage distinguishes object security descriptors from
+filesystem ACLs: services evaluate dangerous current-token service-object
+rights and service paths; scheduled tasks evaluate task-definition and
+action-file ACLs plus registry-backed Task Scheduler descriptors for
+`WRITE_DAC`, `WRITE_OWNER`, and `DELETE`. Unavailable descriptors are
+reported as unavailable rather than safe. DLL search/app-directory
+ACL enumeration runs without `--auto-exploit`; only a reversible marker
+confirmation requires an exact finding approval or explicit blanket
+`--auto-exploit`.
 
 The application-control plugins expose policy discovery, package/signer/hash/path
 trust evidence, sensor/tamper state, audit sources, harmless validation cases,
@@ -271,14 +304,19 @@ allowed, that tier is skipped and the next approved host is tried.
 ## `report`
 
 ```text
-stealthy report REPORT.seal --key-hex KEY
-stealthy report REPORT.seal --key-hex KEY --format json
-stealthy report REPORT.seal --key-hex KEY --format markdown
-stealthy report REPORT.seal --key-hex KEY --format sarif
+stealthy report REPORT.seal --key-file /approved/keys/report.key
+stealthy report REPORT.seal --key-file /approved/keys/report.key --format json
+stealthy report REPORT.seal --key-file /approved/keys/report.key --format markdown
+stealthy report REPORT.seal --key-file /approved/keys/report.key --format sarif
 ```
 
 Decrypts a sealed report locally. It does not enumerate the host and does not
-require authorization. The key is never inferred or recovered by the tool.
+require authorization. `--key-file PATH` is preferred and can be supplied by
+`STEALTHY_KEY_FILE`. `STEALTHY_KEY_HEX` supplies a protected environment
+value when a file is impractical. `--key-hex VALUE` remains for compatibility
+but is discouraged because process arguments may be captured by shell history
+or process inspection. Key sources conflict; provide exactly one. The key is
+never inferred or recovered by the tool.
 
 ## `diff`
 
@@ -301,21 +339,25 @@ the selected console format. No report file is created.
 ### File
 
 ```text
-stealthy --authorized --output file --output-path findings.seal enum
+stealthy --authorized --output file --output-path findings.seal --key-output-path /approved/keys/findings.key enum
 stealthy --authorized --output file --plaintext-file --output-path findings.json enum
 ```
 
-File mode requires `--output-path`. Sealed output uses an operator-held key;
-plaintext output must be approved by the evidence policy.
+File mode requires `--output-path`. Encrypted file mode also requires a
+distinct `--key-output-path` or `STEALTHY_KEY_OUTPUT_PATH`. The full key is
+never printed to stderr. Unix output/key files use mode `0600`; Windows removes
+inheritance and grants full control only to the current SID. Plaintext output
+must be approved by the evidence policy.
 
 ### Remote
 
 ```text
-stealthy --authorized --output remote --exfil-url https://operator.example/ingest enum
+stealthy --authorized --output remote --exfil-url https://operator.example/ingest --key-output-path /approved/keys/remote.key enum
 ```
 
 Remote mode is operator-controlled. The tool prints the sealed body and
 destination instructions; it does not implement a silent background client.
+It writes the key only to the protected key path.
 
 ## Exit codes
 

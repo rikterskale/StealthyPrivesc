@@ -1,0 +1,9 @@
+[
+  { "hklm": 1, "hkcu": 1, "expected": "fully_enabled" },
+  { "hklm": 1, "hkcu": 0, "expected": "partially_enabled" },
+  { "hklm": 0, "hkcu": 1, "expected": "partially_enabled" },
+  { "hklm": 0, "hkcu": 0, "expected": "disabled" },
+  { "hklm": null, "hkcu": 1, "expected": "unknown" },
+  { "hklm": 0, "hkcu": null, "expected": "unknown" },
+  { "hklm": null, "hkcu": null, "expected": "unknown" }
+]

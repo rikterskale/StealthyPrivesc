@@ -1,0 +1,6 @@
+# case mode owner group euid supplementary_gids expected
+owner 0660 1000 999 1000 1000 owner_writable
+docker_group 0660 0 999 1000 1000,999 group_writable
+world 0666 0 999 1000 1000 world_writable
+restricted 0660 0 999 1000 1000 restricted
+already_root 0666 0 0 0 0 restricted

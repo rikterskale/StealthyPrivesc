@@ -6,10 +6,98 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  tag-gate:
+    name: Full tag release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      COVERAGE_MIN_LINES: "65"
+    steps:
+      - name: Check out complete source history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Validate source and default-feature behavior
+        run: |
+          cargo metadata --locked --format-version 1 --no-deps > /dev/null
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+          cargo build --locked --workspace --release
+
+      - name: Validate documentation, links, and pinned actions
+        run: python3 scripts/ci/validate_docs.py
+
+      - name: Check, lint, and test enum-only flavor
+        run: |
+          cargo check --locked -p stealthy --profile enum-only --no-default-features --features enum-only
+          cargo clippy --locked -p stealthy --profile enum-only --no-default-features --features enum-only --all-targets -- -D warnings
+          cargo test --locked -p stealthy --profile enum-only --no-default-features --features enum-only
+
+      - name: Check, lint, and test opsec-string-strip flavor
+        run: |
+          cargo check --locked -p stealthy --profile opsec-string-strip --no-default-features --features opsec-string-strip
+          cargo clippy --locked -p stealthy --profile opsec-string-strip --no-default-features --features opsec-string-strip --all-targets -- -D warnings
+          cargo test --locked -p stealthy --profile opsec-string-strip --no-default-features --features opsec-string-strip
+          cargo build --locked -p stealthy --profile opsec-string-strip --no-default-features --features opsec-string-strip
+          bin=target/opsec-string-strip/stealthy
+          "$bin" disclaimer | grep -qi authorized
+          set +e
+          "$bin" enum >/dev/null 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+          "$bin" --authorized --quiet --format json enum --plugins linux.kernel_cve |
+            python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["authorized_use_ack"] is True and r["run_id"] and r["mode"] == "enumerate-only"'
+
+      - name: Enforce Rust coverage floor
+        run: |
+          cargo install --locked cargo-llvm-cov --version 0.6.16
+          cargo llvm-cov --locked --workspace --all-targets --lcov \
+            --output-path tag-lcov.info --fail-under-lines "$COVERAGE_MIN_LINES"
+
+      - name: Validate release and agent scripts
+        run: |
+          python3 -m py_compile scripts/release/package.py scripts/linux/enum.py
+          find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          bash -n scripts/install.sh
+
+      - name: Scan full history for committed secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
+      - name: Check dependency advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+          arguments: --all-features
+
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.target }}
+    needs: tag-gate
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: read
     strategy:
@@ -17,64 +105,153 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/stealthy
             artifact: stealthy-linux-x86_64.tar.gz
+          - os: ubuntu-latest
+            platform: linux
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            binary: target/aarch64-unknown-linux-gnu/release/stealthy
+            artifact: stealthy-linux-aarch64.tar.gz
           - os: windows-latest
+            platform: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/stealthy.exe
             artifact: stealthy-windows-x86_64.zip
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
+      - name: Install Rust target
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install Linux aarch64 linker and emulator
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-arm64-cross qemu-user
+
       - name: Build release binary
-        run: cargo build --locked --workspace --release
-      - name: Package Linux artifact
-        if: runner.os == 'Linux'
         shell: bash
-        run: tar -czf "${{ matrix.artifact }}" -C target/release stealthy
-      - name: Package Windows artifact
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked -p stealthy --release --target "${{ matrix.target }}"
+
+      - name: Smoke-test native Linux binary
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          "${{ matrix.binary }}" doctor --json | python3 -c 'import json,sys; assert json.load(sys.stdin)["healthy"] is True'
+          set +e
+          "${{ matrix.binary }}" enum >/dev/null 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+
+      - name: Smoke-test Linux aarch64 binary under QEMU
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: qemu-aarch64 -L /usr/aarch64-linux-gnu "${{ matrix.binary }}" doctor --json | python3 -c 'import json,sys; assert json.load(sys.stdin)["healthy"] is True'
+
+      - name: Smoke-test Windows binary
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path target/release/stealthy.exe -DestinationPath "${{ matrix.artifact }}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        run: |
+          $doctor = & "${{ matrix.binary }}" doctor --json | ConvertFrom-Json
+          if (-not $doctor.healthy) { throw 'Windows release doctor smoke failed' }
+          & "${{ matrix.binary }}" enum *> $null
+          if ($LASTEXITCODE -ne 2) { throw "expected authorization exit 2, got $LASTEXITCODE" }
+
+      - name: Package Linux delivery kit
+        if: runner.os == 'Linux'
+        run: |
+          python3 scripts/release/package.py \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --target "${{ matrix.target }}" \
+            --binary "${{ matrix.binary }}" \
+            --output "${{ matrix.artifact }}" \
+            --version "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA"
+
+      - name: Package Windows delivery kit
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python scripts/release/package.py `
+            --platform "${{ matrix.platform }}" `
+            --arch "${{ matrix.arch }}" `
+            --target "${{ matrix.target }}" `
+            --binary "${{ matrix.binary }}" `
+            --output "${{ matrix.artifact }}" `
+            --version "$env:GITHUB_REF_NAME" `
+            --commit "$env:GITHUB_SHA"
+
+      - name: Generate SPDX JSON SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          file: ${{ matrix.artifact }}
+          format: spdx-json
+          output-file: ${{ matrix.artifact }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Upload release kit and SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.spdx.json
+          if-no-files-found: error
 
   publish:
-    name: Publish release
+    name: Publish attested release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
       attestations: write
       artifact-metadata: write
     steps:
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+      - name: Download release kits and SBOMs
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
         with:
+          pattern: release-*
           path: dist
-      - name: Flatten artifacts and create checksums
+          merge-multiple: true
+
+      - name: Validate release set and create checksums
         shell: bash
         run: |
-          flattened="$(mktemp -d)"
-          find dist -mindepth 2 -type f -exec cp {} "$flattened"/ \;
-          find dist -mindepth 2 -type f -delete
-          find dist -depth -mindepth 1 -type d -empty -delete
-          cp "$flattened"/* dist/
-          rm -rf "$flattened"
           test -f dist/stealthy-linux-x86_64.tar.gz
+          test -f dist/stealthy-linux-aarch64.tar.gz
           test -f dist/stealthy-windows-x86_64.zip
-          sha256sum dist/* > dist/SHA256SUMS
-      - name: Attest Linux release artifact
+          test -f dist/stealthy-linux-x86_64.tar.gz.spdx.json
+          test -f dist/stealthy-linux-aarch64.tar.gz.spdx.json
+          test -f dist/stealthy-windows-x86_64.zip.spdx.json
+          cd dist
+          sha256sum *.tar.gz *.zip *.spdx.json > SHA256SUMS
+
+      - name: Attest release kits, SBOMs, and checksum manifest
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
-          subject-path: dist/stealthy-linux-x86_64.tar.gz
-      - name: Attest Windows release artifact
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
-        with:
-          subject-path: dist/stealthy-windows-x86_64.zip
+          subject-path: dist/*
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

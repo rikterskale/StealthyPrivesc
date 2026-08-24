@@ -2,6 +2,10 @@ use crate::core::plugin::{Plugin, PluginContext};
 use crate::core::types::{Finding, FindingKind, Severity};
 use crate::plugins::linux::util;
 use anyhow::Result;
+use std::io::Read;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct SudoPlugin;
 
@@ -42,6 +46,8 @@ impl Plugin for SudoPlugin {
                                 .into(),
                         noisy: true,
                         leaves_artifacts: false,
+                        object: "sudo".into(),
+                        condition: "version-observed".into(),
                         ..Default::default()
                     });
                     if line.contains("1.8.") || line.contains("1.9.0") || line.contains("1.9.1") {
@@ -56,6 +62,8 @@ impl Plugin for SudoPlugin {
                                 .into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            object: "sudo".into(),
+                            condition: "historical-version-review".into(),
                             ..Default::default()
                         });
                     }
@@ -72,7 +80,7 @@ impl Plugin for SudoPlugin {
             if ctx.cancelled() {
                 break;
             }
-            collect_readable_sudoers(path, &username, &groups, &mut findings);
+            collect_readable_sudoers(path, &username, &groups, &ctx.cancel, &mut findings);
         }
 
         // `sudo -l` is commonly audited — quiet/OPSEC profiles skip it entirely.
@@ -90,6 +98,8 @@ impl Plugin for SudoPlugin {
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: "/etc/sudoers*".into(),
+                    condition: "quiet-profile-helper-skipped".into(),
                     ..Default::default()
                 });
             }
@@ -105,6 +115,8 @@ impl Plugin for SudoPlugin {
                         .into(),
                 noisy: true,
                 leaves_artifacts: false,
+                object: "sudo:-n-l".into(),
+                condition: "audited-helper-warning".into(),
                 ..Default::default()
             });
 
@@ -116,16 +128,21 @@ impl Plugin for SudoPlugin {
                     let stdout = String::from_utf8_lossy(&out.stdout);
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     let combined = format!("{stdout}{stderr}");
+                    let gtfo = format_gtfobins_annotations(&combined);
                     if combined.contains("NOPASSWD") {
                         findings.push(Finding {
                             plugin: self.id().into(),
                             kind: FindingKind::Misconfiguration,
                             severity: Severity::High,
                             title: "NOPASSWD sudo rule(s) present".into(),
-                            detail: truncate(&combined, 2000),
+                            detail: append_annotation(truncate(&combined, 2000), &gtfo),
                             recommendation: "Review each NOPASSWD command for GTFOBins-style escalation paths. Do not auto-run them.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            object: "sudo:-n-l:nopasswd".into(),
+                            condition: "sudo-nopasswd-rule-observed".into(),
+                            mitre_techniques: vec!["T1548.003".into()],
+                            technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
                             ..Default::default()
                         });
                     } else if out.status.success() {
@@ -134,10 +151,14 @@ impl Plugin for SudoPlugin {
                             kind: FindingKind::Enumeration,
                             severity: Severity::Low,
                             title: "sudo -l succeeded".into(),
-                            detail: truncate(&combined, 2000),
+                            detail: append_annotation(truncate(&combined, 2000), &gtfo),
                             recommendation: "Manually review allowed commands for escalation primitives.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            object: "sudo:-n-l".into(),
+                            condition: "sudo-rules-enumerated".into(),
+                            mitre_techniques: vec!["T1548.003".into()],
+                            technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
                             ..Default::default()
                         });
                     } else if !combined.trim().is_empty() {
@@ -150,6 +171,8 @@ impl Plugin for SudoPlugin {
                             recommendation: "If password sudo is available interactively, re-check during an approved window.".into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            object: "sudo:-n-l".into(),
+                            condition: "sudo-rules-unavailable".into(),
                             ..Default::default()
                         });
                     }
@@ -168,27 +191,41 @@ fn collect_readable_sudoers(
     path: &str,
     username: &str,
     groups: &[String],
+    cancel: &Arc<AtomicBool>,
     findings: &mut Vec<Finding>,
 ) {
+    if cancel.load(Ordering::SeqCst) {
+        return;
+    }
     let meta = match std::fs::metadata(path) {
         Ok(m) => m,
         Err(_) => return,
     };
 
     if meta.is_file() {
-        if let Ok(text) = std::fs::read_to_string(path) {
-            scan_sudoers_text(path, &text, username, groups, findings);
+        if let Some(text) = read_text_bounded(Path::new(path), 1024 * 1024) {
+            scan_sudoers_text(path, &text, username, groups, cancel, findings);
         }
         return;
     }
 
     if meta.is_dir() {
         if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
+            for entry in entries.flatten().take(512) {
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
                 let p = entry.path();
                 if p.is_file() {
-                    if let Ok(text) = std::fs::read_to_string(&p) {
-                        scan_sudoers_text(&p.to_string_lossy(), &text, username, groups, findings);
+                    if let Some(text) = read_text_bounded(&p, 1024 * 1024) {
+                        scan_sudoers_text(
+                            &p.to_string_lossy(),
+                            &text,
+                            username,
+                            groups,
+                            cancel,
+                            findings,
+                        );
                     }
                 }
             }
@@ -196,14 +233,25 @@ fn collect_readable_sudoers(
     }
 }
 
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 fn scan_sudoers_text(
     path: &str,
     text: &str,
     username: &str,
     groups: &[String],
+    cancel: &Arc<AtomicBool>,
     findings: &mut Vec<Finding>,
 ) {
     for line in text.lines() {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -213,15 +261,20 @@ fn scan_sudoers_text(
             continue;
         }
         if trimmed.contains("NOPASSWD") {
+            let gtfo = format_gtfobins_annotations(trimmed);
             findings.push(Finding {
                 plugin: "linux.sudo".into(),
                 kind: FindingKind::Misconfiguration,
                 severity: Severity::High,
                 title: format!("Readable NOPASSWD rule in {path}"),
-                detail: trimmed.to_string(),
+                detail: append_annotation(trimmed.to_string(), &gtfo),
                 recommendation: "Validate whether the allowed binary can be abused (GTFOBins). Escalate only with approval.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: format!("{path}:{trimmed}"),
+                condition: "sudo-nopasswd-rule-readable".into(),
+                mitre_techniques: vec!["T1548.003".into()],
+                technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
                 ..Default::default()
             });
         }
@@ -236,6 +289,10 @@ fn scan_sudoers_text(
                     "If this applies to the current user, full root via sudo is likely.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: format!("{path}:{trimmed}"),
+                condition: "sudo-broad-all-rule-readable".into(),
+                mitre_techniques: vec!["T1548.003".into()],
+                technique_id: "sudo".into(),
                 ..Default::default()
             });
         }
@@ -256,16 +313,59 @@ fn rule_applies_to_identity(subject: &str, username: &str, groups: &[String]) ->
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        format!("{}…", s.chars().take(max).collect::<String>())
     }
+}
+
+fn append_annotation(mut detail: String, annotation: &str) -> String {
+    if !annotation.is_empty() {
+        detail.push('\n');
+        detail.push_str(annotation);
+    }
+    detail
+}
+
+fn format_gtfobins_annotations(text: &str) -> String {
+    let mut matches = Vec::new();
+    for token in text.split(|character: char| {
+        character.is_whitespace() || matches!(character, ',' | ':' | '=' | '(' | ')' | '!')
+    }) {
+        let binary = token
+            .trim_matches(|character: char| character == '\'' || character == '"')
+            .rsplit('/')
+            .next()
+            .unwrap_or("");
+        let functions = match binary {
+            "awk" => "shell,file-read,file-write,sudo",
+            "bash" | "sh" | "env" | "find" | "make" | "nmap" | "perl" | "python" | "python3"
+            | "ruby" | "systemctl" => "shell,sudo",
+            "cp" | "mv" | "tar" | "zip" | "vi" | "vim" => "shell,file-read,file-write,sudo",
+            "less" | "more" | "man" => "shell,file-read,sudo",
+            _ => continue,
+        };
+        if !matches.iter().any(|(known, _)| *known == binary) {
+            matches.push((binary, functions));
+        }
+    }
+    matches
+        .into_iter()
+        .map(|(binary, functions)| {
+            format!(
+                "gtfobins.binary={binary} gtfobins.functions={functions} gtfobins.url=https://gtfobins.github.io/gtfobins/{binary}/ recommend_only=true"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::rule_applies_to_identity;
+    use super::{format_gtfobins_annotations, rule_applies_to_identity, scan_sudoers_text};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     #[test]
     fn matches_direct_user_and_group_rules() {
@@ -281,5 +381,35 @@ mod tests {
         let groups = vec!["wheel".to_string()];
         assert!(!rule_applies_to_identity("bob", "alice", &groups));
         assert!(!rule_applies_to_identity("%sudo", "alice", &groups));
+    }
+
+    #[test]
+    fn golden_sudoers_fixture_scopes_identity_and_annotates_gtfobins() {
+        let fixture = include_str!("../../../tests/fixtures/linux/sudoers.golden");
+        let mut findings = Vec::new();
+        scan_sudoers_text(
+            "/fixture/sudoers",
+            fixture,
+            "alice",
+            &["wheel".into()],
+            &Arc::new(AtomicBool::new(false)),
+            &mut findings,
+        );
+        assert!(findings
+            .iter()
+            .any(|finding| finding.condition == "sudo-nopasswd-rule-readable"
+                && finding.detail.contains("gtfobins.binary=find")
+                && finding.technique_id == "gtfobins"));
+        assert!(!findings
+            .iter()
+            .any(|finding| finding.detail.contains("bob ")));
+        assert!(findings
+            .iter()
+            .all(|finding| !finding.object.is_empty() && !finding.condition.is_empty()));
+    }
+
+    #[test]
+    fn annotations_never_include_unknown_commands() {
+        assert!(format_gtfobins_annotations("/usr/bin/custom-tool --check").is_empty());
     }
 }

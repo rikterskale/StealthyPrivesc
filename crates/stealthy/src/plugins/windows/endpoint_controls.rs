@@ -31,14 +31,26 @@ impl Plugin for EndpointControlsPlugin {
         let mut findings = Vec::new();
         let mut blocking = false;
 
-        findings.extend(applocker_findings(&mut blocking)?);
-        findings.extend(wdac_findings(&mut blocking)?);
-        findings.extend(smartscreen_findings()?);
-        findings.extend(amsi_findings()?);
-        findings.extend(defender_av_findings()?);
-        findings.extend(powershell_policy_findings()?);
+        if !ctx.cancelled() {
+            findings.extend(applocker_findings(&mut blocking)?);
+        }
+        if !ctx.cancelled() {
+            findings.extend(wdac_findings(&mut blocking)?);
+        }
+        if !ctx.cancelled() {
+            findings.extend(smartscreen_findings()?);
+        }
+        if !ctx.cancelled() {
+            findings.extend(amsi_findings(ctx)?);
+        }
+        if !ctx.cancelled() {
+            findings.extend(defender_av_findings(ctx)?);
+        }
+        if !ctx.cancelled() {
+            findings.extend(powershell_policy_findings()?);
+        }
 
-        if findings.is_empty() {
+        if findings.is_empty() && !ctx.cancelled() {
             findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Enumeration,
@@ -51,6 +63,8 @@ impl Plugin for EndpointControlsPlugin {
                         .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-endpoint-control-registry".into(),
+                condition: "no-endpoint-control-signal-collected".into(),
                 ..Default::default()
             });
         }
@@ -118,6 +132,8 @@ fn applocker_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
             recommendation: "Custom .exe may be denied. Prefer script fallbacks allowlisted by policy, or an approved signed host binary.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: format!(r"HKLM\{root}"),
+            condition: "applocker-policy-key-present".into(),
             ..Default::default()
         });
     } else {
@@ -131,6 +147,8 @@ fn applocker_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
                 "Still check local SRP / WDAC; absence here is not proof of no controls.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: format!(r"HKLM\{root}"),
+            condition: "applocker-policy-key-absent-or-unreadable".into(),
             ..Default::default()
         });
     }
@@ -172,6 +190,8 @@ fn wdac_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
             recommendation: "WDAC/CI can block unsigned PEs. Prefer allowlisted script hosts or ROE-approved signed builds.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: r"HKLM\SYSTEM\CurrentControlSet\Control\CI".into(),
+            condition: "wdac-code-integrity-signal-present".into(),
             ..Default::default()
         });
     } else {
@@ -186,6 +206,8 @@ fn wdac_findings(blocking: &mut bool) -> Result<Vec<Finding>> {
                     .into(),
             noisy: false,
             leaves_artifacts: false,
+            object: r"HKLM\SYSTEM\CurrentControlSet\Control\CI".into(),
+            condition: "no-strong-wdac-signal".into(),
             ..Default::default()
         });
     }
@@ -227,14 +249,26 @@ fn smartscreen_findings() -> Result<Vec<Finding>> {
         recommendation: "SmartScreen may warn or block unmarked downloads. Prefer checksum-verified install from an approved channel.".into(),
         noisy: false,
         leaves_artifacts: false,
+        object: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SmartScreenEnabled"
+            .into(),
+        condition: if active {
+            "smartscreen-active-signal"
+        } else {
+            "smartscreen-soft-or-absent"
+        }
+        .into(),
         ..Default::default()
     });
     Ok(out)
 }
 
-fn amsi_findings() -> Result<Vec<Finding>> {
+fn amsi_findings(ctx: &PluginContext<'_>) -> Result<Vec<Finding>> {
     let mut out = Vec::new();
-    let providers = list_subkeys(Hive::LocalMachine, r"SOFTWARE\Microsoft\AMSI\Providers")?;
+    let providers = list_subkeys(
+        Hive::LocalMachine,
+        r"SOFTWARE\Microsoft\AMSI\Providers",
+        ctx,
+    )?;
     if providers.is_empty() {
         out.push(Finding {
             plugin: "windows.endpoint_controls".into(),
@@ -246,6 +280,8 @@ fn amsi_findings() -> Result<Vec<Finding>> {
                 "Script hosts may still load AMSI; treat script fallbacks as auditable.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: r"HKLM\SOFTWARE\Microsoft\AMSI\Providers".into(),
+            condition: "no-amsi-provider-enumerated".into(),
             ..Default::default()
         });
     } else {
@@ -258,13 +294,15 @@ fn amsi_findings() -> Result<Vec<Finding>> {
             recommendation: "AMSI inspects script content. Prefer approved script hosts; do not attempt AMSI disable/patch in this tool.".into(),
             noisy: false,
             leaves_artifacts: false,
+            object: r"HKLM\SOFTWARE\Microsoft\AMSI\Providers".into(),
+            condition: "amsi-provider-registered".into(),
             ..Default::default()
         });
     }
     Ok(out)
 }
 
-fn defender_av_findings() -> Result<Vec<Finding>> {
+fn defender_av_findings(ctx: &PluginContext<'_>) -> Result<Vec<Finding>> {
     let mut out = Vec::new();
     let disable = read_u32(
         Hive::LocalMachine,
@@ -285,6 +323,8 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
         recommendation: "Presence of Defender policy keys indicates AV context; do not attempt to disable AV/EDR from this tool.".into(),
         noisy: false,
         leaves_artifacts: false,
+        object: r"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender".into(),
+        condition: "defender-policy-signals-collected".into(),
         ..Default::default()
     });
 
@@ -294,10 +334,16 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
         r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
     ] {
-        for sub in list_subkeys(Hive::LocalMachine, root)?
+        if ctx.cancelled() {
+            break;
+        }
+        for sub in list_subkeys(Hive::LocalMachine, root, ctx)?
             .into_iter()
             .take(200)
         {
+            if ctx.cancelled() {
+                break;
+            }
             let path = format!(r"{root}\{sub}");
             if let Some(name) = read_string(Hive::LocalMachine, &path, "DisplayName")? {
                 let lower = name.to_ascii_lowercase();
@@ -338,6 +384,8 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
                     .into(),
             noisy: true,
             leaves_artifacts: false,
+            object: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall".into(),
+            condition: "no-known-av-product-signal".into(),
             ..Default::default()
         });
     } else {
@@ -350,6 +398,8 @@ fn defender_av_findings() -> Result<Vec<Finding>> {
             recommendation: "Expect telemetry on PE drops and script hosts. Prefer approved channels; do not attempt AV/EDR disable from this tool.".into(),
             noisy: true,
             leaves_artifacts: false,
+            object: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall".into(),
+            condition: "av-edr-product-signal-present".into(),
             ..Default::default()
         });
     }
@@ -377,16 +427,20 @@ fn powershell_policy_findings() -> Result<Vec<Finding>> {
         recommendation: "If powershell.exe is constrained, use enum.js / cscript or MSBuild EnumTasks when those hosts are allowlisted.".into(),
         noisy: false,
         leaves_artifacts: false,
+        object: r"HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell".into(),
+        condition: "powershell-execution-policy-signal".into(),
         ..Default::default()
     });
     Ok(out)
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
+    let mut chars = s.chars();
+    let prefix: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        format!("{prefix}…")
     } else {
-        format!("{}…", &s[..max])
+        prefix
     }
 }
 
@@ -523,7 +577,7 @@ fn read_string(_hive: Hive, _subkey: &str, _value: &str) -> Result<Option<String
 }
 
 #[cfg(windows)]
-fn list_subkeys(hive: Hive, subkey: &str) -> Result<Vec<String>> {
+fn list_subkeys(hive: Hive, subkey: &str, ctx: &PluginContext<'_>) -> Result<Vec<String>> {
     use std::ptr;
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryInfoKeyW, HKEY_LOCAL_MACHINE, KEY_READ,
@@ -560,6 +614,9 @@ fn list_subkeys(hive: Hive, subkey: &str) -> Result<Vec<String>> {
         let mut out = Vec::new();
         let mut name = vec![0u16; (max_name as usize) + 2];
         for i in 0..count {
+            if ctx.cancelled() {
+                break;
+            }
             let mut name_len = name.len() as u32;
             let status = RegEnumKeyExW(
                 key,
@@ -582,7 +639,7 @@ fn list_subkeys(hive: Hive, subkey: &str) -> Result<Vec<String>> {
 }
 
 #[cfg(not(windows))]
-fn list_subkeys(_hive: Hive, _subkey: &str) -> Result<Vec<String>> {
+fn list_subkeys(_hive: Hive, _subkey: &str, _ctx: &PluginContext<'_>) -> Result<Vec<String>> {
     Ok(Vec::new())
 }
 

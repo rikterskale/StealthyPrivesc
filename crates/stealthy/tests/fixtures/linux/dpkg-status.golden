@@ -1,0 +1,7 @@
+Package: base-files
+Status: install ok installed
+Version: 12ubuntu4
+
+Package: linux-image-5.15.0-107-generic
+Status: install ok installed
+Version: 5.15.0-107.117

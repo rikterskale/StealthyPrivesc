@@ -30,3 +30,11 @@ codegen-units = 1
 opt-level = "z"
 strip = true
 panic = "abort"
+
+# Named build profiles retain every release safety property. Feature markers are
+# declared by the stealthy crate and are validated independently in CI.
+[profile.enum-only]
+inherits = "release"
+
+[profile.opsec-string-strip]
+inherits = "release"

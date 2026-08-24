@@ -1,4 +1,3 @@
-```
 # Dependencies
 target/
 Cargo.lock
@@ -18,4 +17,16 @@ Cargo.lock
 
 # Rust-specific
 **/*.rs.bk
-```
+
+# Local tool and test output
+.cache-run/
+.stealthy-artifacts/
+__pycache__/
+.coverage
+lcov.info
+coverage-summary.txt
+
+# Local AI-assistant state
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.*/

@@ -41,6 +41,9 @@ pub enum FindingKind {
     Misconfiguration,
     Credential,
     Recommendation,
+    /// An allowlisted capability or workflow that is present but does not
+    /// execute a probe or payload in this build.
+    Scaffold,
     ExploitAttempt,
 }
 
@@ -48,7 +51,7 @@ impl FindingKind {
     /// Whether a finding describes an observed result rather than a suggestion
     /// to run or review another check.
     pub fn is_positive(self) -> bool {
-        !matches!(self, Self::Recommendation)
+        !matches!(self, Self::Recommendation | Self::Scaffold)
     }
 }
 
@@ -127,6 +130,12 @@ impl Finding {
     ///
     /// These commands validate or collect context for a finding. They do not
     /// perform privilege escalation, write persistence, or modify the host.
+    #[cfg(feature = "opsec-string-strip")]
+    pub fn next_command(&self) -> String {
+        "Consult the approved operator runbook for a read-only validation command.".into()
+    }
+
+    #[cfg(not(feature = "opsec-string-strip"))]
     pub fn next_command(&self) -> String {
         if self.technique_id == "endpoint-bypass" || self.condition.starts_with("endpoint-bypass") {
             let allowed =

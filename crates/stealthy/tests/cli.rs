@@ -48,6 +48,54 @@ fn authorized_plugin_listing_is_machine_readable() {
 fn encrypted_file_output_does_not_print_the_key_by_default() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("findings.seal");
+    let key_path = dir.path().join("findings.key");
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--output",
+            "file",
+            "--output-path",
+            path.to_str().unwrap(),
+            "--key-output-path",
+            key_path.to_str().unwrap(),
+            "enum",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(path.is_file());
+    assert!(key_path.is_file());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("decrypt key"));
+    let reopened = stealthy()
+        .args([
+            "report",
+            path.to_str().unwrap(),
+            "--key-file",
+            key_path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(reopened.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&reopened.stdout).unwrap();
+    assert_eq!(report["schema_version"], "2");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let key_mode = std::fs::metadata(key_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(key_mode, 0o600);
+    }
+}
+
+#[test]
+fn encrypted_file_output_requires_protected_key_sink() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("findings.seal");
     let output = stealthy()
         .args([
             "--authorized",
@@ -57,19 +105,13 @@ fn encrypted_file_output_does_not_print_the_key_by_default() {
             "--output-path",
             path.to_str().unwrap(),
             "enum",
+            "--plugins",
+            smoke_plugin(),
         ])
         .output()
         .unwrap();
-    assert!(output.status.success());
-    assert!(path.is_file());
-    assert!(!String::from_utf8_lossy(&output.stderr).contains("decrypt key"));
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
-    }
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--key-output-path"));
 }
 
 #[test]
@@ -442,6 +484,7 @@ fn live_controls_collects_host_state_without_fixtures() {
         .starts_with("live-"));
 }
 
+#[cfg(not(feature = "enum-only"))]
 #[test]
 fn allow_techniques_records_scaffold_findings() {
     let output = stealthy()
@@ -469,6 +512,7 @@ fn allow_techniques_records_scaffold_findings() {
     let findings = value["findings"].as_array().unwrap();
     assert!(findings.iter().any(|f| {
         f["plugin"] == "allow_techniques"
+            && f["kind"] == "scaffold"
             && f["title"]
                 .as_str()
                 .unwrap_or_default()
@@ -476,6 +520,7 @@ fn allow_techniques_records_scaffold_findings() {
     }));
 }
 
+#[cfg(not(feature = "enum-only"))]
 #[test]
 fn endpoint_bypass_wires_next_command_to_validation() {
     let artifact = tempfile::NamedTempFile::new().unwrap();
@@ -1122,6 +1167,172 @@ fn approval_file_requires_same_run_checkpoint() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("requires --checkpoint"));
+}
+
+#[cfg(all(unix, not(feature = "enum-only")))]
+#[test]
+fn auto_exploit_probes_each_reversible_candidate() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::set_permissions(&first, std::fs::Permissions::from_mode(0o777)).unwrap();
+    std::fs::set_permissions(&second, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let path_value = format!("{}:{}", first.display(), second.display());
+
+    let output = stealthy()
+        .env("PATH", path_value)
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--plugin-timeout-ms",
+            "0",
+            "enum",
+            "--auto-exploit",
+            "--plugins",
+            "linux.path_ld",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let confirmed = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["kind"] == "exploit_attempt")
+        .collect::<Vec<_>>();
+    assert_eq!(confirmed.len(), 2, "findings={}", report["findings"]);
+}
+
+#[cfg(all(unix, not(feature = "enum-only")))]
+#[test]
+fn approve_file_probes_only_the_selected_finding() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::set_permissions(&first, std::fs::Permissions::from_mode(0o777)).unwrap();
+    std::fs::set_permissions(&second, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let path_value = format!("{}:{}", first.display(), second.display());
+    let checkpoint = dir.path().join("checkpoint.json");
+
+    let baseline = stealthy()
+        .env("PATH", &path_value)
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--checkpoint",
+            checkpoint.to_str().unwrap(),
+            "--plugin-timeout-ms",
+            "0",
+            "enum",
+            "--plugins",
+            "linux.path_ld",
+        ])
+        .output()
+        .unwrap();
+    assert!(baseline.status.success());
+    let prior: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&checkpoint).unwrap()).unwrap();
+    let candidates = prior["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| {
+            finding["plugin"] == "linux.path_ld"
+                && finding["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("World-writable PATH entry")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(candidates.len(), 2);
+    assert_ne!(candidates[0]["finding_id"], candidates[1]["finding_id"]);
+    let approved = candidates
+        .iter()
+        .find(|finding| finding["object"] == first.to_string_lossy().as_ref())
+        .unwrap();
+    let decisions = dir.path().join("decisions.json");
+    std::fs::write(
+        &decisions,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version": "1",
+            "run_id": prior["run_id"],
+            "decisions": [{
+                "finding_id": approved["finding_id"],
+                "action": "probe"
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let resumed = stealthy()
+        .env("PATH", &path_value)
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--checkpoint",
+            checkpoint.to_str().unwrap(),
+            "--plugin-timeout-ms",
+            "0",
+            "enum",
+            "--approve-file",
+            decisions.to_str().unwrap(),
+            "--plugins",
+            "linux.path_ld",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        resumed.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    let confirmed = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["kind"] == "exploit_attempt")
+        .collect::<Vec<_>>();
+    assert_eq!(confirmed.len(), 1, "findings={}", report["findings"]);
+    assert_eq!(confirmed[0]["object"], first.to_string_lossy().as_ref());
+}
+
+#[cfg(feature = "enum-only")]
+#[test]
+fn enum_only_build_rejects_probe_flags() {
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "enum",
+            "--auto-exploit",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("enum-only"));
 }
 
 #[test]

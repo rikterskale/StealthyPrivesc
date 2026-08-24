@@ -2,7 +2,9 @@
 
 ## Capability status
 
-This document describes the implemented product on the current `main` revision.
+This document describes the shared implementation under development. Supported
+deployment behavior is tied to tagged releases under the
+[support policy](support-policy.md), not to an arbitrary `main` revision.
 The Rust core, Linux/Windows plugins, reversible-probe gate, evidence outputs,
 and script fallbacks are present in this repository. The command surface below
 is implemented. Deferred and contract-gated ideas live in **Planned future
@@ -33,17 +35,52 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
 | `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; AMSI/ETW/EDR disable and quarantine tamper are Planned separate families) |
-| Windows service/task ACL context | Native token-aware `AccessCheck` with read-only `icacls` fallback |
+| Windows service/task ACL context | Native service-object DACL evaluation, registry-backed Task Scheduler descriptor checks for `WRITE_DAC`/`WRITE_OWNER`/`DELETE`, token-aware service/task file ACL checks, and read-only `icacls` fallback |
 | Silent network C2 client | Deferred (operator-printed sealed blob) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
 | Stable finding IDs + attack paths | Done (schema v2) |
 | MITRE / technique catalog | Done (engine-enriched) |
 | Plugin timeouts + checkpoint/resume | Done |
 | Artifact ledger + cleanup | Done |
-| Triage approve-file + TTY | Done |
+| Triage approve-file + TTY | Done; approve files are checkpoint/run-bound and reversible probes are scoped to exact finding IDs |
 | Script JSON parity + ingest | Done (`enum.py --json`, `stealthy ingest`) |
-| Delivery kit | Done (`stage`, `verify`, `one-liners`) |
+| Delivery kit | Done (`stage`, `verify`, `one-liners`; tagged release kits also include binary, scripts, selected docs, manifest, checksums, SBOM, and attestation) |
 | Fixture validation harness | Done (`controls` / `validate-controls`; disposable fixtures, optional benign probes, and structured case results) |
+| Release provenance | Done (GitHub attestations, SHA-256 manifest, and SPDX JSON SBOMs) |
+| Published architectures | Linux x86-64 GNU, Linux aarch64 GNU, Windows x86-64 MSVC |
+| Tag release gate | Done (fmt, Clippy, tests, release/flavor builds, 65% coverage floor, script checks, Gitleaks, cargo-deny) |
+| Nightly safe fixture lab | Done (Linux/Windows local fixtures and enum-only authorization contract; no destructive exploit lab) |
+| Build flavors | Done (`full`, `enum-only`, `opsec-string-strip`; constrained flavors retain authorization/disclaimer/audit fields) |
+
+### Detection-depth status
+
+- `linux.suid` uses a bounded, cancellation-aware, same-filesystem walker that
+  does not follow symlinks. Operators can set `STEALTHY_SUID_ROOTS`,
+  `STEALTHY_SUID_MAX_DEPTH`, and `STEALTHY_SUID_MAX_ENTRIES`; the active
+  profile's walk budget remains an upper bound. Capability xattrs are parsed
+  directly without recursive `getcap` execution.
+- Linux sudo, SUID/SGID, and selected wildcard-cron findings can carry
+  structured `gtfobins.binary`, `gtfobins.functions`, and
+  `gtfobins.url` annotations from a local allowlist. Windows service images,
+  scheduled-task actions, and autoruns can carry allowlisted, machine-readable
+  `lolbas.*` metadata. Both catalogs set `recommend_only=true`; no catalog
+  technique is executed.
+- Kernel CVE findings parse kernel versions and combine `/etc/os-release`,
+  Ubuntu signature data, and bounded dpkg package metadata. Matches are
+  version-range hints, explicitly account for distro backport uncertainty, and
+  are not proof that a host is vulnerable.
+- `windows.services` evaluates service-object DACLs and service/image-path
+  filesystem ACLs. `windows.scheduled_tasks` evaluates task/action files and
+  registry-backed task descriptors for `WRITE_DAC`, `WRITE_OWNER`, and
+  `DELETE`. A descriptor that cannot be read is reported unavailable.
+- `windows.dll_hijack` performs read-only search/app-directory ACL enumeration
+  without `--auto-exploit`; reversible marker confirmation remains
+  finding-scoped or available under explicit blanket `--auto-exploit`.
+- PowerShell fallback JSON has per-plugin findings, coverage, error state, and
+  capability delta, but explicitly omits service/task object DACLs and native
+  ACL parity. JScript collects only AIE, credential-file presence, and selected
+  endpoint-control registry signals; every other native plugin is marked
+  skipped. No Windows fallback contains AMSI/ETW/AV-EDR interference.
 
 ### Linux plugin IDs
 
@@ -74,7 +111,7 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy ingest PATH` | Normalize script JSON into report schema v2 |
 | `stealthy artifacts` / `cleanup` | Inspect or remove ledger-recorded artifacts |
 | `stealthy stage` / `verify` / `one-liners` | Package, verify, and print approved transport snippets |
-| `stealthy report PATH --key-hex KEY` | Decode a sealed report locally (no host access) |
+| `stealthy report PATH --key-file KEY_PATH` | Decode a sealed report locally using the preferred protected key-file source (no host access) |
 | `stealthy diff BASELINE CURRENT` | Compare plaintext JSON reports offline |
 | `stealthy live-controls` / `collect-controls` | Collect live application-control, provenance, EDR, integrity, MAC, kernel, mount, container, and audit state |
 
@@ -112,7 +149,7 @@ Primary implementation: `crates/stealthy/src/core/controls.rs`. Primary command:
 Enumeration global options include `-q`, `-v`, `--no-color`, `--format`,
 `--min-severity`, `--fail-on`, `--delay-ms`, `--plugin-timeout-ms`,
 `--profile`, `--checkpoint`, `--ledger-dir`, `--output`, `--output-path`,
-`--plaintext-file`, `--also-markdown`, and `--exfil-url`. `controls` and
+`--key-output-path`, `--plaintext-file`, `--also-markdown`, and `--exfil-url`. `controls` and
 `live-controls` print directly and support JSON/Markdown/human formats;
 SARIF, file output, remote output, and `--fail-on` are unsupported for those
 reports.
@@ -123,7 +160,7 @@ Default: no artifacts.
 
 Optional:
 
-1. Encrypted seal file via `--output file --output-path PATH`
+1. Encrypted seal file via `--output file --output-path PATH --key-output-path KEY_PATH`
 2. Plaintext JSON via `--plaintext-file`
 3. Operator-driven remote POST instructions via `--output remote --exfil-url URL`
 
@@ -134,11 +171,15 @@ Optional:
 - Noisy techniques labeled in findings
 - Effective Linux owner/group/other permission evaluation for service, systemd, and cron paths
 - Sudoers findings filtered against the current username and supplementary groups
-- Windows service-account context, token-aware read-only ACL checks, and Winlogon persistence coverage
-- Low-and-slow delay knob
+- Windows service-account context, native service-object DACL checks,
+  registry-backed Task Scheduler security-descriptor checks, token-aware
+  service/task file ACL checks, and Winlogon persistence coverage
+- Profile-specific noise budgets for helper use, walk entries, and helper records
 - Script fallbacks when binaries are blocked
 - `control_assessment` during `enum` only when `*.app_control` is selected (`live-controls` always collects)
-- `--profile quiet` skips `sudo` helpers, `getcap`, `getfacl`, and uses slim control collection
+- `--profile quiet` disables external helpers and applies the smallest walk and
+  helper-record budgets; balanced/CI remain bounded, while thorough permits
+  external helpers and larger caps
 - Findings sealed at rest in the in-memory store; memory-only runs do not create
   a ledger. Explicit checkpoints, file outputs, and staged bundles are tracked
   under the selected ledger directory (default `.cache-run`).
@@ -154,16 +195,19 @@ Optional:
 
 ## Planned future enhancements
 
-Intentional backlog. Items that change host protections require a **new**
+Intentional backlog. Items that change host protections require a distinct
 technique-family ID, ROE gate, and contract revision — they must not ship under
-today's `endpoint-bypass` meaning (alternate-path + approved-fixture validation).
+today's `endpoint-bypass` meaning (alternate-path + approved-fixture
+validation). The three listed evasion IDs already exist as scaffold markers;
+dormant prototypes are retained in source but excluded from declaration,
+compilation, dispatch, and release packaging.
 
 | Enhancement | Status | Gate / notes |
 | --- | --- | --- |
 | Silent in-process HTTPS exfil client | Deferred | Operator-printed sealed blob today |
-| AMSI bypass / patching / blinding | **Implemented** | `--allow-techniques amsi-bypass --confirm-evasion` |
-| ETW unhooking / patching / provider disablement | **Implemented** | `--allow-techniques etw-unhook --confirm-evasion` |
-| AV / EDR service stop or sensor unload | **Implemented** | `--allow-techniques av-edr-service --confirm-evasion` |
+| AMSI bypass / patching / blinding | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
+| ETW unhooking / patching / provider disablement | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
+| AV / EDR service stop or sensor unload | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
 | AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
 | Quarantine restore / quarantine-tamper helpers | Planned (contract change required) | New family; delivery-PE recovery / inspection |
 | Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |

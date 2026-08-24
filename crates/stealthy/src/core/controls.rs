@@ -170,6 +170,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
         };
         out.push(finding(
             plugin,
+            &policy.name,
+            "policy-state",
             FindingKind::Enumeration,
             severity,
             format!("{}: {}", policy.name, policy.state),
@@ -188,6 +190,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
         let tamper_stop = sensor.tamper_protection.starts_with("enabled");
         out.push(finding(
             plugin,
+            &sensor.product,
+            "sensor-inventory",
             FindingKind::Enumeration,
             if tamper_stop { Severity::Medium } else { Severity::Low },
             format!("Sensor inventory: {}", sensor.product),
@@ -216,6 +220,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
     for source in &assessment.audit_sources {
         out.push(finding(
             plugin,
+            &source.source,
+            "audit-source",
             FindingKind::Enumeration,
             if source.available == "available" {
                 Severity::Low
@@ -245,6 +251,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
         };
         out.push(finding(
             plugin,
+            &artifact.path,
+            "artifact-trust-prediction",
             FindingKind::Enumeration,
             severity,
             format!("Trust prediction: {}", artifact.predicted_decision),
@@ -277,6 +285,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
     } else {
         out.push(finding(
             plugin,
+            "none",
+            "artifact-not-supplied",
             FindingKind::Recommendation,
             Severity::Info,
             "No artifact supplied for trust prediction".into(),
@@ -292,6 +302,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
         .collect::<Vec<_>>();
     out.push(finding(
         plugin,
+        plugin,
+        "detection-exposure",
         FindingKind::Enumeration,
         Severity::Info,
         "Detection exposure / telemetry expectation".into(),
@@ -307,6 +319,8 @@ pub fn findings(assessment: &ControlAssessment, plugin: &'static str) -> Vec<Fin
 
     out.push(finding(
         plugin,
+        "validation-cases",
+        "validation-cases-available",
         FindingKind::Recommendation,
         Severity::Info,
         format!("{} harmless validation cases available", assessment.validation_cases.len()),
@@ -339,8 +353,11 @@ fn exposure_score(expectations: &[TelemetryExpectation]) -> (u8, String) {
     (score, label.into())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finding(
     plugin: &'static str,
+    object: &str,
+    condition: &str,
     kind: FindingKind,
     severity: Severity,
     title: String,
@@ -356,6 +373,8 @@ fn finding(
         recommendation: recommendation.into(),
         noisy: false,
         leaves_artifacts: false,
+        object: object.into(),
+        condition: condition.into(),
         ..Default::default()
     }
 }

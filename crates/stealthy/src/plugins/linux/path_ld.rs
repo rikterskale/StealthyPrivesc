@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -29,6 +30,9 @@ impl Plugin for PathLdPlugin {
 
         if let Ok(path) = env::var("PATH") {
             for entry in path.split(':').filter(|s| !s.is_empty()) {
+                if ctx.cancelled() {
+                    break;
+                }
                 let p = Path::new(entry);
                 if !p.exists() {
                     findings.push(Finding {
@@ -40,6 +44,9 @@ impl Plugin for PathLdPlugin {
                         recommendation: "Check whether you can create this directory and plant a trojan binary name.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: entry.into(),
+                        condition: "path-entry-missing".into(),
+                        technique_id: "path-hijack".into(),
                         ..Default::default()
                     });
                     continue;
@@ -56,6 +63,9 @@ impl Plugin for PathLdPlugin {
                             recommendation: "Binary planting in PATH is a classic privesc if privileged processes inherit PATH.".into(),
                             noisy: false,
                             leaves_artifacts: false,
+                            object: entry.into(),
+                            condition: "path-entry-world-writable".into(),
+                            technique_id: "path-hijack".into(),
                             ..Default::default()
                         };
                         let probe_allowed = ctx.probe_allowed_for(&candidate);
@@ -73,6 +83,9 @@ impl Plugin for PathLdPlugin {
                                             .into(),
                                     noisy: true,
                                     leaves_artifacts: false,
+                                    object: entry.into(),
+                                    condition: "reversible-writable-probe-confirmed".into(),
+                                    technique_id: "path-hijack".into(),
                                     ..Default::default()
                                 });
                             }
@@ -83,6 +96,9 @@ impl Plugin for PathLdPlugin {
         }
 
         for var in ["LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT"] {
+            if ctx.cancelled() {
+                break;
+            }
             if let Ok(val) = env::var(var) {
                 if !val.is_empty() {
                     findings.push(Finding {
@@ -94,6 +110,9 @@ impl Plugin for PathLdPlugin {
                         recommendation: "Inherited loader variables can redirect privileged dynamically linked programs.".into(),
                         noisy: false,
                         leaves_artifacts: false,
+                        object: var.into(),
+                        condition: "dynamic-loader-variable-set".into(),
+                        technique_id: "dynamic-linker-hijack".into(),
                         ..Default::default()
                     });
                 }
@@ -101,7 +120,7 @@ impl Plugin for PathLdPlugin {
         }
 
         // /etc/ld.so.preload readable?
-        if let Ok(text) = fs::read_to_string("/etc/ld.so.preload") {
+        if let Some(text) = read_text_bounded(Path::new("/etc/ld.so.preload"), 1024 * 1024) {
             if !text.trim().is_empty() {
                 findings.push(Finding {
                     plugin: self.id().into(),
@@ -115,6 +134,9 @@ impl Plugin for PathLdPlugin {
                     recommendation: "If writable, this is a powerful persistence/privesc primitive — handle with extreme care.".into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: "/etc/ld.so.preload".into(),
+                    condition: "loader-preload-config-nonempty".into(),
+                    technique_id: "dynamic-linker-hijack".into(),
                     ..Default::default()
                 });
             }
@@ -132,6 +154,9 @@ impl Plugin for PathLdPlugin {
                     recommendation: "Critical misconfiguration. Do not modify without explicit approval.".into(),
                     noisy: false,
                     leaves_artifacts: true,
+                    object: "/etc/ld.so.preload".into(),
+                    condition: "loader-preload-config-world-writable".into(),
+                    technique_id: "dynamic-linker-hijack".into(),
                     ..Default::default()
                 });
             }
@@ -148,12 +173,21 @@ impl Plugin for PathLdPlugin {
                     "Still review sudo secure_path and systemd Environment= directives.".into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "PATH-and-dynamic-loader-environment".into(),
+                condition: "no-obvious-path-loader-issue".into(),
                 ..Default::default()
             });
         }
 
         Ok(findings)
     }
+}
+
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.by_ref().take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn redacted_loader_detail(value: &str) -> String {

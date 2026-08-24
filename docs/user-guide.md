@@ -182,12 +182,16 @@ Use sealed file output for persistent evidence when the policy supports it:
 
 ```bash
 "$STEALTHY" --authorized --verbose --output file \
-  --output-path ./findings.seal --also-markdown enum
+  --output-path ./findings.seal \
+  --key-output-path /approved/keys/findings.key \
+  --also-markdown enum
 ```
 
-With `--verbose` and without `--quiet`, the binary prints the decryption key to
-stderr. Move that key immediately into the approved secret store. Keep it
-separate from `findings.seal`, its Markdown sidecar, shell history, and any
+The full key is never printed to stderr. The protected key path is required for
+encrypted output; alternatively set `STEALTHY_KEY_OUTPUT_PATH`. Unix files use
+mode `0600`; Windows removes inherited ACLs and grants full control only to
+the current SID. Move the key file immediately into the approved secret store
+and keep it separate from `findings.seal`, its Markdown sidecar, and any
 ordinary ticket. If the key is lost, the sealed report cannot be recovered.
 
 The Markdown sidecar is plaintext evidence even though the `.seal` file is
@@ -197,7 +201,8 @@ To decode on an approved operator workstation:
 
 ```bash
 "$STEALTHY" report ./findings.seal \
-  --key-hex "$STEALTHY_REPORT_KEY" --format markdown > findings.review.md
+  --key-file /approved/keys/findings.key \
+  --format markdown > findings.review.md
 ```
 
 The `report` command is offline and does not enumerate the host.

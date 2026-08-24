@@ -61,7 +61,9 @@ function collectFindings() {
       detail: "HKLM and HKCU AlwaysInstallElevated are both 1",
       recommendation: "Disable AlwaysInstallElevated in both hives.",
       noisy: false,
-      leaves_artifacts: false
+      leaves_artifacts: false,
+      object: "HKLM+HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer\\AlwaysInstallElevated",
+      condition: "always-install-elevated-fully-enabled"
     });
   }
 
@@ -81,7 +83,9 @@ function collectFindings() {
         detail: paths[i],
         recommendation: "Inspect and restrict access; remove stale unattend/SAM backups.",
         noisy: false,
-        leaves_artifacts: false
+        leaves_artifacts: false,
+        object: paths[i],
+        condition: "sensitive-file-present"
       });
     }
   }
@@ -101,13 +105,15 @@ function collectFindings() {
   if (applocker.length > 0) {
     findings.push({
       plugin: "windows.endpoint_controls",
-      kind: "control",
+      kind: "enumeration",
       severity: "info",
       title: "AppLocker SrpV2 EnforcementMode readable",
       detail: applocker.join(","),
       recommendation: "If custom PE is blocked, use approved script hosts.",
       noisy: false,
-      leaves_artifacts: false
+      leaves_artifacts: false,
+      object: "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\SrpV2",
+      condition: "applocker-enforcement-mode-readable"
     });
   }
 
@@ -118,13 +124,15 @@ function collectFindings() {
     if (vbs === 1) {
       findings.push({
         plugin: "windows.endpoint_controls",
-        kind: "control",
+        kind: "enumeration",
         severity: "info",
         title: "VBS enabled",
         detail: "EnableVirtualizationBasedSecurity=1",
         recommendation: "WDAC/CI stack may be active; prefer allowlisted hosts.",
         noisy: false,
-        leaves_artifacts: false
+        leaves_artifacts: false,
+        object: "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\EnableVirtualizationBasedSecurity",
+        condition: "virtualization-based-security-enabled"
       });
     }
   } catch (e) {}
@@ -142,16 +150,18 @@ function emitJson(findings) {
   var delta = [
     "windows.services",
     "windows.scheduled_tasks",
-    "windows.always_install_elevated",
     "windows.uac",
     "windows.dll_hijack",
-    "windows.credentials",
     "windows.admin_sessions",
     "windows.env_path",
     "windows.autoruns",
-    "windows.endpoint_controls",
     "windows.app_control",
     "windows.privileges"
+  ];
+  var collected = [
+    "windows.always_install_elevated",
+    "windows.credentials",
+    "windows.endpoint_controls"
   ];
   var out = [];
   out.push("{");
@@ -195,21 +205,47 @@ function emitJson(findings) {
     out.push('"detail":"' + jsonEscape(item.detail) + '",');
     out.push('"recommendation":"' + jsonEscape(item.recommendation) + '",');
     out.push('"noisy":' + (item.noisy ? "true" : "false") + ",");
-    out.push('"leaves_artifacts":' + (item.leaves_artifacts ? "true" : "false"));
+    out.push('"leaves_artifacts":' + (item.leaves_artifacts ? "true" : "false") + ",");
+    out.push('"object":"' + jsonEscape(item.object) + '",');
+    out.push('"condition":"' + jsonEscape(item.condition) + '"');
     out.push("}" + (f + 1 < findings.length ? "," : ""));
   }
   out.push("],");
   out.push('"assessments":[],');
   out.push('"attack_paths":[],');
   out.push('"triage_decisions":[],');
-  out.push('"plugins_run":["windows.endpoint_controls"],');
+  out.push('"plugins_run":[');
+  for (var p = 0; p < collected.length; p++) {
+    out.push('"' + collected[p] + '"' + (p + 1 < collected.length ? "," : ""));
+  }
+  out.push("],");
+  out.push('"coverage":[');
+  for (var c = 0; c < collected.length; c++) {
+    var findingCount = 0;
+    for (var cf = 0; cf < findings.length; cf++) {
+      if (findings[cf].plugin === collected[c]) {
+        findingCount++;
+      }
+    }
+    out.push(
+      '{"id":"' +
+        collected[c] +
+        '","status":"ok","findings":' +
+        findingCount +
+        ',"error":null,"duration_ms":0},'
+    );
+  }
+  for (var s = 0; s < delta.length; s++) {
+    out.push(
+      '{"id":"' +
+        delta[s] +
+        '","status":"skipped","findings":0,"error":"not collected by JScript fallback","duration_ms":0}' +
+        (s + 1 < delta.length ? "," : "")
+    );
+  }
+  out.push("],");
   out.push(
-    '"coverage":[{"id":"windows.endpoint_controls","status":"ok","findings":' +
-      findings.length +
-      ',"error":null,"duration_ms":0}],'
-  );
-  out.push(
-    '"notes":["JScript --json emits schema v2 with reduced coverage versus native/PowerShell."]'
+    '"notes":["JScript reports only registry and file-presence data it directly collected.","Service/task/DLL ACLs and effective policy are unavailable; native equivalence is not claimed."]'
   );
   out.push("}");
   WScript.Echo(out.join(""));

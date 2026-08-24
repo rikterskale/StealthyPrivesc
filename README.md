@@ -4,7 +4,7 @@ Modular, cross-platform privilege-escalation **enumeration** framework for **aut
 
 Documentation hub: [`docs/README.md`](docs/README.md).
 
-Start here: [Installation](docs/installation.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Architecture Diagram](docs/architecture-diagram.md)
+Start here: [Installation](docs/installation.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Support Policy](docs/support-policy.md) · [Architecture Diagram](docs/architecture-diagram.md)
 
 ## Legal / ethical disclaimer
 
@@ -34,7 +34,7 @@ The authors and distributors assume **no liability** for misuse.
 
 ```text
 crates/stealthy/          Rust core (static-friendly release profile)
-  src/core/               OS detect, identity, plugin runner, encrypted store, evasion helpers
+  src/core/               OS detect, identity, engine, isolated plugin workers, reporting, encrypted store
   src/plugins/linux/      Linux checks (16): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls, app-control assessment
   src/plugins/windows/    Windows checks (12): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls, app-control assessment
   src/exploit/            Reversible probes + `--allow-techniques` scaffolding
@@ -58,8 +58,10 @@ bash /tmp/stealthy-install.sh
 rm -f /tmp/stealthy-install.sh
 ```
 
-The published installer requires the GitHub CLI (`gh`) to verify the release
-artifact attestation before checking its SHA-256 checksum.
+Published kits contain the binary, platform fallbacks, selected operator docs,
+a release manifest, and internal checksums. The installer requires the GitHub
+CLI (`gh`) to verify the GitHub artifact attestation before checking the
+published SHA-256 checksum.
 
 Windows PowerShell:
 
@@ -91,7 +93,7 @@ cargo build --locked -p stealthy --release
 # High-signal only + live progress
 ./target/release/stealthy --authorized enum --min-severity high
 
-# OPSEC profile (skips sudo helpers/getcap/getfacl; slim control collect; higher delay)
+# OPSEC profile (no external helpers; 2,000-entry walk budget; slim controls; higher delay)
 ./target/release/stealthy --authorized --profile quiet enum
 
 # Quiet + select plugins
@@ -118,14 +120,15 @@ bash ./drop/scripts/run.sh --authorized --profile balanced enum
 ./target/release/stealthy diff baseline.json current.json
 ./target/release/stealthy --authorized --format sarif -q scan > findings.sarif
 
-# Encrypted file + sidecar Markdown
+# Encrypted file + protected key file + sidecar Markdown
 ./target/release/stealthy --authorized \
   --output file --output-path /tmp/findings.seal --also-markdown \
+  --key-output-path /approved/keys/findings.key \
   enum
 
 # Decode a sealed report with the separately handled key
 ./target/release/stealthy report /tmp/findings.seal \
-  --key-hex "$STEALTHY_REPORT_KEY" --format json
+  --key-file /approved/keys/findings.key --format json
 
 # Fail CI/automation if critical findings exist
 ./target/release/stealthy --authorized enum --fail-on critical; echo exit=$?
@@ -211,12 +214,13 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--artifact PATH` | Read-only hash/provenance/trust prediction for an approved test artifact; never executes it |
 | `--output memory\|file\|remote` | Result destination (default `memory`) |
 | `--output-path PATH` | Destination for `--output file` |
+| `--key-output-path PATH` | Protected key destination required for encrypted file/remote output (`STEALTHY_KEY_OUTPUT_PATH`) |
 | `--plaintext-file` | Write JSON instead of sealed blob |
 | `--also-markdown` | Also write `PATH.md` evidence report |
 | `--exfil-url URL` | Operator-configured HTTPS target for `--output remote` (v1 prints sealed body; no silent client) |
 | `guide` | First-run operator guide (no auth) |
 | `doctor` | Local readiness checks (no auth) |
-| `report PATH --key-hex KEY` | Decode a sealed report (no host access) |
+| `report PATH --key-file KEY_PATH` | Decode a sealed report (preferred; env: `STEALTHY_KEY_FILE`) |
 | `disclaimer` | Print legal text (no auth) |
 | `list-plugins` / `plugins` | Table of compiled plugin IDs |
 | `controls` / `validate-controls` | Run disposable application-control validation cases |
@@ -238,7 +242,7 @@ Exit codes: `0` ok · `2` missing authorization · `3` doctor readiness failure 
 | --- | --- | --- |
 | File reads (`/proc`, sudoers, registry) | Low | Preferred |
 | `sudo -l` / `whoami /priv` | Medium | Often audited |
-| Write probes | Medium | Only with `--auto-exploit`; marker deleted |
+| Write probes | Medium | Exact finding approval or explicit `--auto-exploit`; marker deleted |
 
 See [`docs/techniques.md`](docs/techniques.md) for detail.
 
@@ -259,6 +263,8 @@ See [`docs/build.md`](docs/build.md).
 - [`docs/design.md`](docs/design.md) — design decisions
 - [`docs/capabilities.md`](docs/capabilities.md) — capability matrix
 - [`docs/first-user-journey.md`](docs/first-user-journey.md) — first-run contract
+- [`docs/support-policy.md`](docs/support-policy.md) — supported versions,
+  artifacts, schema compatibility, EOL, and security-fix windows
 
 ## Configuration
 
@@ -266,6 +272,12 @@ Environment variables:
 
 - `STEALTHY_AUTHORIZED=1` — same as the authorization CLI flag
 - `STEALTHY_EXFIL_URL` — default for `--exfil-url`
+- `STEALTHY_KEY_OUTPUT_PATH` — protected key destination for encrypted file or remote output
+- `STEALTHY_KEY_FILE` — protected key file read by `report`
+- `STEALTHY_KEY_HEX` — environment-only compatibility key value for `report`
+- `STEALTHY_SUID_ROOTS` — colon-separated Linux SUID/SGID/capability scan roots
+- `STEALTHY_SUID_MAX_DEPTH` — maximum traversal depth for each configured SUID root
+- `STEALTHY_SUID_MAX_ENTRIES` — hard cap on inspected SUID-walk entries
 
 ## Safety guarantees (v1)
 

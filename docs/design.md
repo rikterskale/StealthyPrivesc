@@ -49,8 +49,9 @@ describe the behavior users can rely on today.
    supported reversible, low-noise checks. High-impact families require a
    separate `--allow-techniques` opt-in when ROE permits (scaffolded in the
    current revision).
-5. **Plugin isolation** — each plugin reports `Finding` values through a common
-   contract, allowing platform-specific selection and targeted reruns.
+5. **Plugin isolation** — each plugin worker reports findings, notes, and errors
+   through a common contract. Notes are merged into the main store, while
+   timeouts can terminate the isolated process.
 6. **Memory-first output** — findings stay in the encrypted in-memory store by
    default. File and remote modes require an explicit operator choice.
 7. **Script fallbacks** — approved Python, Bash, POSIX sh, Perl, PowerShell,
@@ -76,7 +77,9 @@ The runtime flow is:
 | `core::os` | OS family, architecture, and version hints |
 | `core::identity` | Host, user, groups, and elevation context |
 | `core::plugin` | Plugin trait, registry filtering, and execution context |
-| `core::engine` | Authorization-aware orchestration, timing, coverage, and report assembly |
+| `core::engine` | Authorization-aware orchestration, selection, checkpoints, and triage |
+| `core::plugin_worker` | Isolated plugin execution, timeout handling, and finding/note/error transport |
+| `core::reporting` | Report assembly, assessments, attack paths, and next-step normalization |
 | `core::types` | Findings, assessments, reports, severities, and provenance fields |
 | `core::store` | ChaCha20-Poly1305 sealed export and zeroizing report key |
 | `core::output` | Human, JSON, Markdown, SARIF, memory, file, and remote rendering |
@@ -107,8 +110,14 @@ The command surface is deliberately small:
 - Default execution is enumerate-only, memory-only, and does not silently send
   results over the network.
 - Sealed file output uses an ephemeral ChaCha20-Poly1305 key that must be
-  handled separately from the report. Plaintext JSON and Markdown remain
-  sensitive evidence.
+  written through `--key-output-path` / `STEALTHY_KEY_OUTPUT_PATH` and handled
+  separately from the report. Full keys are never printed to stderr. Plaintext
+  JSON and Markdown remain sensitive evidence.
+- Stable finding IDs derive from semantic `plugin`, `object`, and `condition`
+  values rather than mutable presentation titles. `scaffold` findings are not
+  direct-probe evidence.
+- Checkpoint approval files are run-bound and finding-scoped; approving one
+  finding cannot enable sibling probes.
 - Findings avoid dumping raw credential material by default, but operators
   still control the target context, output path, and evidence custody.
 - Plugins label noisy checks and possible artifacts so operators can account
@@ -150,6 +159,12 @@ Every behavior change should preserve or update these checks:
   actions
 - Linux (Python/Bash/POSIX sh/Perl) and Windows PowerShell fallback syntax checks
 - Security/supply-chain checks and the final CI readiness gate
+- A 65% Rust line-coverage floor, full-history Gitleaks scan, and
+  `cargo-deny` advisory/license/source policy
+- Full delivery-kit packaging for Linux x86-64/aarch64 GNU and Windows x86-64
+  MSVC, with SPDX SBOMs, checksums, and GitHub artifact attestations
+- Nightly safe local fixtures on Linux and Windows; this is not a destructive
+  vulnerable-host exploit lab
 
 When a design decision changes, update this document and the linked
 [capability status](capabilities.md), [phase coverage](phases.md), and

@@ -26,22 +26,26 @@ impl Plugin for EnvPathPlugin {
         let mut entries: Vec<(String, String)> = Vec::new();
 
         if let Ok(path) = std::env::var("PATH") {
-            for e in path.split(';').filter(|s| !s.is_empty()) {
+            for e in path.split(';').filter(|s| !s.is_empty()).take(100) {
                 entries.push(("env".into(), e.to_string()));
             }
         }
         if let Some(hkcu) = read_hkcu_path() {
-            for e in hkcu.split(';').filter(|s| !s.is_empty()) {
+            for e in hkcu.split(';').filter(|s| !s.is_empty()).take(100) {
                 entries.push(("hkcu".into(), e.to_string()));
             }
         }
         if let Some(hklm) = read_hklm_path() {
-            for e in hklm.split(';').filter(|s| !s.is_empty()) {
+            for e in hklm.split(';').filter(|s| !s.is_empty()).take(100) {
                 entries.push(("hklm".into(), e.to_string()));
             }
         }
 
+        let mut approved_probe_seen = false;
         for (src, entry) in entries {
+            if ctx.cancelled() {
+                break;
+            }
             let p = PathBuf::from(&entry);
             if !p.exists() {
                 findings.push(Finding {
@@ -57,24 +61,41 @@ impl Plugin for EnvPathPlugin {
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: format!("path:{src}:{entry}"),
+                    condition: "missing-path-entry".into(),
                     ..Default::default()
                 });
                 continue;
             }
             if p.is_dir() {
+                let acl_state =
+                    super::acl::AclState::from_check(super::acl::is_writable_for_current_user(&p));
                 let candidate = Finding {
                     plugin: self.id().into(),
-                    kind: FindingKind::Enumeration,
-                    severity: Severity::Info,
+                    kind: if acl_state == super::acl::AclState::Writable {
+                        FindingKind::Misconfiguration
+                    } else {
+                        FindingKind::Enumeration
+                    },
+                    severity: if acl_state == super::acl::AclState::Writable {
+                        Severity::High
+                    } else {
+                        Severity::Info
+                    },
                     title: format!("PATH dir present ({src}): {entry}"),
-                    detail: "Writability not probed in enumerate-only mode.".into(),
-                    recommendation: "Re-run with --auto-exploit to confirm writable PATH dirs."
+                    detail: format!("directory_acl=current_token:{}", acl_state.as_str()),
+                    recommendation: "Use an approved finding-scoped probe only when the read-only ACL result is unavailable or needs confirmation."
                         .into(),
                     noisy: false,
                     leaves_artifacts: false,
+                    object: format!("path:{src}:{entry}"),
+                    condition: format!("path-directory-acl:{}", acl_state.as_str()),
                     ..Default::default()
                 };
-                if ctx.probe_allowed_for(&candidate) {
+                let probe_allowed = ctx.probe_allowed_for(&candidate);
+                approved_probe_seen |= probe_allowed;
+                findings.push(candidate);
+                if probe_allowed {
                     if let Ok(true) = exploit::writable_probe(&p) {
                         findings.push(Finding {
                             plugin: self.id().into(),
@@ -86,26 +107,29 @@ impl Plugin for EnvPathPlugin {
                                 .into(),
                             noisy: true,
                             leaves_artifacts: false,
+                            object: format!("path:{src}:{entry}"),
+                            condition: "writable-path-directory-probe".into(),
                             ..Default::default()
                         });
                     }
-                } else {
-                    findings.push(candidate);
                 }
             }
         }
 
-        if !ctx.auto_exploit {
+        if !approved_probe_seen {
             findings.push(Finding {
                 plugin: self.id().into(),
                 kind: FindingKind::Recommendation,
                 severity: Severity::Info,
-                title: "PATH writability probes skipped (enumerate-only)".into(),
-                detail: "Enable --auto-exploit for reversible write probes of PATH directories."
+                title: "PATH write probes were not approved".into(),
+                detail: "Read-only ACL checks were used; reversible marker probes remain finding-scoped and opt-in."
                     .into(),
-                recommendation: "Keep enum-only on high-sensitivity hosts.".into(),
+                recommendation: "Prefer the read-only ACL result and approve only a specific finding when confirmation is required."
+                    .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-path-environment".into(),
+                condition: "write-probes-not-approved".into(),
                 ..Default::default()
             });
         }
@@ -121,6 +145,8 @@ impl Plugin for EnvPathPlugin {
                     .into(),
                 noisy: false,
                 leaves_artifacts: false,
+                object: "windows-path-environment".into(),
+                condition: "no-path-hijack-candidate".into(),
                 ..Default::default()
             });
         }

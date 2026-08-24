@@ -189,12 +189,16 @@ When it does, prefer sealed output:
 
 ```bash
 "$STEALTHY" --authorized --verbose --output file \
-  --output-path ./findings.seal --also-markdown enum
+  --output-path ./findings.seal \
+  --key-output-path /approved/keys/findings.key \
+  --also-markdown enum
 ```
 
-The key is printed to stderr only when `--verbose` is used without `--quiet`.
-Move it immediately to the approved secret store. Keep it separate from the
-sealed file and Markdown sidecar. The sidecar is plaintext evidence.
+The full key is never printed to stderr. The protected key destination is
+required for encrypted output and can also be supplied through
+`STEALTHY_KEY_OUTPUT_PATH`. Move that key file immediately to the approved
+secret store and keep it separate from the sealed file and Markdown sidecar.
+The sidecar is plaintext evidence.
 
 If plaintext JSON is explicitly approved:
 

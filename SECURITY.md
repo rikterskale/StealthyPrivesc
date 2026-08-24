@@ -23,5 +23,7 @@ receipt, investigate, and coordinate disclosure with the reporter.
 
 ## Supported versions
 
-Only the latest `main` revision is currently supported. This is pre-1.0
-software and should be treated as experimental.
+Version support, end-of-life windows, supported release artifacts, report
+schema compatibility, and security-fix targets are defined in the
+[Support Policy](docs/support-policy.md). The `main` branch is development-only
+and is not a supported deployment channel.

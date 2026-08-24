@@ -1,0 +1,20 @@
+[
+  {
+    "image_path": "C:\\Program Files\\Vendor\\service.exe -k run",
+    "acl_writable": true,
+    "expected_unquoted": true,
+    "expected_acl": "writable"
+  },
+  {
+    "image_path": "\"C:\\Program Files\\Vendor\\service.exe\" -k run",
+    "acl_writable": false,
+    "expected_unquoted": false,
+    "expected_acl": "not_writable"
+  },
+  {
+    "image_path": "C:\\Windows\\System32\\service.exe",
+    "acl_writable": null,
+    "expected_unquoted": false,
+    "expected_acl": "unavailable"
+  }
+]

@@ -26,8 +26,9 @@ EDR sensors, AppArmor, SELinux, fapolicyd, and `noexec` mounts.
 `--allow-techniques endpoint-bypass` means **alternate-path + approved validation**
 only. It does **not** authorize control disable, unhook, kill, quarantine
 tamper, or evasion. Those behaviors are tracked as **planned, separately gated
-technique families** below — they require new `--allow-techniques` IDs, an
-explicit ROE gate, tests, and a contract rewrite before shipping.
+technique families** below. AMSI, ETW, and AV/EDR already have distinct IDs,
+but they are scaffold markers only. Any future execution requires an explicit
+ROE gate, tests, safety/restoration review, and a contract rewrite.
 
 Until those families ship, the supported response when a custom binary is
 blocked is detect → recommend → script/dispatcher fallback (and optional
@@ -73,17 +74,22 @@ validation only.
 
 ---
 
-## Evasion technique families (implemented)
+## Evasion technique families (scaffold/planned only)
 
-These technique families are **explicitly gated** and require both `--authorized` and `--allow-techniques <id>` plus `--confirm-evasion`.
+These IDs are **explicitly gated** and require `--authorized`, the exact
+`--allow-techniques <id>`, and `--confirm-evasion`. Passing all gates records a
+`scaffold` finding only. Dormant source prototypes are retained for future
+review, but they are not declared, compiled, dispatched, or included in release
+kits. No executable payload is available through the current product surface.
 
-| Technique ID | What it does | Gate | Risk |
-|--------------|--------------|------|------|
-| `amsi-bypass` | Disables AMSI for the current process via memory patching | `--allow-techniques amsi-bypass --confirm-evasion` | High - evasion |
-| `etw-unhook` | Unhooks ETW providers or disables ETW for the current process | `--allow-techniques etw-unhook --confirm-evasion` | High - evasion |
-| `av-edr-service` | Suspends, disables, or unloads AV/EDR services/drivers | `--allow-techniques av-edr-service --confirm-evasion` | Critical - system impact |
+| Technique ID | Contract in this build | Gate |
+|--------------|------------------------|------|
+| `amsi-bypass` | Planned marker; no AMSI patching or weakening | `--allow-techniques amsi-bypass --confirm-evasion` |
+| `etw-unhook` | Planned marker; no ETW patching, unhooking, or provider disablement | `--allow-techniques etw-unhook --confirm-evasion` |
+| `av-edr-service` | Planned marker; no service/driver/sensor manipulation | `--allow-techniques av-edr-service --confirm-evasion` |
 
-**Important:** These techniques are for **authorized red team engagements only** and require explicit ROE approval. They may trigger alerts, crash systems, or leave forensic artifacts. See [`docs/evasion.md`](evasion.md) for detailed documentation.
+The extra confirmation records that the planned family is inside the ROE; it
+does not make an implementation available. See [Evasion-family status](evasion.md).
 
 ---
 
@@ -101,9 +107,9 @@ These technique families are **explicitly gated** and require both `--authorized
 | Mounts / writable passwd | `linux.mounts` | Low | None | Never modify passwd |
 | SSH private keys / authorized_keys | `linux.ssh_keys` | Low | None | Never print key bytes |
 | Writable PATH / LD_* | `linux.path_ld` | Low | Probe marker if auto | Reversible probe only |
-| Kernel CVE hints | `linux.kernel_cve` | Low | None | Opt-in via `--allow-techniques kernel-exploit` (scaffold) |
+| Distro/package-aware kernel CVE hints | `linux.kernel_cve` | Low | None | Version-range hint with distro-backport uncertainty; kernel execution remains scaffolded |
 | NFS `no_root_squash` | `linux.nfs` | Low | None | Recommend only |
-| Readable shadow/backups | `linux.credentials` | Low | None | Opt-in dump via `--allow-techniques credential-dump` |
+| Readable shadow/backups | `linux.credentials` | Low | None | Presence/readability evidence only; `credential-dump` is scaffold-only |
 | Writable service configs | `linux.services` | Low | None | Recommend only |
 | Cron wildcard hints | `linux.wildcard_cron` | Low | None | Recommend only |
 | AppArmor / SELinux / noexec / audit signals | `linux.endpoint_controls` | Low–Medium | None | Script fallbacks; `endpoint-bypass` = alternate-path + approved-fixture validation |
@@ -117,13 +123,18 @@ These technique families are **explicitly gated** and require both `--authorized
 | Scheduled task XML / writable actions | `windows.scheduled_tasks` | Low | None | Recommend only |
 | AlwaysInstallElevated | `windows.always_install_elevated` | Low | MSI would be high | Opt-in via `--allow-techniques msi` (scaffold) |
 | UAC policy | `windows.uac` | Low | None | Recommend only |
-| DLL search-path writability | `windows.dll_hijack` | Medium if probing | Temporary probe file | Only with `--auto-exploit` |
-| Unattend / SAM backups | `windows.credentials` | Low | None | Opt-in dump via `--allow-techniques credential-dump` |
+| DLL search/app-directory ACL candidates | `windows.dll_hijack` | Low read-only; medium if probing | None by default; temporary marker only when approved | Read-only enumeration is default; write confirmation is finding-scoped via approval or explicit `--auto-exploit` |
+| Unattend / SAM backups | `windows.credentials` | Low | None | Presence evidence only; `credential-dump` is scaffold-only |
 | Local admins / sessions | `windows.admin_sessions` | Low | None | Recommend only |
 | PATH hijack candidates | `windows.env_path` | Low–Medium | Probe marker if auto | Reversible probe only |
 | Autoruns / Startup | `windows.autoruns` | Low–Medium | Probe marker if auto | Startup dir probe; persistence via `persistence` |
-| Service/task ACLs | `windows.services`, `windows.scheduled_tasks` | Low | None | Native read-only ACL check when available; replace via opt-in |
+| Service/task ACLs | `windows.services`, `windows.scheduled_tasks` | Low | None | Service-object DACL, registry-backed task security descriptors for `WRITE_DAC`/`WRITE_OWNER`/`DELETE`, and service/task file ACLs |
 | AppLocker / WDAC / SmartScreen / AMSI / AV-EDR signals | `windows.endpoint_controls` | Low–Medium (AV scan noisy) | None | Script fallbacks; `endpoint-bypass` = alternate-path + approved-fixture validation |
+
+Linux sudo/SUID/wildcard-cron findings can carry allowlisted `gtfobins.*`
+metadata. Windows service-image, scheduled-task-action, and autorun findings can
+carry allowlisted `lolbas.*` metadata. These annotations are machine-readable,
+set `recommend_only=true`, and never execute a catalog technique.
 
 ## High-impact opt-in (`--allow-techniques`)
 
@@ -146,6 +157,9 @@ quarantine tamper, and related interference are **planned separate families**
 | `msi` | MSI payload construction/execution | Scaffold findings only |
 | `credential-dump` | Credential dumping/exfiltration | Scaffold findings only |
 | `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. Does not include AMSI/ETW/EDR/AppLocker/WDAC disable or quarantine tamper (those are Planned separate families) |
+| `amsi-bypass` | AMSI interference | Separately confirmed scaffold/planned marker only; no execution |
+| `etw-unhook` | ETW interference | Separately confirmed scaffold/planned marker only; no execution |
+| `av-edr-service` | AV/EDR service or driver interference | Separately confirmed scaffold/planned marker only; no execution |
 
 Example:
 

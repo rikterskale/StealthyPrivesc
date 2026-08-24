@@ -28,7 +28,8 @@ flowchart TD
     L --> Q[Plugin coverage and timing]
     H --> R[Run provenance and token context]
 
-    P --> S[Encrypted in-memory store]
+    P --> PW[plugin_worker.rs: findings + notes + error]
+    PW --> S[Encrypted in-memory store; worker notes preserved]
     Q --> T[Assessment metadata]
     R --> T
     S --> T
@@ -47,7 +48,9 @@ flowchart TD
 | Component | Responsibility |
 | --- | --- |
 | CLI parser | Flags, subcommands, defaults, and authorization gate inputs |
-| Engine | OS selection, plugin validation, scheduling, coverage, and report assembly |
+| Engine | OS selection, plugin validation, scheduling, checkpoint/triage orchestration |
+| Plugin worker | Isolated execution, cancellation/timeout, and finding/note/error return |
+| Reporting | Assessment, attack-path, and final report assembly |
 | Identity/OS modules | Minimal local platform and execution-context evidence |
 | Plugins | Independent Linux or Windows enumeration checks |
 | Store | In-memory findings and authenticated encrypted export |
@@ -59,6 +62,8 @@ flowchart TD
 
 - Authorization is required before host enumeration.
 - Default execution is enumeration-only.
-- High-impact families require `--allow-techniques` (scaffolded in this revision).
-- Reversible write probes require `--auto-exploit`.
+- High-impact families require `--allow-techniques` (scaffolded in this revision;
+  AMSI/ETW/AV-EDR families have no execution modules).
+- Reversible write probes require an exact finding approval or explicit
+  standalone `--auto-exploit`.
 - Reports and keys are kept separate when evidence is persisted.
