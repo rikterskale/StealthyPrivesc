@@ -268,7 +268,7 @@ The user readiness validation also runs in the tag-gate:
 - "Unknown plugin error should suggest list-plugins" — improve error message
 - "NO_COLOR environment variable not respected" — fix color handling
 
-**Action:** 
+**Action:**
 1. Review each warning
 2. Fix the underlying issue in code or docs
 3. Commit and push
@@ -336,7 +336,7 @@ def check_new_feature(self):
     code, stdout, stderr = self.run("your-command")
     if code != 0:
         self.errors.append("your-command failed")
-    
+
     # Add to validate_all()
 ```
 
