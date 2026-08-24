@@ -18,6 +18,10 @@ import re
 from collections import Counter
 import subprocess
 import sys
+import io
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
