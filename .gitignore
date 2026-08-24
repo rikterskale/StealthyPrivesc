@@ -17,3 +17,4 @@ __pycache__/
 prompt.txt
 spec.txt
 skills/
+.aider*
