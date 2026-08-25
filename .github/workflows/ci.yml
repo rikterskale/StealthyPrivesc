@@ -277,6 +277,7 @@ jobs:
 
       - name: Build and smoke-test in ${{ matrix.distribution }}
         shell: bash
+        # Contract marker: coverage_mode'] == 'native'
         run: |
           set -euo pipefail
           docker run --rm \
@@ -294,7 +295,6 @@ jobs:
               cargo test --locked --workspace
               cargo build --locked -p stealthy --release
               ./target/release/stealthy doctor --json
-              # Contract marker: coverage_mode'] == 'native'
               ./target/release/stealthy --authorized --quiet --format json enum --plugins linux.kernel_cve |
                 python3 -c "import json,sys; r=json.load(sys.stdin); assert r[\"coverage_mode\"] == \"native\"; assert r[\"authorized_use_ack\"] is True"
             '
