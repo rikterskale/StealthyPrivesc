@@ -65,6 +65,26 @@ def validate_archive(path: Path, platform: str) -> None:
             raise AssertionError(f"manifest metadata mismatch for {name}")
 
 
+def install_archive(path: Path, platform: str, install_root: Path) -> Path:
+    """Exercise install, replacement, and rollback semantics on a local kit."""
+    kit = install_root / "kit"
+    kit.mkdir(parents=True)
+    if platform == "linux":
+        with tarfile.open(path, "r:gz") as handle:
+            handle.extractall(kit)
+    else:
+        with zipfile.ZipFile(path) as handle:
+            handle.extractall(kit)
+    binary = kit / ("stealthy.exe" if platform == "windows" else "stealthy")
+    install_dir = install_root / "bin"
+    install_dir.mkdir()
+    installed = install_dir / binary.name
+    installed.write_bytes(binary.read_bytes())
+    if digest(installed.read_bytes()) != digest(binary.read_bytes()):
+        raise AssertionError(f"{platform} local install hash mismatch")
+    return installed
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="stealthy-release-check-") as raw:
         work = Path(raw)
@@ -100,6 +120,38 @@ def main() -> int:
                 check=True,
             )
             validate_archive(archive, platform)
+            install_root = work / f"install-{platform}"
+            installed = install_archive(archive, platform, install_root)
+            first_hash = digest(installed.read_bytes())
+            replacement = work / ("replacement.exe" if platform == "windows" else "replacement")
+            replacement.write_bytes(b"replacement release fixture\n")
+            replacement_archive = work / f"replacement-{platform}{suffix}"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/release/package.py"),
+                    "--platform", platform,
+                    "--arch", "x86_64",
+                    "--target", target,
+                    "--binary", str(replacement),
+                    "--output", str(replacement_archive),
+                    "--version", "0.0.1-test",
+                    "--commit", "replacement-commit",
+                ],
+                cwd=ROOT,
+                check=True,
+            )
+            replacement_kit = work / f"replacement-install-{platform}"
+            replacement_installed = install_archive(replacement_archive, platform, replacement_kit)
+            replacement_hash = digest(replacement_installed.read_bytes())
+            if replacement_hash == first_hash:
+                raise AssertionError(f"{platform} upgrade did not replace the installed binary")
+            installed.write_bytes(replacement_installed.read_bytes())
+            if digest(installed.read_bytes()) != replacement_hash:
+                raise AssertionError(f"{platform} upgrade hash mismatch")
+            installed.unlink()
+            if installed.exists():
+                raise AssertionError(f"{platform} rollback did not remove the installed binary")
         print("Linux and Windows release package contracts passed")
     return 0
 

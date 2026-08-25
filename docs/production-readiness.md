@@ -11,6 +11,7 @@ in CI or in the release record.
 - [ ] `cargo fmt --all -- --check` passes.
 - [ ] Locked workspace tests and clippy pass with `-D warnings`.
 - [ ] Linux x86_64 and aarch64 artifacts build and receive native smoke tests.
+- [ ] Linux runtime smoke tests pass in Ubuntu 22.04, Ubuntu 24.04, and Debian 12.
 - [ ] Windows x86_64 MSVC builds and receives native smoke tests.
 - [ ] Windows PowerShell fallback syntax and JSON contract checks pass.
 - [ ] Disposable Linux and Windows release-package contract tests pass.

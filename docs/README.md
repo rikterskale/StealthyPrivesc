@@ -9,6 +9,7 @@ Use this page as the navigation hub for the project.
 - Assessment operator: read the [Operator Runbook](operator-runbook.md).
 - Fast runbook navigation: use the [Runbook Modules](runbook/README.md).
 - Developer: read [Build](build.md), [Architecture](architecture.md), and [Design](design.md).
+- Release owner: follow the [Operations and release runbook](operations.md).
 - System overview: view the [Architecture Diagram](architecture-diagram.md).
 - Defender or reviewer: read [Capabilities](capabilities.md) and [Technique Risk Notes](techniques.md).
 - CI/integration user: use `--format json` or `--format sarif` and review the [Build](build.md) contract.

@@ -176,6 +176,7 @@ jobs:
         run: |
           python3 scripts/ci/validate_windows_contract.py
           python3 scripts/ci/validate_production_readiness.py
+          python3 scripts/ci/validate_operations_contract.py
           python3 scripts/ci/validate_installer_contract.py
           python3 scripts/ci/validate_html_report.py
 
@@ -213,6 +214,12 @@ jobs:
       - name: Release build with default features
         run: cargo build --locked -p stealthy --release
 
+      - name: Validate report compatibility and malformed inputs
+        run: python3 scripts/ci/validate_report_compatibility.py ./target/release/stealthy
+
+      - name: Validate plugin test and documentation matrix
+        run: python3 scripts/ci/validate_plugin_matrix.py
+
       - name: Check, lint, and test enum-only flavor
         run: |
           cargo check --locked -p stealthy --profile enum-only --no-default-features --features enum-only
@@ -247,6 +254,49 @@ jobs:
           "$bin" --authorized --no-color enum --plugins linux.kernel_cve --min-severity info > /tmp/stealthy-human-report.txt
           test -s /tmp/stealthy-human-report.txt
           "$bin" --authorized --format json -q enum --plugins linux.kernel_cve | python -c 'import json,sys; json.load(sys.stdin)'
+
+  linux-distributions:
+    name: Linux distribution runtime (${{ matrix.distribution }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: ubuntu-22.04
+            image: ubuntu@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+          - distribution: ubuntu-24.04
+            image: ubuntu@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+          - distribution: debian-12
+            image: debian@sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Build and smoke-test in ${{ matrix.distribution }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$PWD:/workspace" \
+            --workdir /workspace \
+            "${{ matrix.image }}" \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates curl build-essential python3 bash perl
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+              . "$HOME/.cargo/env"
+              cargo metadata --locked --format-version 1 --no-deps >/dev/null
+              cargo test --locked --workspace
+              cargo build --locked -p stealthy --release
+              ./target/release/stealthy doctor --json
+              ./target/release/stealthy --authorized --quiet --format json enum --plugins linux.kernel_cve |
+                python3 -c "import json,sys; r=json.load(sys.stdin); assert r['coverage_mode'] == 'native'; assert r['authorized_use_ack'] is True"
+            '
 
   ux:
     name: Release CLI user-experience contract
@@ -489,6 +539,7 @@ jobs:
         run: |
           cargo llvm-cov --locked --workspace --all-targets --lcov \
             --output-path lcov.info
+          python3 scripts/ci/generate_plugin_coverage.py lcov.info plugin-coverage.json
           cargo llvm-cov report --summary-only > coverage-summary.txt
           {
             echo '## Rust coverage summary'
@@ -509,6 +560,7 @@ jobs:
           path: |
             lcov.info
             coverage-summary.txt
+            plugin-coverage.json
           if-no-files-found: error
           retention-days: 14
 
@@ -853,13 +905,14 @@ jobs:
     name: CI readiness gate
     runs-on: ubuntu-latest
     if: ${{ always() }}
-    needs: [docs, rust, rust-windows, ux, coverage, agents, security, user-readiness]
+    needs: [docs, rust, linux-distributions, rust-windows, ux, coverage, agents, security, user-readiness]
     timeout-minutes: 5
     steps:
       - name: Enforce required CI gates
         env:
           DOCS_RESULT: ${{ needs.docs.result }}
           RUST_RESULT: ${{ needs.rust.result }}
+          LINUX_DISTRIBUTIONS_RESULT: ${{ needs['linux-distributions'].result }}
           RUST_WINDOWS_RESULT: ${{ needs['rust-windows'].result }}
           UX_RESULT: ${{ needs.ux.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
@@ -873,7 +926,7 @@ jobs:
             printf '## CI readiness\n\n'
             printf '| Gate | Result |\n| --- | --- |\n'
           } >> "$GITHUB_STEP_SUMMARY"
-          for gate in DOCS RUST RUST_WINDOWS UX COVERAGE AGENTS SECURITY USER_READINESS; do
+          for gate in DOCS RUST LINUX_DISTRIBUTIONS RUST_WINDOWS UX COVERAGE AGENTS SECURITY USER_READINESS; do
             variable="${gate}_RESULT"
             result="${!variable}"
             printf '| %s | %s |\n' "$gate" "$result" >> "$GITHUB_STEP_SUMMARY"

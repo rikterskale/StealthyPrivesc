@@ -39,6 +39,12 @@ The release workflow publishes and smoke-tests these full delivery kits:
 | `stealthy-linux-aarch64.tar.gz` | Linux aarch64 with a GNU-compatible userspace |
 | `stealthy-windows-x86_64.zip` | 64-bit Windows using the MSVC build |
 
+Published Linux kits are runtime-smoke-tested in Ubuntu 22.04, Ubuntu 24.04,
+and Debian 12. Distribution testing does not imply that every distribution,
+kernel, init system, optional tool, or security policy has native-plugin parity.
+Engagement-specific environments remain subject to the manual validation
+ownership process in [Operations](operations.md).
+
 Each kit contains the native binary, platform fallback scripts, selected
 operator documentation, `RELEASE-MANIFEST.json`, and an internal `SHA256SUMS`.
 The release also publishes SPDX JSON SBOMs, a top-level checksum manifest,
@@ -47,6 +53,10 @@ The release also publishes SPDX JSON SBOMs, a top-level checksum manifest,
 The release record must also include the completed
 [production-readiness acceptance criteria](production-readiness.md), platform
 smoke-test results, and any explicitly skipped checks.
+
+Release CI exercises local kit installation, replacement, and rollback using
+disposable archives before publication. Network installation still requires
+checksum and GitHub attestation verification.
 
 Other source-build targets, including Windows GNU and Linux musl, are
 best-effort developer targets unless a future release matrix lists them.

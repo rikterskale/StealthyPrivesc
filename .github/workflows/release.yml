@@ -43,10 +43,14 @@ jobs:
           cargo test --locked --workspace
           cargo build --locked --workspace --release
 
+      - name: Validate reproducible release build
+        run: python3 scripts/ci/validate_reproducible_build.py
+
       - name: Validate documentation, links, and pinned actions
         run: |
           python3 scripts/ci/validate_docs.py
           python3 scripts/ci/validate_production_readiness.py
+          python3 scripts/ci/validate_operations_contract.py
 
       - name: Check, lint, and test enum-only flavor
         run: |
@@ -75,6 +79,7 @@ jobs:
           cargo install --locked cargo-llvm-cov --version 0.6.16
           cargo llvm-cov --locked --workspace --all-targets --lcov \
             --output-path tag-lcov.info --fail-under-lines "$COVERAGE_MIN_LINES"
+          python3 scripts/ci/generate_plugin_coverage.py tag-lcov.info tag-plugin-coverage.json
 
       - name: Validate release and agent scripts
         run: |
@@ -83,6 +88,9 @@ jobs:
           bash -n scripts/install.sh
           python3 scripts/ci/validate_windows_contract.py
           python3 scripts/ci/validate_production_readiness.py
+          python3 scripts/ci/validate_operations_contract.py
+          python3 scripts/ci/validate_plugin_matrix.py
+          python3 scripts/ci/validate_report_compatibility.py target/release/stealthy
           python3 scripts/ci/validate_worktree_hygiene.py
           python3 scripts/ci/validate_release_package.py
 
@@ -273,6 +281,7 @@ jobs:
             --version "$RELEASE_VERSION" \
             --commit "$SOURCE_COMMIT" \
             --ci-run "$CI_RUN"
+          python3 scripts/ci/validate_release_evidence.py dist/RELEASE-EVIDENCE.json
 
       - name: Validate release set and create checksums
         shell: bash

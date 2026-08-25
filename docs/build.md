@@ -36,6 +36,15 @@ the [Support Policy](support-policy.md) are release-supported.
 | Windows x64 GNU | Linux with MinGW | `cargo build --locked --workspace --release --target x86_64-pc-windows-gnu` | Windows CI or approved Windows host |
 | Windows x64 MSVC | Windows with MSVC toolchain | `cargo build --locked --workspace --release --target x86_64-pc-windows-msvc` | Windows CI or approved Windows host |
 
+CI also runs the native Linux runtime smoke test in disposable Ubuntu 22.04,
+Ubuntu 24.04, and Debian 12 environments. These are runtime validation
+environments, not separate release artifacts; the published Linux kits retain
+the GNU-compatible userspace contract described in the support policy.
+
+The release gate also performs two clean release builds with
+`SOURCE_DATE_EPOCH=0` and compares their stripped binary hashes. Per-plugin
+coverage is emitted as `plugin-coverage.json` alongside the LCOV artifact.
+
 The tagged release workflow publishes these supported assets:
 
 - `stealthy-linux-x86_64.tar.gz`
