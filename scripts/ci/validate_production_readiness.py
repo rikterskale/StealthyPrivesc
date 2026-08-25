@@ -35,7 +35,7 @@ def main() -> int:
         "debian-12",
         "ubuntu@sha256:",
         "debian@sha256:",
-        "coverage_mode'] == 'native'",
+        'coverage_mode\\"] == \\"native\\"',
         "validate_windows_contract.py",
         "validate_release_package.py",
         "validate_worktree_hygiene.py",
