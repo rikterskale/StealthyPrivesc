@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::io::Write;
 use std::path::Path;
+use zeroize::Zeroize;
 
 use crate::cli::{OutputMode, ReportFormat};
 use crate::core::store::EncryptedStore;
@@ -103,7 +104,10 @@ pub fn emit(
                 if key_path == path {
                     bail!("--key-output-path must differ from --output-path");
                 }
-                write_sensitive_file(key_path, store.key_hex().as_bytes())?;
+                let mut key = store.key_hex();
+                let result = write_sensitive_file(key_path, key.as_bytes());
+                key.zeroize();
+                result?;
             }
             if !opts.quiet {
                 eprintln!("{} wrote {}", term::ok("[file]"), path.display());
@@ -123,14 +127,8 @@ pub fn emit(
             if opts.also_markdown {
                 let md_path = std::path::PathBuf::from(format!("{}.md", path.display()));
                 let md = render_markdown(report, &filtered, total);
-                let mut md_file = std::fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .open(&md_path)
+                crate::core::artifacts::write_private_atomic(&md_path, md.as_bytes())
                     .with_context(|| format!("write {}", md_path.display()))?;
-                restrict_file_permissions(&md_file, &md_path)?;
-                md_file.write_all(md.as_bytes())?;
                 if !opts.quiet {
                     eprintln!("{} wrote {}", term::ok("[file]"), md_path.display());
                 }
@@ -143,7 +141,10 @@ pub fn emit(
                 .ok_or_else(|| anyhow::anyhow!("--output=remote requires --exfil-url"))?;
             let sealed = store.seal_report(report)?;
             let key_path = opts.key_output_path.as_ref().expect("validated key path");
-            write_sensitive_file(key_path, store.key_hex().as_bytes())?;
+            let mut key = store.key_hex();
+            let result = write_sensitive_file(key_path, key.as_bytes());
+            key.zeroize();
+            result?;
             if !opts.quiet {
                 eprintln!(
                     "{}\n  target: {}\n  POST body (base64 nonce||ciphertext):\n{}",
@@ -793,86 +794,22 @@ fn write_file(
     path: &Path,
     plaintext: bool,
 ) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create output directory {}", parent.display()))?;
-        }
-    }
-
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(path)
-        .with_context(|| format!("create {}", path.display()))?;
-    restrict_file_permissions(&f, path)?;
-
-    if plaintext {
+    let contents = if plaintext {
         let findings = report.findings.iter().collect::<Vec<_>>();
-        let json = render_json(report, &findings)?.into_bytes();
-        f.write_all(&json)?;
+        render_json(report, &findings)?.into_bytes()
     } else {
-        let sealed = store.seal_report(report)?;
-        f.write_all(sealed.as_bytes())?;
-    }
-    f.flush()?;
-    Ok(())
+        store.seal_report(report)?.into_bytes()
+    };
+    crate::core::artifacts::write_private_atomic(path, &contents)
+        .with_context(|| format!("create {}", path.display()))
 }
 
 fn write_sensitive_file(path: &Path, contents: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create key directory {}", parent.display()))?;
-        }
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(path)
-        .with_context(|| format!("create protected key file {}", path.display()))?;
-    restrict_file_permissions(&file, path)?;
-    file.write_all(contents)?;
-    file.write_all(b"\n")?;
-    file.flush()?;
-    Ok(())
-}
-
-fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        _file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    #[cfg(windows)]
-    {
-        let whoami = crate::core::command::trusted_command("whoami.exe")
-            .args(["/user", "/fo", "csv", "/nh"])
-            .output()
-            .context("resolve current Windows SID for output ACL")?;
-        if !whoami.status.success() {
-            bail!("whoami.exe could not resolve the current Windows SID");
-        }
-        let text = String::from_utf8_lossy(&whoami.stdout);
-        let sid = text
-            .split(',')
-            .nth(1)
-            .map(|value| value.trim().trim_matches('"'))
-            .filter(|value| value.starts_with("S-1-"))
-            .ok_or_else(|| anyhow::anyhow!("could not parse current Windows SID"))?;
-        let grant = format!("*{sid}:(F)");
-        let status = crate::core::command::trusted_command("icacls.exe")
-            .arg(_path)
-            .args(["/inheritance:r", "/grant:r", &grant])
-            .status()
-            .context("apply restrictive Windows output ACL")?;
-        if !status.success() {
-            bail!("icacls.exe failed to restrict output to the current Windows SID");
-        }
-    }
-    Ok(())
+    let mut body = Vec::with_capacity(contents.len() + 1);
+    body.extend_from_slice(contents);
+    body.push(b'\n');
+    crate::core::artifacts::write_private_atomic(path, &body)
+        .with_context(|| format!("create protected key file {}", path.display()))
 }
 
 /// Best-effort overwrite then unlink. Not a guarantee against forensic recovery.

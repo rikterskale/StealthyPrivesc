@@ -179,12 +179,16 @@ fn run_main() -> Result<()> {
             name,
             out,
             binary,
+            target_hostname,
+            target_username,
         } => run_stage(
             &os,
             &arch,
             &name,
             &out,
             binary.as_deref(),
+            &target_hostname,
+            target_username.as_deref(),
             cli.ledger_dir.as_deref(),
         ),
         Commands::Verify {
@@ -340,7 +344,8 @@ fn run_enum(
     )?;
     let outcome = engine.run()?;
     if let Some(path) = save_baseline {
-        std::fs::write(&path, serde_json::to_string_pretty(&outcome.report)?)
+        let body = serde_json::to_vec_pretty(&outcome.report)?;
+        artifacts::write_private_atomic(&path, &body)
             .with_context(|| format!("write baseline {}", path.display()))?;
         println!("saved baseline {}", path.display());
     }
@@ -542,14 +547,20 @@ fn run_cleanup(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_stage(
     os: &str,
     arch: &str,
     name: &str,
     out: &std::path::Path,
     binary: Option<&std::path::Path>,
+    target_hostname: &str,
+    target_username: Option<&str>,
     ledger_dir: Option<&std::path::Path>,
 ) -> Result<()> {
+    if target_hostname.trim().is_empty() {
+        anyhow::bail!("--target-hostname is required for staged bundles");
+    }
     let mut entropy = [0u8; 8];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut entropy);
     let run_id = format!("stage-{}", hex::encode(entropy));
@@ -562,6 +573,8 @@ fn run_stage(
         name,
         out_dir: out,
         binary,
+        target_hostname,
+        target_username,
         run_id: &run_id,
         ledger_dir: &ledger_dir,
     })?;
@@ -983,7 +996,7 @@ fn print_guide() {
     );
     println!(
         "   {}",
-        term::cyan("stealthy stage --os linux --out ./drop --binary ./target/release/stealthy")
+        term::cyan("stealthy stage --os linux --target-hostname target-a --out ./drop --binary ./target/release/stealthy")
     );
     println!(
         "   {}",

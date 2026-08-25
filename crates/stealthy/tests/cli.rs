@@ -1,4 +1,19 @@
 use std::process::Command;
+use std::sync::OnceLock;
+
+fn target_hostname() -> &'static str {
+    static HOST: OnceLock<String> = OnceLock::new();
+    HOST.get_or_init(|| {
+        if cfg!(windows) {
+            std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".into())
+        } else {
+            std::fs::read_to_string("/etc/hostname")
+                .unwrap_or_else(|_| "localhost".into())
+                .trim()
+                .to_string()
+        }
+    })
+}
 
 fn smoke_plugin() -> &'static str {
     if cfg!(target_os = "windows") {
@@ -924,6 +939,8 @@ fn stage_and_verify_local_bundle() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--arch",
             "x86_64",
             "--name",
@@ -949,6 +966,7 @@ fn stage_and_verify_local_bundle() {
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
     assert!(manifest.contains("authorization_ack=true"));
     assert!(manifest.contains("operator_ack_required=true"));
+    assert!(manifest.contains(&format!("target_hostname={}", target_hostname())));
     assert!(manifest.contains("primary_binary=cache-update"));
     assert!(manifest.contains("linux_fallbacks=python,bash,sh,perl"));
     assert!(out.join("scripts/enum-posix.sh").is_file());
@@ -986,6 +1004,8 @@ fn stage_output_must_be_empty() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1018,6 +1038,8 @@ fn staged_dispatcher_requires_fresh_authorization() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1050,6 +1072,8 @@ fn stage_windows_manifest_lists_script_hosts() {
             "stage",
             "--os",
             "windows",
+            "--target-hostname",
+            target_hostname(),
             "--arch",
             "x86_64",
             "--name",
@@ -1094,6 +1118,8 @@ fn dispatcher_falls_back_when_primary_exits_126() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1151,6 +1177,8 @@ fn dispatcher_chains_past_blocked_first_fallback() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1242,6 +1270,8 @@ fn dispatcher_falls_back_on_signal_death() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1282,6 +1312,8 @@ fn cleanup_removes_staged_directory_recursively() {
             "stage",
             "--os",
             "linux",
+            "--target-hostname",
+            target_hostname(),
             "--out",
             out.to_str().unwrap(),
             "--binary",
@@ -1596,4 +1628,44 @@ fn checkpoint_and_resume_skips_completed_plugin() {
     assert!(coverage
         .iter()
         .any(|c| c["id"] == smoke_plugin() && c["status"] == "ok"));
+}
+
+#[test]
+fn resource_limits_bound_findings_and_report_size() {
+    let limited = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--max-findings",
+            "1",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        limited.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&limited.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&limited.stdout).unwrap();
+    assert!(report["findings"].as_array().unwrap().len() <= 1);
+
+    let oversized = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--max-report-bytes",
+            "1",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!oversized.status.success());
+    assert!(String::from_utf8_lossy(&oversized.stderr).contains("max-report-bytes"));
 }

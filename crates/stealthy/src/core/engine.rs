@@ -31,6 +31,9 @@ pub struct Engine {
     verbose: bool,
     delay_ms: u64,
     plugin_timeout_ms: u64,
+    max_scan_seconds: u64,
+    max_findings: usize,
+    max_report_bytes: usize,
     profile: EngagementProfile,
     prefer_quiet: bool,
     noise_budget: NoiseBudget,
@@ -130,6 +133,9 @@ impl Engine {
             verbose,
             delay_ms,
             plugin_timeout_ms,
+            max_scan_seconds: cli.max_scan_seconds,
+            max_findings: cli.max_findings,
+            max_report_bytes: cli.max_report_bytes,
             profile,
             prefer_quiet: profile.prefer_quiet(),
             noise_budget: profile.noise_budget(),
@@ -171,6 +177,8 @@ impl Engine {
 
     pub fn run(&mut self) -> Result<EngineOutcome> {
         let run_started = Instant::now();
+        let scan_deadline = (self.max_scan_seconds != 0)
+            .then(|| run_started + std::time::Duration::from_secs(self.max_scan_seconds));
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_flag = cancel.clone();
         let _ = ctrlc::set_handler(move || {
@@ -434,6 +442,24 @@ impl Engine {
         let mut cancelled = false;
 
         for (idx, plugin) in selected.iter().enumerate() {
+            if scan_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                cancelled = true;
+                store.note(format!(
+                    "Run stopped at max_scan_seconds={} before plugin {}",
+                    self.max_scan_seconds,
+                    plugin.id()
+                ));
+                for rest in selected.iter().skip(idx) {
+                    coverage.push(PluginCoverage {
+                        id: rest.id().to_string(),
+                        status: "cancelled".into(),
+                        findings: 0,
+                        error: Some("scan duration limit".into()),
+                        duration_ms: 0,
+                    });
+                }
+                break;
+            }
             if cancel.load(Ordering::SeqCst) {
                 cancelled = true;
                 if self.output.progress_json {
@@ -498,12 +524,25 @@ impl Engine {
             }
             low_and_slow(self.delay_ms);
 
+            let plugin_timeout_ms = scan_deadline
+                .map(|deadline| {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    let remaining_ms = remaining.as_millis().min(u64::MAX as u128) as u64;
+                    if self.plugin_timeout_ms == 0 {
+                        remaining_ms.max(1)
+                    } else {
+                        self.plugin_timeout_ms.min(remaining_ms.max(1))
+                    }
+                })
+                .unwrap_or(self.plugin_timeout_ms);
+
             let outcome = self.run_one_plugin(
                 plugin.id(),
                 effective_auto_exploit,
                 &approved_probe_ids,
                 control_assessment.as_ref(),
                 cancel.clone(),
+                plugin_timeout_ms,
             );
 
             match outcome {
@@ -524,12 +563,21 @@ impl Engine {
                             eprintln!("    {} plugin failed: {error}", term::err("[!]"));
                         }
                     } else {
-                        let findings = result
+                        let mut findings = result
                             .findings
                             .into_iter()
                             .map(with_operator_next_step)
                             .map(finalize_finding)
                             .collect::<Vec<_>>();
+                        let remaining = self.max_findings.saturating_sub(store.findings().len());
+                        if findings.len() > remaining {
+                            findings.truncate(remaining);
+                            store.note(format!(
+                                "Finding limit reached at max_findings={}; plugin {} results were truncated",
+                                self.max_findings,
+                                plugin.id()
+                            ));
+                        }
                         let n = findings.len();
                         let max = findings
                             .iter()
@@ -629,7 +677,7 @@ impl Engine {
                     control_assessment.clone(),
                 );
                 if let Ok(body) = serde_json::to_string_pretty(&partial) {
-                    if let Err(error) = std::fs::write(path, body) {
+                    if let Err(error) = artifacts::write_private_atomic(path, body.as_bytes()) {
                         store.note(format!("Checkpoint persistence failed: {error}"));
                     }
                     let mut ledger = ArtifactLedger::new(&run_id);
@@ -720,10 +768,19 @@ impl Engine {
             notes,
         };
 
+        let report_size = serde_json::to_vec(&report)?.len();
+        if self.max_report_bytes != 0 && report_size > self.max_report_bytes {
+            anyhow::bail!(
+                "report size {} bytes exceeds --max-report-bytes limit of {}",
+                report_size,
+                self.max_report_bytes
+            );
+        }
+
         // Persist final checkpoint if requested.
         if let Some(path) = &self.checkpoint {
             if let Ok(body) = serde_json::to_string_pretty(&report) {
-                std::fs::write(path, body)
+                artifacts::write_private_atomic(path, body.as_bytes())
                     .with_context(|| format!("write checkpoint {}", path.display()))?;
             } else {
                 anyhow::bail!("serialize final checkpoint");
@@ -792,6 +849,7 @@ impl Engine {
         approved_probe_ids: &[String],
         control_assessment: Option<&ControlAssessment>,
         cancel: Arc<AtomicBool>,
+        plugin_timeout_ms: u64,
     ) -> PluginOutcome {
         let request = PluginWorkerRequest {
             plugin: plugin_id.into(),
@@ -809,7 +867,7 @@ impl Engine {
             artifact_path: self.artifact.clone(),
             control_assessment: control_assessment.cloned(),
         };
-        plugin_worker::run_with_timeout(request, self.plugin_timeout_ms, cancel)
+        plugin_worker::run_with_timeout(request, plugin_timeout_ms, cancel)
     }
 }
 

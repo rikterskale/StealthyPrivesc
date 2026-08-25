@@ -615,7 +615,7 @@ jobs:
             Write-Warning "Could not assert Defender path exclusion for $root : $_"
           }
 
-          & $bin stage --os windows --out $stage --binary $bin --ledger-dir $ledger
+          & $bin stage --os windows --target-hostname $env:COMPUTERNAME --out $stage --binary $bin --ledger-dir $ledger
           $stagedExe = Join-Path $stage 'stealthy.exe'
           $manifest = Get-Content -Raw (Join-Path $stage 'scripts\stealthy-run.conf')
           if ($manifest -notmatch 'windows_fallbacks=powershell,jscript,msbuild') {
@@ -644,7 +644,7 @@ jobs:
 
           $fallbackRoot = Join-Path $root 'fallback'
           $fallbackLedger = Join-Path $root 'fallback-ledger'
-          & $bin stage --os windows --out $fallbackRoot --name stealthy --ledger-dir $fallbackLedger
+          & $bin stage --os windows --target-hostname $env:COMPUTERNAME --out $fallbackRoot --name stealthy --ledger-dir $fallbackLedger
           $reduced = & (Join-Path $fallbackRoot 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
           if ($reduced.coverage_mode -ne 'script') { throw 'dispatcher fallback coverage mode mismatch' }
           & $bin --ledger-dir $fallbackLedger cleanup --latest
@@ -652,7 +652,7 @@ jobs:
           # Simulate AV quarantine: stage a real PE, delete it, expect script fallback.
           $qRoot = Join-Path $root 'quarantine-sim'
           $qLedger = Join-Path $root 'quarantine-ledger'
-          & $bin stage --os windows --out $qRoot --binary $bin --ledger-dir $qLedger
+          & $bin stage --os windows --target-hostname $env:COMPUTERNAME --out $qRoot --binary $bin --ledger-dir $qLedger
           $qExe = Join-Path $qRoot 'stealthy.exe'
           if (Test-Path -LiteralPath $qExe -PathType Leaf) {
             Remove-Item -LiteralPath $qExe -Force

@@ -86,11 +86,17 @@ pub struct StageOptions<'a> {
     pub name: &'a str,
     pub out_dir: &'a Path,
     pub binary: Option<&'a Path>,
+    pub target_hostname: &'a str,
+    pub target_username: Option<&'a str>,
     pub run_id: &'a str,
     pub ledger_dir: &'a Path,
 }
 
 pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
+    validate_manifest_value(opts.target_hostname, "target hostname", true)?;
+    if let Some(username) = opts.target_username {
+        validate_manifest_value(username, "target username", false)?;
+    }
     if opts.out_dir.exists() {
         if !opts.out_dir.is_dir() {
             bail!(
@@ -182,8 +188,8 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
          allow_fallback=true\n\
          roe_ref=INHERITED_PRIMARY_RUN\n\
          execution_mode=enumerate-only\n\
-         target_hostname=AUTO\n\
-         target_username=\n\
+         target_hostname={target_hostname}\n\
+         target_username={target_username}\n\
          drop_dir=\n\
          primary_binary={bin_name}\n\
          {os_key}_fallbacks={fallback_order}\n",
@@ -192,6 +198,8 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         } else {
             "linux"
         },
+        target_hostname = opts.target_hostname,
+        target_username = opts.target_username.unwrap_or(""),
     );
     fs::write(scripts_dst.join("stealthy-run.conf"), manifest)
         .with_context(|| format!("write {} dispatcher manifest", opts.os))?;
@@ -243,6 +251,26 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     );
     artifacts::save_ledger(opts.ledger_dir, &ledger)?;
     Ok(opts.out_dir.to_path_buf())
+}
+
+fn validate_manifest_value(value: &str, label: &str, required: bool) -> Result<()> {
+    let value = value.trim();
+    if required && value.is_empty() {
+        bail!("{label} must be non-empty");
+    }
+    if value.eq_ignore_ascii_case("AUTO")
+        || value.eq_ignore_ascii_case("REQUIRED")
+        || value.eq_ignore_ascii_case("SET_TARGET_HOSTNAME")
+    {
+        bail!("{label} must be explicit");
+    }
+    if value
+        .bytes()
+        .any(|byte| byte == 0 || byte == b'\n' || byte == b'\r' || byte == b'=')
+    {
+        bail!("{label} contains unsupported manifest characters");
+    }
+    Ok(())
 }
 
 fn validate_bundle_name(name: &str) -> Result<()> {
@@ -365,6 +393,8 @@ mod tests {
             name: "stealthy",
             out_dir: &out,
             binary: Some(&source),
+            target_hostname: "approved-host",
+            target_username: Some("operator"),
             run_id: "delivery-test",
             ledger_dir: &ledger,
         })

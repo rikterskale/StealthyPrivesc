@@ -89,6 +89,35 @@ pub fn save_ledger(dir: &Path, ledger: &ArtifactLedger) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Write sensitive JSON with restrictive permissions and crash-safe replacement.
+pub fn write_private_atomic(path: &Path, body: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    let suffix = rand::random::<u64>();
+    let temp = parent.join(format!(
+        ".{}.tmp-{suffix:016x}",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .with_context(|| format!("create temporary private file {}", temp.display()))?;
+    restrict_file_permissions(&file, &temp)?;
+    file.write_all(body)?;
+    file.sync_all()?;
+    drop(file);
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    fs::rename(&temp, path).with_context(|| format!("replace private file {}", path.display()))?;
+    Ok(())
+}
+
 pub fn load_ledger(dir: &Path, run_id: &str) -> Result<ArtifactLedger> {
     let path = ledger_path(dir, run_id)?;
     let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
@@ -234,7 +263,7 @@ fn load_or_create_key(dir: &Path) -> Result<Vec<u8>> {
     rand::thread_rng().fill_bytes(&mut key);
     match OpenOptions::new().write(true).create_new(true).open(&path) {
         Ok(mut file) => {
-            restrict_file_permissions(&file)?;
+            restrict_file_permissions(&file, &path)?;
             file.write_all(&key)?;
             file.sync_all()?;
             Ok(key.to_vec())
@@ -282,7 +311,7 @@ fn atomic_private_write(path: &Path, body: &[u8]) -> Result<()> {
         .create_new(true)
         .open(&temp)
         .with_context(|| format!("create temporary ledger {}", temp.display()))?;
-    restrict_file_permissions(&file)?;
+    restrict_file_permissions(&file, &temp)?;
     file.write_all(body)?;
     file.sync_all()?;
     drop(file);
@@ -294,11 +323,37 @@ fn atomic_private_write(path: &Path, body: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn restrict_file_permissions(_file: &std::fs::File) -> Result<()> {
+fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         _file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(windows)]
+    {
+        let whoami = crate::core::command::trusted_command("whoami.exe")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .context("resolve current Windows SID for private file")?;
+        if !whoami.status.success() {
+            bail!("whoami.exe could not resolve the current Windows SID");
+        }
+        let text = String::from_utf8_lossy(&whoami.stdout);
+        let sid = text
+            .split(',')
+            .nth(1)
+            .map(|value| value.trim().trim_matches('"'))
+            .filter(|value| value.starts_with("S-1-"))
+            .ok_or_else(|| anyhow::anyhow!("could not parse current Windows SID"))?;
+        let grant = format!("*{sid}:(F)");
+        let status = crate::core::command::trusted_command("icacls.exe")
+            .arg(_path)
+            .args(["/inheritance:r", "/grant:r", &grant])
+            .status()
+            .context("apply restrictive Windows private-file ACL")?;
+        if !status.success() {
+            bail!("icacls.exe failed to restrict private file");
+        }
     }
     Ok(())
 }
@@ -355,7 +410,7 @@ fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cleanup, load_ledger, save_ledger, ArtifactLedger};
+    use super::{cleanup, load_ledger, save_ledger, write_private_atomic, ArtifactLedger};
 
     #[test]
     fn ledgers_are_private_and_tamper_evident() {
@@ -441,5 +496,21 @@ mod tests {
 
         assert!(!tree.exists());
         assert!(outside.join("keep.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_json_writer_restricts_permissions_and_replaces_atomically() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("checkpoint.json");
+        write_private_atomic(&path, br#"{"ok":true}"#).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        write_private_atomic(&path, br#"{"ok":false}"#).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "{\"ok\":false}");
     }
 }

@@ -28,7 +28,10 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--exfil-url URL` | Operator-controlled destination metadata for remote output | None |
 | `--profile quiet\|balanced\|thorough\|ci` | Named OPSEC / engagement posture (explicit flags override) | `balanced` |
 | `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
-| `--checkpoint PATH` | Write/update plaintext JSON checkpoint during the run | None |
+| `--max-scan-seconds N` | Total scan duration limit; `0` disables | `1800` |
+| `--max-findings N` | Maximum findings retained in one run | `10000` |
+| `--max-report-bytes N` | Maximum serialized report size; `0` disables | `67108864` |
+| `--checkpoint PATH` | Write/update a private plaintext JSON checkpoint during the run | None |
 | `--ledger-dir PATH` | Artifact ledger directory | `.cache-run` |
 | `--artifact PATH` | Read-only artifact hash/provenance/trust prediction; never executed | None |
 
@@ -310,7 +313,7 @@ closeout action.
 ## `stage` / `verify` / `one-liners`
 
 ```text
-stealthy stage --os linux --arch x86_64 --out ./drop --binary ./target/release/stealthy
+stealthy stage --os linux --arch x86_64 --target-hostname target-a --out ./drop --binary ./target/release/stealthy
 stealthy verify --path ./drop/cache-update --expect-sha256 HEX
 stealthy one-liners --os linux --transport ssh
 ```

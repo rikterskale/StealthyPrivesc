@@ -110,7 +110,7 @@ cargo build --locked -p stealthy --release
 ./target/release/stealthy --authorized --checkpoint /tmp/triage.json enum --approve-file decisions.json
 
 # Stage a drop bundle on the operator workstation
-./target/release/stealthy stage --os linux --out ./drop \
+./target/release/stealthy stage --os linux --target-hostname target-a --out ./drop \
   --binary ./target/release/stealthy
 
 # Run the staged bundle through the policy-bound dispatcher
@@ -214,7 +214,10 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
 | `--profile quiet\|balanced\|thorough\|ci` | Named engagement/OPSEC profile |
 | `--plugin-timeout-ms N` | Per-plugin isolated-process timeout; `0` disables |
-| `--checkpoint PATH` | Write a resumable plaintext checkpoint |
+| `--max-scan-seconds N` | Total scan duration limit; `0` disables |
+| `--max-findings N` | Maximum findings retained in one run |
+| `--max-report-bytes N` | Maximum serialized report size; `0` disables |
+| `--checkpoint PATH` | Write a private, resumable plaintext checkpoint |
 | `--ledger-dir PATH` | Artifact ledger location for explicit artifacts/checkpoints |
 | `--artifact PATH` | Read-only hash/provenance/trust prediction for an approved test artifact; never executes it |
 | `--output memory\|file\|remote` | Result destination (default `memory`) |

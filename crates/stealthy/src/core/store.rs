@@ -67,16 +67,23 @@ impl EncryptedStore {
 
     /// Decode and authenticate a sealed report using an operator-supplied key.
     pub fn open_sealed_report(sealed: &str, key_hex: &str) -> Result<RunReport> {
-        let key = hex::decode(key_hex).context("decode hex key")?;
+        let mut key = hex::decode(key_hex).context("decode hex key")?;
         if key.len() != 32 {
+            key.zeroize();
             return Err(anyhow!("report key must contain exactly 32 bytes"));
         }
+        let result = Self::open_sealed_report_with_key(sealed, &key);
+        key.zeroize();
+        result
+    }
+
+    fn open_sealed_report_with_key(sealed: &str, key: &[u8]) -> Result<RunReport> {
         let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, sealed)
             .context("decode sealed report")?;
         if raw.len() < 12 {
             return Err(anyhow!("sealed report is shorter than a nonce"));
         }
-        let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
         let plaintext = cipher
             .decrypt(Nonce::from_slice(&raw[..12]), &raw[12..])
             .map_err(|_| anyhow!("sealed report authentication failed"))?;

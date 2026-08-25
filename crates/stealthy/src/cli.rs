@@ -62,6 +62,18 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 120_000)]
     pub plugin_timeout_ms: u64,
 
+    /// Maximum total scan duration in seconds (0 = disabled).
+    #[arg(long, global = true, default_value_t = 1800)]
+    pub max_scan_seconds: u64,
+
+    /// Maximum findings retained in a single run.
+    #[arg(long, global = true, default_value_t = 10_000)]
+    pub max_findings: usize,
+
+    /// Maximum serialized report size in bytes.
+    #[arg(long, global = true, default_value_t = 67_108_864)]
+    pub max_report_bytes: usize,
+
     /// Artifact ledger directory (default: .cache-run).
     #[arg(long, global = true)]
     pub ledger_dir: Option<std::path::PathBuf>,
@@ -330,6 +342,12 @@ pub enum Commands {
         /// Optional real binary to copy into the bundle.
         #[arg(long)]
         binary: Option<std::path::PathBuf>,
+        /// Hostname the staged dispatcher is allowed to run on.
+        #[arg(long)]
+        target_hostname: String,
+        /// Optional username the staged dispatcher is allowed to run as.
+        #[arg(long)]
+        target_username: Option<String>,
     },
 
     /// Verify a local or remote artifact hash.
@@ -530,7 +548,7 @@ Examples:
   stealthy --authorized enum --approve-file decisions.json
   stealthy --authorized --checkpoint /tmp/run.json enum
   stealthy --authorized resume --checkpoint /tmp/run.json
-  stealthy stage --os linux --arch x86_64 --out ./drop --binary ./target/release/stealthy
+  stealthy stage --os linux --arch x86_64 --target-hostname target-a --out ./drop --binary ./target/release/stealthy
   stealthy verify --path ./drop/cache-update --expect-sha256 HEX
   stealthy one-liners --os linux --transport ssh
   stealthy ingest script-report.json

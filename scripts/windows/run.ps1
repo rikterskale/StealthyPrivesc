@@ -152,8 +152,6 @@ function Invoke-ApprovedFallbacks {
         }
         $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
         [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved powershell fallback')
-        # -ExecutionPolicy Bypass applies only to this approved enum.ps1 path;
-        # it does not disable AppLocker/WDAC/AMSI/ETW or other host controls.
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Authorized')
         if ($isJson) { $psArgs += '-Json' }
         try {

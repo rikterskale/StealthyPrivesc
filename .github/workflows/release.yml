@@ -185,7 +185,9 @@ jobs:
 
       - name: Smoke-test Linux aarch64 binary under QEMU
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: qemu-aarch64 -L /usr/aarch64-linux-gnu "${{ matrix.binary }}" doctor --json | python3 -c 'import json,sys; assert json.load(sys.stdin)["healthy"] is True'
+        run: |
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${{ matrix.binary }}" doctor --json | python3 -c 'import json,sys; assert json.load(sys.stdin)["healthy"] is True'
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "${{ matrix.binary }}" --authorized --quiet --format json enum --plugins linux.kernel_cve | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["authorized_use_ack"] is True and r["coverage_mode"] == "native"'
 
       - name: Smoke-test Windows binary
         if: runner.os == 'Windows'
@@ -195,6 +197,8 @@ jobs:
           if (-not $doctor.healthy) { throw 'Windows release doctor smoke failed' }
           & "${{ matrix.binary }}" enum *> $null
           if ($LASTEXITCODE -ne 2) { throw "expected authorization exit 2, got $LASTEXITCODE" }
+          $report = & "${{ matrix.binary }}" --authorized --quiet --format json enum --plugins windows.privileges | ConvertFrom-Json
+          if ($report.coverage_mode -ne 'native' -or $report.authorized_use_ack -ne $true) { throw 'Windows native plugin smoke failed' }
 
       - name: Package Linux delivery kit
         if: runner.os == 'Linux'

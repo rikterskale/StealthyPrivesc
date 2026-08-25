@@ -267,7 +267,7 @@ pub fn disposition(
 
 pub fn completions(shell: CompletionShell) -> Result<()> {
     let commands = "disclaimer guide doctor quickstart demo security-lab explain-plugin plugin-picker completions explain-finding html-report coverage-compare disposition presets playbook controls live-controls report diff ingest list-plugins artifacts cleanup stage verify one-liners resume enum scan";
-    let flags = "--authorized --profile --preset --quiet --verbose --summary --progress-json --no-color --delay-ms --plugin-timeout-ms --format --min-severity --fail-on --output --output-path --key-output-path --plaintext-file --also-markdown --checkpoint --plugins --skip --auto-exploit --allow-techniques --triage --triage-out --approve-file";
+    let flags = "--authorized --profile --preset --quiet --verbose --summary --progress-json --no-color --delay-ms --plugin-timeout-ms --max-scan-seconds --max-findings --max-report-bytes --format --min-severity --fail-on --output --output-path --key-output-path --plaintext-file --also-markdown --checkpoint --plugins --skip --auto-exploit --allow-techniques --triage --triage-out --approve-file";
     let ids = plugins::registry()
         .iter()
         .map(|p| p.id())

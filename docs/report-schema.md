@@ -81,7 +81,7 @@ equivalence.
 ## Output and persistence
 
 Normal memory-mode enumeration does not create an artifact ledger. A ledger is
-created only when the run records an explicit file output, checkpoint, or
+created only when the run records an explicit file output, private checkpoint, or
 staged delivery artifact. Encrypted file output is not plaintext JSON and
 requires a distinct `--key-output-path` or `STEALTHY_KEY_OUTPUT_PATH`. The full
 key is never printed to stderr. Unix key/report files are restricted to mode

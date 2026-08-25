@@ -44,7 +44,8 @@ pub fn write_triage_stub(path: &Path, run_id: &str, findings: &[Finding]) -> Res
         });
     }
     let body = serde_json::to_string_pretty(&file)?;
-    std::fs::write(path, body).with_context(|| format!("write {}", path.display()))?;
+    crate::core::artifacts::write_private_atomic(path, body.as_bytes())
+        .with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 

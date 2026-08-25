@@ -70,7 +70,7 @@ def write_dispatcher_example(stage, platform, binary_name):
         "allow_fallback=true\n"
         "roe_ref=SET_APPROVED_ROE_REFERENCE\n"
         "execution_mode=enumerate-only\n"
-        "target_hostname=AUTO\n"
+        "target_hostname=SET_TARGET_HOSTNAME\n"
         "target_username=\n"
         "drop_dir=\n"
         f"primary_binary={binary_name}\n"

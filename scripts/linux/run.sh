@@ -46,7 +46,11 @@ require operator_ack_required
 
 actual_host="$(cat /etc/hostname 2>/dev/null || hostname 2>/dev/null || true)"
 expected_host="${cfg[target_hostname]}"
-if [[ "$expected_host" != "AUTO" && "$actual_host" != "$expected_host" ]]; then
+if [[ -z "$expected_host" || "$expected_host" == "AUTO" || "$expected_host" == "REQUIRED" || "$expected_host" == "SET_TARGET_HOSTNAME" ]]; then
+  echo "dispatcher: explicit target_hostname is required" >&2
+  exit 78
+fi
+if [[ "$actual_host" != "$expected_host" ]]; then
   echo "dispatcher: target hostname mismatch (expected ${cfg[target_hostname]}, got ${actual_host:-unknown})" >&2
   exit 78
 fi
