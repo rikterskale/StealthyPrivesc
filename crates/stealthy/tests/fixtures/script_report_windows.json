@@ -1,0 +1,24 @@
+{
+  "schema_version": "1",
+  "run_id": "legacy-windows-script",
+  "started_at_unix": 0,
+  "tool": "stealthy-script",
+  "version": "0.1.0",
+  "authorized_use_ack": true,
+  "mode": "enumerate-only",
+  "os": {"family": "windows", "os": "windows", "arch": "x86_64", "version_hint": ""},
+  "identity": {
+    "username": "tester",
+    "uid": null,
+    "gid": null,
+    "groups": [],
+    "is_elevated": false,
+    "elevation_source": "powershell",
+    "token_context": "",
+    "hostname": "lab"
+  },
+  "findings": [],
+  "plugins_run": [],
+  "coverage": [],
+  "notes": ["legacy fixture"]
+}

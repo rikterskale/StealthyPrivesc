@@ -41,8 +41,12 @@ The release workflow publishes and smoke-tests these full delivery kits:
 
 Each kit contains the native binary, platform fallback scripts, selected
 operator documentation, `RELEASE-MANIFEST.json`, and an internal `SHA256SUMS`.
-The release also publishes SPDX JSON SBOMs, a top-level checksum manifest, and
-GitHub artifact attestations.
+The release also publishes SPDX JSON SBOMs, a top-level checksum manifest,
+`RELEASE-EVIDENCE.json`, and GitHub artifact attestations.
+
+The release record must also include the completed
+[production-readiness acceptance criteria](production-readiness.md), platform
+smoke-test results, and any explicitly skipped checks.
 
 Other source-build targets, including Windows GNU and Linux musl, are
 best-effort developer targets unless a future release matrix lists them.

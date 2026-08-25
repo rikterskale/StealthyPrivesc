@@ -44,7 +44,12 @@ pub fn ingest_json(text: &str) -> Result<RunReport> {
     let mut report: RunReport =
         serde_json::from_str(text).context("parse script/binary report JSON")?;
     report.schema_version = "2".into();
-    if report.coverage_mode.is_empty() {
+    if report.coverage_mode.is_empty()
+        || (report.coverage_mode == "native"
+            && (report.tool.ends_with("-script")
+                || report.profile == "script"
+                || report.execution_path.contains("fallback")))
+    {
         report.coverage_mode = "script".into();
     }
     if report.coverage_mode == "script" {
@@ -80,5 +85,18 @@ mod tests {
             normalized.capability_delta,
             script_capability_delta("linux")
         );
+    }
+
+    #[test]
+    fn legacy_windows_script_fixture_gets_schema_and_coverage_defaults() {
+        let report = ingest_json(include_str!(
+            "../../tests/fixtures/script_report_windows.json"
+        ))
+        .unwrap();
+        assert_eq!(report.schema_version, "2");
+        assert_eq!(report.coverage_mode, "script");
+        assert_eq!(report.capability_delta, script_capability_delta("windows"));
+        assert_eq!(report.tool, "stealthy-script");
+        assert_eq!(report.notes, vec!["legacy fixture"]);
     }
 }

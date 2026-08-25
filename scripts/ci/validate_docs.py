@@ -35,6 +35,14 @@ REQUIRED_SECTIONS = {
         "## CI contract",
         "## Safety boundary",
     ],
+    Path("docs/production-readiness.md"): [
+        "# Production-readiness acceptance criteria",
+        "## Build and platform acceptance",
+        "## Safety and authorization acceptance",
+        "## Evidence and artifact acceptance",
+        "## Release and operational acceptance",
+        "## Required release evidence",
+    ],
 }
 
 

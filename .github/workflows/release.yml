@@ -44,7 +44,9 @@ jobs:
           cargo build --locked --workspace --release
 
       - name: Validate documentation, links, and pinned actions
-        run: python3 scripts/ci/validate_docs.py
+        run: |
+          python3 scripts/ci/validate_docs.py
+          python3 scripts/ci/validate_production_readiness.py
 
       - name: Check, lint, and test enum-only flavor
         run: |
@@ -76,9 +78,13 @@ jobs:
 
       - name: Validate release and agent scripts
         run: |
-          python3 -m py_compile scripts/release/package.py scripts/linux/enum.py
+          python3 -m py_compile scripts/ci/*.py scripts/release/*.py scripts/linux/enum.py
           find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n scripts/install.sh
+          python3 scripts/ci/validate_windows_contract.py
+          python3 scripts/ci/validate_production_readiness.py
+          python3 scripts/ci/validate_worktree_hygiene.py
+          python3 scripts/ci/validate_release_package.py
 
       - name: Scan full history for committed secrets
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
@@ -242,6 +248,19 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate release evidence record
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          CI_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 scripts/release/generate_evidence.py \
+            --output dist/RELEASE-EVIDENCE.json \
+            --artifact-dir dist \
+            --version "$RELEASE_VERSION" \
+            --commit "$SOURCE_COMMIT" \
+            --ci-run "$CI_RUN"
+
       - name: Validate release set and create checksums
         shell: bash
         run: |
@@ -251,6 +270,7 @@ jobs:
           test -f dist/stealthy-linux-x86_64.tar.gz.spdx.json
           test -f dist/stealthy-linux-aarch64.tar.gz.spdx.json
           test -f dist/stealthy-windows-x86_64.zip.spdx.json
+          test -f dist/RELEASE-EVIDENCE.json
           cd dist
           sha256sum *.tar.gz *.zip *.spdx.json > SHA256SUMS
 

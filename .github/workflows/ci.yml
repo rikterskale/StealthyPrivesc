@@ -172,6 +172,11 @@ jobs:
           assert refs, "No GitHub Actions found"
           print(f"Validated {len(refs)} pinned actions")
 
+      - name: Validate production-readiness acceptance criteria
+        run: |
+          python3 scripts/ci/validate_windows_contract.py
+          python3 scripts/ci/validate_production_readiness.py
+
   rust:
     name: Rust core checks
     runs-on: ubuntu-latest
@@ -536,6 +541,9 @@ jobs:
       - name: Test with default features
         run: cargo test --locked --workspace
 
+      - name: Test all feature combinations
+        run: cargo test --locked --workspace --all-features
+
       - name: Release build
         run: cargo build --locked --workspace --release
 
@@ -559,8 +567,13 @@ jobs:
           $unauthorized = Start-Process -FilePath $bin -ArgumentList @('enum') -Wait -PassThru -NoNewWindow
           if ($unauthorized.ExitCode -ne 2) { throw "expected auth exit 2, got $($unauthorized.ExitCode)" }
 
+          $fallbackUnauthorized = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-File', '.\scripts\windows\enum.ps1', '-Json') -Wait -PassThru -NoNewWindow
+          if ($fallbackUnauthorized.ExitCode -ne 2) { throw "expected fallback auth exit 2, got $($fallbackUnauthorized.ExitCode)" }
+
           $fallback = & powershell.exe -NoProfile -File .\scripts\windows\enum.ps1 -Authorized -Json | ConvertFrom-Json
           if ($fallback.coverage_mode -ne 'script') { throw 'PowerShell fallback coverage mode mismatch' }
+          if ($fallback.mode -ne 'enumerate-only' -or $fallback.authorized_use_ack -ne $true) { throw 'PowerShell fallback safety metadata mismatch' }
+          if ($fallback.capability_delta.Count -eq 0 -or $fallback.coverage -eq $null) { throw 'PowerShell fallback coverage metadata is incomplete' }
           $expectedDelta = @(
             'windows.services',
             'windows.scheduled_tasks',
@@ -606,6 +619,7 @@ jobs:
             & $bin verify --path $stagedExe --expect-sha256 $sum
             $native = & (Join-Path $stage 'scripts\run.ps1') --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
             if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
+            if ($native.authorized_use_ack -ne $true -or $native.mode -ne 'enumerate-only') { throw 'native Windows safety metadata mismatch' }
           } else {
             Write-Warning "Staged binary quarantined by Defender — validating script fallback path"
             $scriptOutput = & (Join-Path $stage 'scripts\run.ps1') --authorized --format=json enum
@@ -697,7 +711,7 @@ jobs:
         run: |
           find scripts/linux -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n scripts/install.sh
-          python3 -m py_compile scripts/linux/enum.py
+          python3 -m py_compile scripts/linux/enum.py scripts/ci/*.py scripts/release/*.py
           python3 scripts/linux/enum.py --authorized --json > /tmp/stealthy-script-report.json
           python3 -c 'import json; r=json.load(open("/tmp/stealthy-script-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"; assert r["plugins_run"]; assert len(r["capability_delta"]) == 6'
           bash scripts/linux/enum.sh --authorized --json > /tmp/stealthy-shell-report.json
@@ -724,6 +738,10 @@ jobs:
               exit 1
             }
           }
+
+      - name: Validate Windows authorization contract
+        shell: pwsh
+        run: python scripts/ci/validate_windows_contract.py
 
   security:
     name: Security and supply-chain checks
@@ -767,6 +785,12 @@ jobs:
               print('Unexpected executable payload files:', *findings, sep='\n')
               sys.exit(1)
           print('No executable payload files found')
+
+      - name: Check repository hygiene
+        run: python3 scripts/ci/validate_worktree_hygiene.py
+
+      - name: Validate disposable release package
+        run: python3 scripts/ci/validate_release_package.py
 
   user-readiness:
     name: User readiness validation

@@ -48,7 +48,8 @@ Published releases contain:
 - the native binary, platform fallback scripts, selected operator docs,
   `RELEASE-MANIFEST.json`, and internal checksums in each kit;
 - one SPDX JSON SBOM per kit; and
-- a top-level `SHA256SUMS` plus GitHub artifact attestations.
+- a top-level `SHA256SUMS`, `RELEASE-EVIDENCE.json`, plus GitHub artifact
+  attestations.
 
 Use the matching full kit or `scripts/release/package.py` for a local kit. Do
 not place reports, keys, or target data in the package. See the
@@ -63,3 +64,9 @@ not place reports, keys, or target data in the package. See the
 - Keep the report key separate from the artifact and report path.
 
 Continue with [Target operations](targets.md).
+
+Before treating a locally built kit as production-eligible, complete the
+[production-readiness acceptance criteria](../production-readiness.md) and
+retain the command results with the release record. The
+[workspace hygiene policy](../workspace-hygiene.md) explains why release work
+must use a clean checkout.

@@ -15,11 +15,12 @@ $EVASION_WARNING = @"
 
 function Test-EvasionAuthorization {
     param(
+        [switch]$Authorized,
         [switch]$ConfirmEvasion,
         [string]$AllowTechniques
     )
     
-    $auth = $env:STEALTHY_AUTHORIZED -eq "1"
+    $auth = $Authorized -or ($env:STEALTHY_AUTHORIZED -eq "1")
     $confirm = $ConfirmEvasion -or $env:STEALTHY_EVASION_CONFIRMED -eq "1"
     
     if (-not $auth) {
@@ -35,6 +36,17 @@ function Test-EvasionAuthorization {
     }
     
     return $true
+}
+
+function Test-AllowedTechnique {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Technique,
+        [Parameter(Mandatory=$true)]
+        [string]$AllowTechniques
+    )
+
+    return @($AllowTechniques -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() }) -contains $Technique
 }
 
 function Invoke-AMSIByPass {
@@ -54,6 +66,17 @@ function Invoke-AMSIByPass {
         Risk: High - will be detected by EDR sensors
     #>
     
+    param(
+        [switch]$Authorized,
+        [switch]$ConfirmEvasion,
+        [string]$AllowTechniques
+    )
+
+    Test-EvasionAuthorization -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
+    if (-not (Test-AllowedTechnique -Technique 'amsi-bypass' -AllowTechniques $AllowTechniques)) {
+        throw 'amsi-bypass not in allowlist'
+    }
+
     Write-Warning $EVASION_WARNING
     
     try {
@@ -98,6 +121,17 @@ function Invoke-ETWUnhook {
         Risk: High - disables audit logging
     #>
     
+    param(
+        [switch]$Authorized,
+        [switch]$ConfirmEvasion,
+        [string]$AllowTechniques
+    )
+
+    Test-EvasionAuthorization -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
+    if (-not (Test-AllowedTechnique -Technique 'etw-unhook' -AllowTechniques $AllowTechniques)) {
+        throw 'etw-unhook not in allowlist'
+    }
+
     Write-Warning $EVASION_WARNING
     
     try {
@@ -146,8 +180,17 @@ function Stop-AVService {
         [string]$ServiceName,
         
         [ValidateSet('Stop', 'Suspend', 'Start')]
-        [string]$Action = 'Stop'
+        [string]$Action = 'Stop',
+
+        [switch]$Authorized,
+        [switch]$ConfirmEvasion,
+        [string]$AllowTechniques
     )
+
+    Test-EvasionAuthorization -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
+    if (-not (Test-AllowedTechnique -Technique 'av-edr-service' -AllowTechniques $AllowTechniques)) {
+        throw 'av-edr-service not in allowlist'
+    }
     
     Write-Warning $EVASION_WARNING
     Write-Warning "Targeting service: $ServiceName with action: $Action"
@@ -192,6 +235,17 @@ function Restore-AVServices {
         Restore-AVServices
     #>
     
+    param(
+        [switch]$Authorized,
+        [switch]$ConfirmEvasion,
+        [string]$AllowTechniques
+    )
+
+    Test-EvasionAuthorization -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
+    if (-not (Test-AllowedTechnique -Technique 'av-edr-service' -AllowTechniques $AllowTechniques)) {
+        throw 'av-edr-service not in allowlist'
+    }
+
     $services = @(
         'WinDefend',
         'WdNisSvc', 
@@ -236,6 +290,8 @@ function Invoke-EvasionTechnique {
         [Parameter(Mandatory=$true)]
         [ValidateSet('amsi-bypass', 'etw-unhook', 'av-edr-service')]
         [string]$Technique,
+
+        [switch]$Authorized,
         
         [switch]$ConfirmEvasion,
         
@@ -243,27 +299,27 @@ function Invoke-EvasionTechnique {
     )
     
     # Check authorization gates
-    Test-EvasionAuthorization -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
+    Test-EvasionAuthorization -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques | Out-Null
     
     switch ($Technique) {
         'amsi-bypass' {
-            if ($AllowTechniques -like '*amsi-bypass*') {
-                Invoke-AMSIByPass
+            if (Test-AllowedTechnique -Technique 'amsi-bypass' -AllowTechniques $AllowTechniques) {
+                Invoke-AMSIByPass -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques
             } else {
                 throw "amsi-bypass not in allowlist"
             }
         }
         'etw-unhook' {
-            if ($AllowTechniques -like '*etw-unhook*') {
-                Invoke-ETWUnhook
+            if (Test-AllowedTechnique -Technique 'etw-unhook' -AllowTechniques $AllowTechniques) {
+                Invoke-ETWUnhook -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques
             } else {
                 throw "etw-unhook not in allowlist"
             }
         }
         'av-edr-service' {
-            if ($AllowTechniques -like '*av-edr-service*') {
+            if (Test-AllowedTechnique -Technique 'av-edr-service' -AllowTechniques $AllowTechniques) {
                 # Default action for demo
-                Stop-AVService -ServiceName 'WinDefend' -Action 'Suspend'
+                Stop-AVService -ServiceName 'WinDefend' -Action 'Suspend' -Authorized:$Authorized -ConfirmEvasion:$ConfirmEvasion -AllowTechniques $AllowTechniques
             } else {
                 throw "av-edr-service not in allowlist"
             }

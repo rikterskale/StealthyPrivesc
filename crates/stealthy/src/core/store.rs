@@ -164,6 +164,14 @@ mod tests {
     }
 
     #[test]
+    fn seals_large_payload_without_truncation() {
+        let store = EncryptedStore::new();
+        let payload = vec![b'x'; 1024 * 1024];
+        let sealed = store.seal_bytes(&payload).unwrap();
+        assert_eq!(store.open_bytes(&sealed).unwrap(), payload);
+    }
+
+    #[test]
     fn sealed_report_can_be_reopened_with_operator_key() {
         let store = EncryptedStore::new();
         let report = RunReport {

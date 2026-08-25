@@ -355,7 +355,7 @@ fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_ledger, save_ledger, ArtifactLedger};
+    use super::{cleanup, load_ledger, save_ledger, ArtifactLedger};
 
     #[test]
     fn ledgers_are_private_and_tamper_evident() {
@@ -386,6 +386,38 @@ mod tests {
     #[test]
     fn ledger_path_rejects_traversal_ids() {
         assert!(super::ledger_path(std::path::Path::new("/tmp"), "../outside").is_err());
+    }
+
+    #[test]
+    fn cleanup_is_recoverable_when_recorded_artifact_is_already_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let ledger_dir = dir.path().join("ledger");
+        let missing = dir.path().join("already-removed");
+        let mut ledger = ArtifactLedger::new("missing-artifact-run");
+        ledger.register(
+            "fixture",
+            &missing,
+            true,
+            "fixture was removed before cleanup",
+        );
+        save_ledger(&ledger_dir, &ledger).unwrap();
+
+        let removed = cleanup(&ledger_dir, Some("missing-artifact-run"), false, false).unwrap();
+        assert!(removed
+            .iter()
+            .any(|path| path.ends_with("missing-artifact-run.json")));
+        assert!(!ledger_dir.join("missing-artifact-run.json").exists());
+        assert!(!ledger_dir.join(".ledger-key").exists());
+    }
+
+    #[test]
+    fn missing_ledger_key_is_rejected_without_accepting_the_ledger() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ledger = ArtifactLedger::new("missing-key-run");
+        ledger.register("fixture", dir.path().join("fixture"), true, "fixture");
+        save_ledger(dir.path(), &ledger).unwrap();
+        std::fs::remove_file(dir.path().join(".ledger-key")).unwrap();
+        assert!(load_ledger(dir.path(), "missing-key-run").is_err());
     }
 
     #[cfg(unix)]

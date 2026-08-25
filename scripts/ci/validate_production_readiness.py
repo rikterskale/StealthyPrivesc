@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Ensure the documented production gate is wired to CI and release jobs."""
+
+from pathlib import Path
+import re
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def main() -> int:
+    failures = []
+    checklist = (ROOT / "docs/production-readiness.md").read_text(encoding="utf-8")
+    required_headings = [
+        "## Build and platform acceptance",
+        "## Safety and authorization acceptance",
+        "## Evidence and artifact acceptance",
+        "## Release and operational acceptance",
+        "## Required release evidence",
+    ]
+    for heading in required_headings:
+        if heading not in checklist:
+            failures.append(f"checklist missing {heading}")
+    if len(re.findall(r"^- \[ \]", checklist, re.MULTILINE)) < 15:
+        failures.append("checklist has fewer than 15 acceptance criteria")
+
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    for token in (
+        "rust-windows:",
+        "validate_windows_contract.py",
+        "validate_release_package.py",
+        "validate_worktree_hygiene.py",
+        "cargo test --locked --workspace --all-features",
+    ):
+        if token not in ci:
+            failures.append(f"CI missing production check {token}")
+    for token in (
+        "generate_evidence.py",
+        "RELEASE-EVIDENCE.json",
+        "sha256sum *.tar.gz *.zip *.spdx.json",
+        "cargo llvm-cov",
+        "gitleaks/gitleaks-action",
+        "cargo-deny-action",
+    ):
+        if token not in release:
+            failures.append(f"release workflow missing production check {token}")
+
+    if failures:
+        print(*failures, sep="\n")
+        return 1
+    print("Production-readiness checklist is wired to CI and release gates")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

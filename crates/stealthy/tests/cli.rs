@@ -386,6 +386,29 @@ fn diff_command_compares_offline_json_reports() {
 }
 
 #[test]
+fn resume_rejects_corrupt_checkpoint_without_running_plugins() {
+    let dir = tempfile::tempdir().unwrap();
+    let checkpoint = dir.path().join("corrupt-checkpoint.json");
+    std::fs::write(&checkpoint, b"{not valid json\n").unwrap();
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "resume",
+            "--checkpoint",
+            checkpoint.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("error:"), "stderr={stderr}");
+    assert!(
+        !stderr.contains("plugin"),
+        "corrupt checkpoint reached plugin execution: {stderr}"
+    );
+}
+
+#[test]
 fn unknown_plugin_ids_fail_with_actionable_error() {
     let output = stealthy()
         .args([
