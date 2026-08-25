@@ -1,6 +1,7 @@
 //! Beginner-facing, offline UX built on the canonical report and plugin contracts.
 
 use anyhow::{Context, Result};
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use crate::cli::{Cli, CliOverrides, CompletionShell, DispositionStatus};
@@ -22,7 +23,23 @@ pub fn quickstart(cli: &Cli, overrides: &CliOverrides) -> Result<()> {
     }
     println!("\nSafe scan: enumerate + recommend, memory-only, no exploitation.");
     if cli.i_understand_authorized_use_only {
-        println!("Authorization acknowledged; starting the safe scan.\n");
+        let effective_profile = match cli.preset {
+            Some(crate::cli::ScanPreset::Quick) => "quiet",
+            Some(crate::cli::ScanPreset::Standard) => "balanced",
+            Some(crate::cli::ScanPreset::Deep) => "thorough",
+            None => cli.profile.as_str(),
+        };
+        println!("Authorization acknowledged.\n  OS: {}\n  Plugins: {}\n  Profile: {}\n  Output: memory-only\n  Mode: enumerate-only\n", crate::core::os::detect().os, plugins::registry().len(), effective_profile);
+        if io::stdin().is_terminal() {
+            println!("Start this safe scan? [y/N]");
+            let mut answer = String::new();
+            io::stdin().read_line(&mut answer)?;
+            if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+                println!("Cancelled before host enumeration.");
+                return Ok(());
+            }
+        }
+        println!("Starting the safe scan.\n");
         let mut engine = crate::core::engine::Engine::from_cli(
             cli,
             overrides,
@@ -109,11 +126,31 @@ pub fn plugin_picker() -> Result<()> {
             println!("  {} — {}", p.id(), p.name());
         }
     }
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        println!("\nEnter comma-separated plugin IDs, or press Enter to cancel:");
+        let mut selection = String::new();
+        io::stdin().read_line(&mut selection)?;
+        let ids = selection
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            println!(
+                "\nRun: stealthy --authorized enum --plugins {}",
+                ids.join(",")
+            );
+        } else {
+            println!("No plugins selected.");
+        }
+    } else {
+        println!("\nNon-interactive mode: copy IDs into `--plugins ID1,ID2`.");
+    }
     Ok(())
 }
 
 pub fn presets() -> Result<()> {
-    println!("Scan presets (all remain enumerate-only):\n  quick    ~10–30s, low noise, high-signal checks\n  standard ~30–120s, balanced coverage and noise\n  deep     2–10m, fullest native coverage, highest noise\n\nExamples:\n  stealthy --authorized --profile quiet scan\n  stealthy --authorized --profile balanced scan\n  stealthy --authorized --profile thorough scan");
+    println!("Scan presets (all remain enumerate-only):\n  quick    ~10–30s, low noise, high-signal checks\n  standard ~30–120s, balanced coverage and noise\n  deep     2–10m, fullest native coverage, highest noise\n\nCommands:\n  stealthy --authorized --preset quick scan\n  stealthy --authorized --preset standard scan\n  stealthy --authorized --preset deep scan\n\nProfiles are lower-level controls; presets select a profile plus beginner-friendly intent.");
     Ok(())
 }
 
@@ -160,7 +197,7 @@ pub fn explain_finding(id: &str, path: Option<&Path>) -> Result<()> {
         .iter()
         .find(|f| f.finding_id == id || id == f.plugin || id == f.title)
         .ok_or_else(|| anyhow::anyhow!("finding '{id}' was not found; use a report finding_id"))?;
-    println!("Why did I get this finding?\n\n{} ({})\n\n{}\n\nPlain English: {} observed `{}` in `{}`. That matters because it may affect the current user's path to higher privilege.\n\nSafe next step: {}\nVerify with: {}", f.title, f.finding_id, f.detail, f.plugin, f.condition, f.object, f.recommendation, f.next_command());
+    println!("Why did I get this finding?\n\n{} ({})\n\n{}\n\nPlain English: {} observed `{}` in `{}`. That matters because it may affect the current user's path to higher privilege.\n\nConfidence: derived from the report's assessment metadata when available.\nSafe next step: {}\nVerify with: {}\n\nSource: {}", f.title, f.finding_id, f.detail, f.plugin, f.condition, f.object, f.recommendation, f.next_command(), path.map(|p| p.display().to_string()).unwrap_or_else(|| "bundled demo report (use --report for a real finding)".into()));
     Ok(())
 }
 
@@ -188,8 +225,14 @@ pub fn disposition(
         .as_array_mut()
         .map(|a| a.push(entry.clone()))
         .unwrap_or_else(|| value["dispositions"] = serde_json::json!([entry]));
-    let destination = out.unwrap_or(path);
-    std::fs::write(destination, serde_json::to_string_pretty(&value)?)?;
+    let destination = out
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(format!("{}.dispositions.json", path.display())));
+    if destination == path {
+        anyhow::bail!("disposition output must not overwrite the original report; use --out");
+    }
+    value["disposition_source"] = serde_json::json!(path.display().to_string());
+    std::fs::write(&destination, serde_json::to_string_pretty(&value)?)?;
     println!(
         "Recorded {} for {} in {}",
         serde_json::to_value(status)?.as_str().unwrap_or("status"),
@@ -200,12 +243,20 @@ pub fn disposition(
 }
 
 pub fn completions(shell: CompletionShell) -> Result<()> {
+    let commands = "disclaimer guide doctor quickstart demo security-lab explain-plugin plugin-picker completions explain-finding html-report coverage-compare disposition presets playbook controls live-controls report diff ingest list-plugins artifacts cleanup stage verify one-liners resume enum scan";
+    let flags = "--authorized --profile --preset --quiet --verbose --no-color --delay-ms --plugin-timeout-ms --format --min-severity --fail-on --output --output-path --key-output-path --plaintext-file --also-markdown --checkpoint --plugins --skip --auto-exploit --allow-techniques --triage --triage-out --approve-file";
     let ids = plugins::registry()
         .iter()
         .map(|p| p.id())
         .collect::<Vec<_>>()
         .join(" ");
-    let body = match shell { CompletionShell::Bash => format!("# stealthy bash completion\n_stealthy() {{ COMPREPLY=( $(compgen -W 'doctor quickstart demo security-lab scan report diff explain-plugin plugin-picker presets {ids} --authorized --format --profile --plugins --min-severity' -- \"${{COMP_WORDS[COMP_CWORD]}}\") ); }}\ncomplete -F _stealthy stealthy\n"), CompletionShell::Zsh => format!("#compdef stealthy\n_arguments '*: :((doctor quickstart demo security-lab scan report diff explain-plugin plugin-picker presets {ids}))'\n"), CompletionShell::Fish => format!("complete -c stealthy -f -a 'doctor quickstart demo security-lab scan report diff explain-plugin plugin-picker presets {ids} --authorized --format --profile --plugins --min-severity'\n"), CompletionShell::Powershell => format!("Register-ArgumentCompleter -Native -CommandName stealthy -ScriptBlock {{ param($wordToComplete) '{ids} doctor quickstart demo security-lab scan report diff explain-plugin plugin-picker presets'.Split() | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}\n") };
+    let words = format!("{commands} {flags} {ids}");
+    let body = match shell {
+        CompletionShell::Bash => format!("# stealthy bash completion\n_stealthy() {{ COMPREPLY=( $(compgen -W '{words}' -- \"${{COMP_WORDS[COMP_CWORD]}}\") ); }}\ncomplete -F _stealthy stealthy\n"),
+        CompletionShell::Zsh => format!("#compdef stealthy\n_arguments '*: :(({words}))'\n"),
+        CompletionShell::Fish => format!("complete -c stealthy -f -a '{words}'\n"),
+        CompletionShell::Powershell => format!("Register-ArgumentCompleter -Native -CommandName stealthy -ScriptBlock {{ param($wordToComplete) '{words}'.Split() | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}\n"),
+    };
     print!("{body}");
     Ok(())
 }
@@ -230,10 +281,12 @@ mod tests {
         let id = report.findings[0].finding_id.clone();
         explain_finding(&id, Some(&path)).unwrap();
         disposition(&path, &id, DispositionStatus::NeedsReview, None).unwrap();
+        let disposition_path = PathBuf::from(format!("{}.dispositions.json", path.display()));
         let updated: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(&disposition_path).unwrap()).unwrap();
         assert_eq!(updated["dispositions"][0]["finding_id"], id);
         std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(disposition_path).unwrap();
     }
 
     #[test]

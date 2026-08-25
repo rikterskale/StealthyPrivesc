@@ -118,6 +118,11 @@ in-memory store and are rendered for review. Memory mode does not create an
 artifact ledger; files are created only when you explicitly request file output,
 a checkpoint, staging, or redirect console output yourself.
 
+For an interactive terminal, `quickstart` now shows the planned OS, plugin
+count, profile, and memory-only output mode, then asks for confirmation before
+enumeration. Non-interactive use proceeds without a prompt after the explicit
+authorization flag is present.
+
 Expected result:
 
 - A host, user, OS, architecture, and mode summary
@@ -220,6 +225,14 @@ Before calling a finding remediated, compare the two reports' host, identity,
 mode, plugin set, coverage, and severity filter. A finding can disappear
 because the plugin was skipped or errored, the account changed, or the report
 was filtered.
+
+The human diff prints warnings when identity/OS, plugin set, or coverage
+changed. Treat those warnings as review blockers before declaring a finding
+fixed.
+
+`disposition` writes a separate `<report>.dispositions.json` file by default;
+the original evidence report is not modified. Use `--out` for an approved
+explicit destination.
 
 ## 7. Optional reversible probes
 

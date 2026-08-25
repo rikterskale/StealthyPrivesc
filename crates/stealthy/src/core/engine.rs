@@ -168,6 +168,7 @@ impl Engine {
     }
 
     pub fn run(&mut self) -> Result<EngineOutcome> {
+        let run_started = Instant::now();
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_flag = cancel.clone();
         let _ = ctrlc::set_handler(move || {
@@ -323,10 +324,33 @@ impl Engine {
         unknown.sort_unstable();
         unknown.dedup();
         if !unknown.is_empty() {
+            let suggestions = unknown
+                .iter()
+                .filter_map(|wanted| {
+                    available
+                        .iter()
+                        .copied()
+                        .find(|candidate| {
+                            candidate.contains(wanted)
+                                || wanted.contains(candidate)
+                                || candidate
+                                    .split('.')
+                                    .next_back()
+                                    .is_some_and(|name| wanted.contains(name))
+                        })
+                        .map(|candidate| format!("{wanted} -> {candidate}"))
+                })
+                .collect::<Vec<_>>();
+            let hint = if suggestions.is_empty() {
+                "Use `stealthy --authorized list-plugins` to inspect this build.".into()
+            } else {
+                format!("Suggestions: {}", suggestions.join(", "))
+            };
             bail!(
-                "unknown plugin ID(s) for {}: {}. Use `--authorized list-plugins` to inspect this build",
+                "unknown plugin ID(s) for {}: {}. {}",
                 os_info.os,
-                unknown.join(", ")
+                unknown.join(", "),
+                hint
             );
         }
         let selected = filter_plugins(
@@ -431,12 +455,25 @@ impl Engine {
 
             let plugin_started = Instant::now();
             if !self.quiet {
+                let elapsed = run_started.elapsed().as_secs();
+                let completed = idx;
+                let eta = if completed > 0 {
+                    let average = run_started.elapsed().as_secs_f64() / completed as f64;
+                    format!(
+                        " · eta≈{}s",
+                        (average * (total - completed) as f64).round() as u64
+                    )
+                } else {
+                    String::new()
+                };
                 eprintln!(
-                    "{} [{:>2}/{}] {}",
+                    "{} [{:>2}/{}] {} · elapsed={}s{}",
                     term::dim("[*]"),
                     idx + 1,
                     total,
-                    plugin.id()
+                    plugin.id(),
+                    elapsed,
+                    eta
                 );
             }
             low_and_slow(self.delay_ms);

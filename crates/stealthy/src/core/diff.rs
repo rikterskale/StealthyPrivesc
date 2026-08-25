@@ -13,6 +13,12 @@ pub struct ReportDiff {
     pub added: Vec<Finding>,
     pub removed: Vec<Finding>,
     pub changed: Vec<ChangedFinding>,
+    #[serde(default)]
+    pub coverage_changed: bool,
+    #[serde(default)]
+    pub identity_changed: bool,
+    #[serde(default)]
+    pub plugin_set_changed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +60,10 @@ pub fn compare(baseline: &RunReport, current: &RunReport) -> Result<ReportDiff> 
         added,
         removed,
         changed,
+        coverage_changed: baseline.coverage != current.coverage
+            || baseline.capability_delta != current.capability_delta,
+        identity_changed: baseline.identity != current.identity || baseline.os != current.os,
+        plugin_set_changed: baseline.plugins_run != current.plugins_run,
     })
 }
 
@@ -141,11 +151,15 @@ mod tests {
     #[test]
     fn compares_added_removed_and_changed_findings() {
         let baseline = report(vec![finding("same", "old"), finding("removed", "x")], "a");
-        let current = report(vec![finding("same", "new"), finding("added", "x")], "b");
+        let mut current = report(vec![finding("same", "new"), finding("added", "x")], "b");
+        current.plugins_run = vec!["test".into()];
+        current.identity.hostname = "other-host".into();
         let diff = compare(&baseline, &current).unwrap();
         assert_eq!(diff.added.len(), 1);
         assert_eq!(diff.removed.len(), 1);
         assert_eq!(diff.changed.len(), 1);
+        assert!(diff.identity_changed);
+        assert!(diff.plugin_set_changed);
     }
 
     #[test]

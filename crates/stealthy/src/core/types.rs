@@ -253,7 +253,7 @@ impl Finding {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityInfo {
     pub username: String,
     pub uid: Option<u32>,
@@ -269,7 +269,7 @@ pub struct IdentityInfo {
     pub hostname: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OsInfo {
     pub family: String,
     pub os: String,
@@ -556,7 +556,7 @@ pub struct FindingAssessment {
     pub evidence_quality: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginCoverage {
     pub id: String,
     pub status: String,

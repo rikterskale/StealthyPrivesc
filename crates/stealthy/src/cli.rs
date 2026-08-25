@@ -505,6 +505,12 @@ alternate-path + approved-fixture validation only (never AMSI/ETW/EDR disable).
 Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 
 const AFTER_HELP: &str = "\
+Help shortcuts:
+  stealthy enum --help     Scan options and safety gates
+  stealthy report --help   Reports, keys, and output modes
+  stealthy controls --help Application-control validation
+  stealthy stage --help    Packaging, verification, and cleanup
+
 Examples:
   stealthy guide
   stealthy --authorized --profile quiet enum

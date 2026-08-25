@@ -596,6 +596,19 @@ fn print_doctor(json: bool) -> Result<()> {
     let cwd_ok = cwd.as_ref().is_some_and(|p| p.is_dir());
     let supported = matches!(os.os.as_str(), "linux" | "windows");
     let healthy = supported && plugin_count > 0 && cwd_ok;
+    let fallback_count = if os.os == "linux" {
+        ["python3", "bash", "sh", "perl"]
+            .iter()
+            .filter(|tool| command_available(tool))
+            .count()
+    } else if os.os == "windows" {
+        ["powershell", "cscript"]
+            .iter()
+            .filter(|tool| command_available(tool))
+            .count()
+    } else {
+        0
+    };
     if json {
         println!(
             "{}",
@@ -603,7 +616,8 @@ fn print_doctor(json: bool) -> Result<()> {
                 "schema_version": "1",
                 "healthy": healthy,
                 "os": os,
-                "plugins": plugin_count,
+                    "plugins": plugin_count,
+                    "fallback_hosts_available": fallback_count,
                 "current_directory": cwd.map(|p| p.display().to_string()),
                 "checks": {
                     "supported_os": supported,
@@ -626,6 +640,11 @@ fn print_doctor(json: bool) -> Result<()> {
             cwd.map(|p| p.display().to_string())
                 .unwrap_or_else(|| "unavailable".into())
         );
+        println!(
+            "  {} Script fallback hosts available: {}",
+            check(fallback_count > 0),
+            fallback_count
+        );
         println!();
         println!(
             "{}",
@@ -635,12 +654,32 @@ fn print_doctor(json: bool) -> Result<()> {
                 term::err("Action required before scanning.")
             }
         );
+        if !supported {
+            println!("  Next: run a supported Linux or Windows build on the target OS.");
+        } else if plugin_count == 0 {
+            println!("  Next: install a native build for this platform or use an approved script fallback.");
+        } else if !cwd_ok {
+            println!("  Next: rerun from a readable working directory or pass --ledger-dir to a writable location.");
+        }
     }
     if healthy {
         Ok(())
     } else {
         std::process::exit(3)
     }
+}
+
+fn command_available(command: &str) -> bool {
+    let output = if cfg!(windows) {
+        std::process::Command::new("where").arg(command).output()
+    } else {
+        std::process::Command::new("sh")
+            .args(["-c", "command -v \"$1\"", "doctor", command])
+            .output()
+    };
+    output
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }
 
 fn check(ok: bool) -> String {
@@ -715,6 +754,19 @@ fn print_diff(
                 diff.removed.len(),
                 diff.changed.len()
             );
+            if diff.identity_changed || diff.plugin_set_changed || diff.coverage_changed {
+                println!("## Comparison warnings\n");
+                if diff.identity_changed {
+                    println!("- Host identity or OS context changed.");
+                }
+                if diff.plugin_set_changed {
+                    println!("- The completed plugin set changed.");
+                }
+                if diff.coverage_changed {
+                    println!("- Coverage status or fallback capability changed.");
+                }
+                println!();
+            }
             for finding in &diff.added {
                 println!("- Added: {} — {}", finding.title, finding.detail);
             }

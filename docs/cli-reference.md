@@ -133,6 +133,10 @@ stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved
 - `--save-baseline PATH`: save the completed plaintext JSON report.
 - `--compare-with PATH`: compare the completed report with a prior baseline.
 
+`--min-severity` filters rendered findings in human, Markdown, JSON, and SARIF
+output. Coverage and reduced-capability warnings remain visible so filtering
+cannot be mistaken for a clean result.
+
 - `--auto-exploit`: enables supported reversible probes.
 - `--allow-techniques`: comma-separated high-impact families when ROE permits.
   Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,

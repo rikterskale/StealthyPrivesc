@@ -109,6 +109,10 @@ pub fn emit(
                         key_path.display()
                     );
                 }
+                eprintln!(
+                    "{} Keep the sealed report and key in separate approved locations; the Markdown sidecar is plaintext evidence.",
+                    term::dim("[next]")
+                );
             }
             if opts.also_markdown {
                 let md_path = std::path::PathBuf::from(format!("{}.md", path.display()));
@@ -192,7 +196,7 @@ pub fn render_html(report: &RunReport, findings: &[&Finding]) -> String {
     }
     let mut body = String::new();
     for f in findings {
-        body.push_str(&format!("<details><summary><strong>{}</strong> <em>{}</em> <code>{}</code></summary><p>{}</p><p><strong>Why:</strong> {} observed the condition on <code>{}</code>.</p><p><strong>Remediation:</strong> {}</p><p><strong>Safe verification:</strong> <code>{}</code></p></details>", esc(&f.title), f.severity.as_str(), esc(&f.finding_id), esc(&f.detail), esc(&f.plugin), esc(&f.object), esc(&f.recommendation), esc(&f.next_command())));
+        body.push_str(&format!("<details class=\"finding\"><summary><strong>{}</strong> <em>{}</em> <code>{}</code></summary><p>{}</p><p><strong>Why:</strong> {} observed the condition on <code>{}</code>.</p><p><strong>Remediation:</strong> {}</p><p><strong>Safe verification:</strong> <code>{}</code> <button onclick=\"navigator.clipboard.writeText(this.previousElementSibling.textContent)\">Copy</button></p></details>", esc(&f.title), f.severity.as_str(), esc(&f.finding_id), esc(&f.detail), esc(&f.plugin), esc(&f.object), esc(&f.recommendation), esc(&f.next_command())));
     }
     let paths = report
         .attack_paths
@@ -206,7 +210,7 @@ pub fn render_html(report: &RunReport, findings: &[&Finding]) -> String {
             )
         })
         .collect::<String>();
-    format!("<!doctype html><meta charset=utf-8><title>StealthyPrivesc report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;border-radius:10px;padding:1rem;margin:1rem 0}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}</style><h1>StealthyPrivesc report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=card><h2>Findings</h2>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
+    format!("<!doctype html><meta charset=utf-8><title>StealthyPrivesc report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;border-radius:10px;padding:1rem;margin:1rem 0}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}button,input,select{{padding:.35rem;margin:.2rem}}</style><h1>StealthyPrivesc report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=card><h2>Findings</h2><input id=search placeholder=\"Search findings\"><select id=severity><option value=\"\">All severities</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>info</option></select>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div><script>const apply=()=>{{const q=document.querySelector('#search').value.toLowerCase(),s=document.querySelector('#severity').value;document.querySelectorAll('.finding').forEach(x=>{{const text=x.textContent.toLowerCase(),sev=x.querySelector('em').textContent; x.style.display=(!q||text.includes(q))&&(!s||sev===s)?'':'none';}})}};search.oninput=apply;severity.onchange=apply;</script>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
 }
 
 fn filter_findings(findings: &[Finding], min: Severity) -> Vec<&Finding> {
@@ -287,6 +291,25 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
         total,
         findings.len()
     );
+    let coverage_errors = report
+        .coverage
+        .iter()
+        .filter(|item| item.status != "ok")
+        .count();
+    if coverage_errors > 0 || !report.capability_delta.is_empty() {
+        println!(
+            "  {} Coverage is incomplete: {} plugin issue(s), {} reduced-capability item(s).",
+            term::warn("[!]"),
+            coverage_errors,
+            report.capability_delta.len()
+        );
+        println!("      An empty finding list is not proof of a clean host.");
+    } else {
+        println!(
+            "  {} Coverage is complete for the selected plugin set.",
+            term::ok("[ok]")
+        );
+    }
     println!();
 
     if !report.attack_paths.is_empty() {
@@ -301,6 +324,13 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
                 term::dim(&format!("findings: {}", path.finding_ids.join(", ")))
             );
         }
+        if let Some(first) = findings.first() {
+            println!(
+                "  {} {}",
+                term::green("→ Next recommended action:"),
+                first.what_next()
+            );
+        }
         println!();
     }
 
@@ -309,6 +339,7 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
             "  {}",
             term::ok("No findings at or above the selected severity filter.")
         );
+        println!("  Review Coverage above, then rerun with `--min-severity info` or a focused `--plugins` selection.");
         println!();
     } else {
         println!("{}", term::bold("Findings"));
@@ -524,6 +555,20 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
         "| {} | {} | {} | {} | {} |\n\n",
         counts[4], counts[3], counts[2], counts[1], counts[0]
     ));
+    let coverage_errors = report
+        .coverage
+        .iter()
+        .filter(|item| item.status != "ok")
+        .count();
+    if coverage_errors > 0 || !report.capability_delta.is_empty() {
+        out.push_str(&format!(
+            "> **Coverage warning:** {} plugin issue(s), {} reduced-capability item(s). An empty finding list is not proof of a clean host.\n\n",
+            coverage_errors,
+            report.capability_delta.len()
+        ));
+    } else {
+        out.push_str("> **Coverage:** complete for the selected plugin set.\n\n");
+    }
     out.push_str("## Findings\n\n");
     if findings.is_empty() {
         out.push_str("_No findings at selected severity._\n\n");
@@ -791,6 +836,8 @@ mod tests {
         assert!(!html.contains("<script>alert"));
         assert!(html.contains("a &amp; b"));
         assert!(html.contains("Coverage gaps"));
+        assert!(html.contains("id=search"));
+        assert!(html.contains("Copy"));
     }
 
     #[test]

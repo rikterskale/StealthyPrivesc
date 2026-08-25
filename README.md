@@ -93,6 +93,11 @@ cargo build --locked -p stealthy --release
 # High-signal only + live progress
 ./target/release/stealthy --authorized enum --min-severity high
 
+# Beginner-friendly presets
+./target/release/stealthy --authorized --preset quick scan
+./target/release/stealthy --authorized --preset standard scan
+./target/release/stealthy --authorized --preset deep scan
+
 # OPSEC profile (no external helpers; 2,000-entry walk budget; slim controls; higher delay)
 ./target/release/stealthy --authorized --profile quiet enum
 
