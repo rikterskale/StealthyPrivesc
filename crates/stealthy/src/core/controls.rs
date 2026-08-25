@@ -2454,10 +2454,12 @@ mod tests {
         assert_eq!(missing.integrity_status, "missing-or-unreadable");
         assert_eq!(file_kind(&root.path().join("fixture.msi")), "msi_installer");
         assert!(!path_class(&root.path().join("fixture.sh")).is_empty());
-        assert!(
-            classify_access_control(&root.path().join("fixture.sh"), "owner=1000 mode=700")
-                .contains("user-writable")
-        );
+        let access =
+            classify_access_control(&root.path().join("fixture.sh"), "owner=1000 mode=700");
+        #[cfg(unix)]
+        assert!(access.contains("user-writable"));
+        #[cfg(not(unix))]
+        assert!(!access.is_empty());
     }
 
     #[test]
@@ -2561,9 +2563,16 @@ mod tests {
         let native = root.path().join("module.ko");
         std::fs::write(&native, b"not a real module").unwrap();
         assert!(super::inspect_kernel_artifact(&native, "linux").contains("lockdown="));
+        let windows_driver = super::inspect_kernel_artifact(&native, "windows");
+        #[cfg(not(windows))]
         assert_eq!(
-            super::inspect_kernel_artifact(&native, "windows"),
+            windows_driver,
             "windows_driver_validation=requires_windows_host"
+        );
+        #[cfg(windows)]
+        assert!(
+            windows_driver.contains("driver_signature=")
+                && windows_driver.contains("load=not_attempted")
         );
         assert_eq!(
             super::inspect_kernel_artifact(&native, "other"),

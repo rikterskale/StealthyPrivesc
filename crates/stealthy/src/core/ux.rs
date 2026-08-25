@@ -238,10 +238,14 @@ mod tests {
 
     #[test]
     fn operator_helpers_cover_safe_paths() {
-        explain_plugin("linux.sudo").unwrap();
+        #[cfg(target_os = "linux")]
+        let plugin_id = "linux.sudo";
+        #[cfg(target_os = "windows")]
+        let plugin_id = "windows.services";
+        explain_plugin(plugin_id).unwrap();
         plugin_picker().unwrap();
         presets().unwrap();
-        playbook("linux.sudo").unwrap();
+        playbook(plugin_id).unwrap();
         for shell in [
             CompletionShell::Bash,
             CompletionShell::Zsh,
