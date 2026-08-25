@@ -9,6 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 FORBIDDEN_PARTS = {"target", ".cache-run", ".stealthy-artifacts", "__pycache__"}
 FORBIDDEN_NAMES = {".env", ".env.local", ".ledger-key", "report.key", "SHA256SUMS"}
+KNOWN_CI_OUTPUTS = {"results.sarif"}
 
 
 def main() -> int:
@@ -22,7 +23,11 @@ def main() -> int:
         cwd=ROOT,
         text=True,
     ).splitlines()
-    failures = [f"working tree is not clean: {line}" for line in status]
+    failures = [
+        f"working tree is not clean: {line}"
+        for line in status
+        if not (line.startswith("?? ") and Path(line[3:]).as_posix() in KNOWN_CI_OUTPUTS)
+    ]
     for nested_git in ROOT.rglob(".git"):
         if nested_git != ROOT / ".git":
             failures.append(f"nested repository metadata found: {nested_git.relative_to(ROOT)}")

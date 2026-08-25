@@ -2440,6 +2440,11 @@ mod tests {
         for extension in extensions {
             let path = root.path().join(format!("fixture.{extension}"));
             std::fs::write(&path, format!("fixture {extension}\n")).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666)).unwrap();
+            }
             let assessment = inspect_artifact(&path, "linux");
             assert!(!assessment.kind.is_empty());
             assert!(!assessment.sha256.is_empty());
