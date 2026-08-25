@@ -333,7 +333,17 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
     } else {
         "comparison-base"
     });
-    copy_or_placeholder(source.unwrap_or(&probe_source), &comparison_base)?;
+    // Windows Defender can briefly hold a copied PE in TEMP. Comparison cases
+    // only need deterministic artifact metadata, so use a text fixture when no
+    // operator-supplied artifact is under test.
+    if cfg!(windows) && source.is_none() {
+        write_fixture(
+            &comparison_base,
+            b"disposable comparison artifact metadata\n",
+        )?;
+    } else {
+        copy_or_placeholder(source.unwrap_or(&probe_source), &comparison_base)?;
+    }
     make_executable(&comparison_base)?;
 
     let unsigned = root.join(if cfg!(windows) {

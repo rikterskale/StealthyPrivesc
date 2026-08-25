@@ -534,6 +534,16 @@ jobs:
       - name: Validate locked dependency graph
         run: cargo metadata --locked --format-version 1 --no-deps > $null
 
+      - name: Exclude test temp paths from Windows Defender
+        shell: pwsh
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath $env:TEMP, (Resolve-Path .\target).Path, $PWD
+            Write-Host "Configured Defender exclusions before Windows test fixtures"
+          } catch {
+            Write-Warning "Could not configure Defender exclusions before tests: $_"
+          }
+
       - name: Format check
         run: cargo fmt --all -- --check
 
@@ -551,11 +561,6 @@ jobs:
 
       - name: Native Windows ACL validation
         run: cargo test --locked --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
-
-      - name: Exclude staging paths from Windows Defender
-        shell: pwsh
-        run: |
-          Add-MpPreference -ExclusionPath $env:TEMP, (Resolve-Path .\target\release).Path, $PWD
 
       - name: Windows CLI, PowerShell fallback, and bundle smoke
         shell: pwsh
