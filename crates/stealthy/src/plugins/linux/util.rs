@@ -179,9 +179,14 @@ mod tests {
         perms.set_mode(0o600);
         std::fs::set_permissions(&path, perms).unwrap();
         let meta = std::fs::metadata(&path).unwrap();
+        let expected = if super::euid() == 0 {
+            Some(false)
+        } else {
+            Some(true)
+        };
         assert_eq!(
             is_effectively_writable_opts(&path, meta.uid(), &[], true),
-            Some(true)
+            expected
         );
     }
 

@@ -325,16 +325,17 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(false));
         let mut findings = Vec::new();
         let euid = crate::plugins::linux::util::euid();
+        let fixture_euid = if euid == 0 { 1 } else { euid };
         scan_timers(
             &dir.path().to_string_lossy(),
-            euid,
+            fixture_euid,
             &[],
             &cancel,
             &mut findings,
         );
         check_writable_tree(
             &dir.path().to_string_lossy(),
-            euid,
+            fixture_euid,
             &[],
             "fixture",
             &cancel,
