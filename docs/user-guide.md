@@ -226,13 +226,14 @@ mode, plugin set, coverage, and severity filter. A finding can disappear
 because the plugin was skipped or errored, the account changed, or the report
 was filtered.
 
-The human diff prints warnings when identity/OS, plugin set, or coverage
-changed. Treat those warnings as review blockers before declaring a finding
-fixed.
+The human diff prints warnings when identity/OS, plugin set, coverage, profile,
+or severity filter changed. Treat those warnings as review blockers before
+declaring a finding fixed.
 
-`disposition` writes a separate `<report>.dispositions.json` file by default;
-the original evidence report is not modified. Use `--out` for an approved
-explicit destination.
+`disposition --reason "..."` writes a separate `<report>.dispositions.json` file by default;
+the original evidence report is not modified. Entries include operator,
+timestamp, rationale, and previous status when available. Use `--out` for an
+approved explicit destination.
 
 ## 7. Optional reversible probes
 

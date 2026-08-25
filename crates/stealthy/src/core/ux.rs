@@ -217,10 +217,33 @@ pub fn disposition(
     path: &Path,
     id: &str,
     status: DispositionStatus,
+    reason: &str,
     out: Option<&Path>,
 ) -> Result<()> {
     let mut value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
-    let entry = serde_json::json!({"finding_id": id, "status": status});
+    let previous_status = value["dispositions"].as_array().and_then(|items| {
+        items.iter().rev().find_map(|item| {
+            (item["finding_id"].as_str() == Some(id))
+                .then(|| item["status"].as_str().map(str::to_owned))
+                .flatten()
+        })
+    });
+    let operator = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "unknown".into());
+    let mut entry = serde_json::json!({
+        "finding_id": id,
+        "status": status,
+        "reason": reason,
+        "recorded_at_unix": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default(),
+        "operator": operator
+    });
+    if let Some(previous) = previous_status {
+        entry["previous_status"] = serde_json::json!(previous);
+    }
     value["dispositions"]
         .as_array_mut()
         .map(|a| a.push(entry.clone()))
@@ -244,7 +267,7 @@ pub fn disposition(
 
 pub fn completions(shell: CompletionShell) -> Result<()> {
     let commands = "disclaimer guide doctor quickstart demo security-lab explain-plugin plugin-picker completions explain-finding html-report coverage-compare disposition presets playbook controls live-controls report diff ingest list-plugins artifacts cleanup stage verify one-liners resume enum scan";
-    let flags = "--authorized --profile --preset --quiet --verbose --no-color --delay-ms --plugin-timeout-ms --format --min-severity --fail-on --output --output-path --key-output-path --plaintext-file --also-markdown --checkpoint --plugins --skip --auto-exploit --allow-techniques --triage --triage-out --approve-file";
+    let flags = "--authorized --profile --preset --quiet --verbose --summary --progress-json --no-color --delay-ms --plugin-timeout-ms --format --min-severity --fail-on --output --output-path --key-output-path --plaintext-file --also-markdown --checkpoint --plugins --skip --auto-exploit --allow-techniques --triage --triage-out --approve-file";
     let ids = plugins::registry()
         .iter()
         .map(|p| p.id())
@@ -280,7 +303,14 @@ mod tests {
         coverage_compare(&path, &path).unwrap();
         let id = report.findings[0].finding_id.clone();
         explain_finding(&id, Some(&path)).unwrap();
-        disposition(&path, &id, DispositionStatus::NeedsReview, None).unwrap();
+        disposition(
+            &path,
+            &id,
+            DispositionStatus::NeedsReview,
+            "initial review",
+            None,
+        )
+        .unwrap();
         let disposition_path = PathBuf::from(format!("{}.dispositions.json", path.display()));
         let updated: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&disposition_path).unwrap()).unwrap();

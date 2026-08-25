@@ -32,6 +32,9 @@ def main() -> int:
         "validate_windows_contract.py",
         "validate_release_package.py",
         "validate_worktree_hygiene.py",
+        "validate_user_readiness.py",
+        "--report user-readiness-${{ matrix.os }}.json",
+        "Upload user-readiness evidence",
         "cargo test --locked --workspace --all-features",
     ):
         if token not in ci:
@@ -43,6 +46,8 @@ def main() -> int:
         "cargo llvm-cov",
         "gitleaks/gitleaks-action",
         "cargo-deny-action",
+        "--report readiness-evidence.json",
+        "release-user-readiness",
     ):
         if token not in release:
             failures.append(f"release workflow missing production check {token}")

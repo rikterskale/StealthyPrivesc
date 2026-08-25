@@ -13,6 +13,8 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--i-understand-authorized-use-only` | Required authorization acknowledgment | Off |
 | `-q`, `--quiet` | Suppress progress and human summaries | Off |
 | `-v`, `--verbose` | Add diagnostic/finding progress; full sealed-report keys are never printed | Off |
+| `--summary` | Print a concise host, finding, coverage, and next-action summary | Off |
+| `--progress-json` | Emit `plugin_started`/`plugin_finished` JSON events to stderr for automation | Off |
 | `--no-color` | Disable ANSI color output; `NO_COLOR` is also honored | Off |
 | `--delay-ms N` | Randomized delay budget between plugins | `50` |
 | `--format human|json|markdown|sarif` | Console/report format | `human` |
@@ -29,6 +31,10 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--checkpoint PATH` | Write/update plaintext JSON checkpoint during the run | None |
 | `--ledger-dir PATH` | Artifact ledger directory | `.cache-run` |
 | `--artifact PATH` | Read-only artifact hash/provenance/trust prediction; never executed | None |
+
+`--progress-json` is deliberately written to stderr so stdout remains a stable
+report stream. Events include the plugin ID, one-based position, total count,
+and elapsed milliseconds when a plugin finishes.
 
 Severity levels, from least to greatest, are `info`, `low`, `medium`, `high`,
 and `critical`.
@@ -71,8 +77,11 @@ stealthy doctor
 stealthy doctor --json
 ```
 
-Checks supported OS, compiled plugin availability, and working-directory
-readiness. JSON output is intended for automation.
+Checks supported OS, compiled plugin availability, working-directory safety, and
+approved fallback availability. Human output ends with `READY`, `READY WITH
+WARNINGS`, or `BLOCKED` plus ordered remediation steps. JSON output retains the
+original boolean checks and adds `readiness`, `blocking`, `check_details`,
+`fallback_tools`, and `recommendations` for automation.
 
 ## Beginner workflows
 

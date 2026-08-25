@@ -518,6 +518,14 @@ pub struct RunReport {
     /// Engagement / OPSEC profile used for this run.
     #[serde(default)]
     pub profile: String,
+    /// Display severity threshold used for this run.
+    #[serde(default)]
+    pub min_severity: String,
+    /// Explicit plugin selection and exclusions carried for baseline validation.
+    #[serde(default)]
+    pub selected_plugins: Vec<String>,
+    #[serde(default)]
+    pub skipped_plugins: Vec<String>,
     /// `native` for the Rust engine or `script` for a fallback report.
     #[serde(default = "default_coverage_mode")]
     pub coverage_mode: String,

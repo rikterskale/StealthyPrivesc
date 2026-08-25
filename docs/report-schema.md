@@ -15,6 +15,8 @@ coverage. Always inspect `coverage`, `plugins_run`, `coverage_mode`, and
 | `authorized_use_ack` | boolean | Authorization acknowledgment supplied to the producing command |
 | `mode` | string | Usually `enumerate-only` or `enumerate+allow-techniques` |
 | `profile` | string | Effective engagement profile (`quiet`, `balanced`, `thorough`, `ci`, or `script`) |
+| `min_severity` | string | Finding threshold used for the run; comparisons warn when it changes |
+| `selected_plugins` / `skipped_plugins` | array | Selection metadata used to distinguish missing coverage from clean results |
 | `coverage_mode` | string | `native` for the Rust engine or `script` for a fallback report |
 | `os` / `identity` | object | Target platform and execution identity |
 | `findings` | array | Observations and recommendations |

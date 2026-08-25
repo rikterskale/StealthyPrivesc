@@ -156,6 +156,8 @@ impl Engine {
                 also_markdown: cli.also_markdown,
                 exfil_url: cli.exfil_url.clone(),
                 quiet,
+                summary: cli.summary,
+                progress_json: cli.progress_json,
                 format,
                 min_severity: cli.min_severity.to_severity(),
                 run_id: String::new(),
@@ -434,6 +436,18 @@ impl Engine {
         for (idx, plugin) in selected.iter().enumerate() {
             if cancel.load(Ordering::SeqCst) {
                 cancelled = true;
+                if self.output.progress_json {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({
+                            "event": "scan_cancelled",
+                            "plugin": plugin.id(),
+                            "index": idx + 1,
+                            "total": total,
+                            "resume": self.checkpoint.as_ref().map(|path| path.display().to_string())
+                        })
+                    );
+                }
                 coverage.push(PluginCoverage {
                     id: plugin.id().to_string(),
                     status: "cancelled".into(),
@@ -454,6 +468,12 @@ impl Engine {
             }
 
             let plugin_started = Instant::now();
+            if self.output.progress_json {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({"event":"plugin_started", "plugin":plugin.id(), "index":idx + 1, "total":total})
+                );
+            }
             if !self.quiet {
                 let elapsed = run_started.elapsed().as_secs();
                 let completed = idx;
@@ -581,6 +601,12 @@ impl Engine {
                     }
                 }
             }
+            if self.output.progress_json {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({"event":"plugin_finished", "plugin":plugin.id(), "index":idx + 1, "total":total, "elapsed_ms":plugin_started.elapsed().as_millis()})
+                );
+            }
 
             if let Some(path) = &self.checkpoint {
                 let (findings, notes) = store_into_parts(&store);
@@ -677,6 +703,9 @@ impl Engine {
             primary_launch: "ok".into(),
             roe_ref: std::env::var("STEALTHY_MANIFEST_ROE_REF").unwrap_or_default(),
             profile: self.profile.as_str().into(),
+            min_severity: self.output.min_severity.as_str().into(),
+            selected_plugins: plugins_run.clone(),
+            skipped_plugins: self.skip.clone().unwrap_or_default(),
             coverage_mode: "native".into(),
             capability_delta: vec![],
             control_assessment,

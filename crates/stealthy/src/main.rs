@@ -110,7 +110,8 @@ fn run_main() -> Result<()> {
             finding_id,
             status,
             out,
-        } => ux::disposition(&report, &finding_id, status, out.as_deref()),
+            reason,
+        } => ux::disposition(&report, &finding_id, status, &reason, out.as_deref()),
         Commands::Presets => ux::presets(),
         Commands::Playbook { id } => ux::playbook(&id),
         Commands::Controls {
@@ -594,36 +595,84 @@ fn print_doctor(json: bool) -> Result<()> {
     let plugin_count = plugins::registry().len();
     let cwd = std::env::current_dir().ok();
     let cwd_ok = cwd.as_ref().is_some_and(|p| p.is_dir());
+    let cwd_readonly = cwd
+        .as_ref()
+        .and_then(|path| std::fs::metadata(path).ok())
+        .is_some_and(|metadata| metadata.permissions().readonly());
     let supported = matches!(os.os.as_str(), "linux" | "windows");
-    let healthy = supported && plugin_count > 0 && cwd_ok;
-    let fallback_count = if os.os == "linux" {
-        ["python3", "bash", "sh", "perl"]
-            .iter()
-            .filter(|tool| command_available(tool))
-            .count()
+    let fallback_tools: Vec<&str> = if os.os == "linux" {
+        vec!["python3", "bash", "sh", "perl"]
     } else if os.os == "windows" {
-        ["powershell", "cscript"]
-            .iter()
-            .filter(|tool| command_available(tool))
-            .count()
+        vec!["powershell", "cscript"]
     } else {
-        0
+        Vec::new()
     };
+    let available_fallback_tools: Vec<&str> = fallback_tools
+        .iter()
+        .copied()
+        .filter(|tool| command_available(tool))
+        .collect();
+    let fallback_count = available_fallback_tools.len();
+    let blocking = !supported || plugin_count == 0 || !cwd_ok || cwd_readonly;
+    let readiness = if blocking {
+        "blocked"
+    } else if fallback_count == 0 {
+        "ready_with_warnings"
+    } else {
+        "ready"
+    };
+    let healthy = !blocking;
+    let mut recommendations = Vec::new();
+    if !supported {
+        recommendations.push("run a supported Linux or Windows build on the target OS");
+    }
+    if plugin_count == 0 {
+        recommendations
+            .push("install a native build with compiled plugins or use an approved fallback");
+    }
+    if !cwd_ok {
+        recommendations.push("rerun from a readable working directory or set --ledger-dir");
+    }
+    if cwd_readonly {
+        recommendations
+            .push("choose a writable working directory or set --ledger-dir to a writable path");
+    }
+    if fallback_count == 0 && supported {
+        recommendations.push("install at least one approved fallback host for recovery coverage");
+    }
+    let checks = serde_json::json!({
+        "supported_os": supported,
+        "plugins_available": plugin_count > 0,
+        "working_directory": cwd_ok,
+        "working_directory_writable": cwd_ok && !cwd_readonly,
+        "fallback_available": fallback_count > 0,
+    });
+    let check_details = serde_json::json!({
+        "supported_os": {"status": if supported { "pass" } else { "block" }, "severity": if supported { "info" } else { "critical" }, "message": format!("{} {}", os.os, os.arch), "remediation": "Use a supported native build on Linux or Windows."},
+        "plugins_available": {"status": if plugin_count > 0 { "pass" } else { "block" }, "severity": if plugin_count > 0 { "info" } else { "critical" }, "message": format!("{} compiled plugin(s)", plugin_count), "remediation": "Install or build a target-specific binary with plugins."},
+        "working_directory": {"status": if cwd_ok { "pass" } else { "block" }, "severity": if cwd_ok { "info" } else { "high" }, "message": cwd.as_ref().map(|path| path.display().to_string()).unwrap_or_else(|| "unavailable".into()), "remediation": "Run from a readable directory or set --ledger-dir."},
+        "working_directory_writable": {"status": if cwd_ok && !cwd_readonly { "pass" } else { "block" }, "severity": if cwd_ok && !cwd_readonly { "info" } else { "high" }, "message": if cwd_readonly { "directory is read-only" } else { "directory metadata is writable" }, "remediation": "Choose a writable working directory or ledger destination."},
+        "fallback_available": {"status": if fallback_count > 0 { "pass" } else { "warn" }, "severity": if fallback_count > 0 { "info" } else { "medium" }, "message": format!("{fallback_count}/{} approved fallback host(s) available", fallback_tools.len()), "remediation": "Install an approved interpreter fallback for recovery coverage."},
+    });
     if json {
         println!(
             "{}",
             serde_json::json!({
                 "schema_version": "1",
                 "healthy": healthy,
+                "readiness": readiness,
+                "blocking": blocking,
                 "os": os,
-                    "plugins": plugin_count,
-                    "fallback_hosts_available": fallback_count,
+                "plugins": plugin_count,
+                "fallback_hosts_available": fallback_count,
+                "fallback_tools": {
+                    "required": fallback_tools,
+                    "available": available_fallback_tools,
+                },
                 "current_directory": cwd.map(|p| p.display().to_string()),
-                "checks": {
-                    "supported_os": supported,
-                    "plugins_available": plugin_count > 0,
-                    "working_directory": cwd_ok,
-                }
+                "checks": checks,
+                "check_details": check_details,
+                "recommendations": recommendations,
             })
         );
     } else {
@@ -641,25 +690,27 @@ fn print_doctor(json: bool) -> Result<()> {
                 .unwrap_or_else(|| "unavailable".into())
         );
         println!(
-            "  {} Script fallback hosts available: {}",
+            "  {} Script fallback hosts available: {}/{}",
             check(fallback_count > 0),
-            fallback_count
+            fallback_count,
+            fallback_tools.len()
         );
         println!();
         println!(
             "{}",
-            if healthy {
-                term::ok("Ready for an authorized scan.")
-            } else {
-                term::err("Action required before scanning.")
+            match readiness {
+                "ready" => term::ok("READY — safe to continue to an authorized scan."),
+                "ready_with_warnings" => term::warn(
+                    "READY WITH WARNINGS — native scan is available; recovery coverage is limited."
+                ),
+                _ => term::err("BLOCKED — resolve the blocking checks before scanning."),
             }
         );
-        if !supported {
-            println!("  Next: run a supported Linux or Windows build on the target OS.");
-        } else if plugin_count == 0 {
-            println!("  Next: install a native build for this platform or use an approved script fallback.");
-        } else if !cwd_ok {
-            println!("  Next: rerun from a readable working directory or pass --ledger-dir to a writable location.");
+        if !recommendations.is_empty() {
+            println!("\n{}", term::bold("Recommended next steps"));
+            for (index, recommendation) in recommendations.iter().enumerate() {
+                println!("  {}. {}", index + 1, recommendation);
+            }
         }
     }
     if healthy {
@@ -754,7 +805,12 @@ fn print_diff(
                 diff.removed.len(),
                 diff.changed.len()
             );
-            if diff.identity_changed || diff.plugin_set_changed || diff.coverage_changed {
+            if diff.identity_changed
+                || diff.plugin_set_changed
+                || diff.coverage_changed
+                || diff.profile_changed
+                || diff.severity_filter_changed
+            {
                 println!("## Comparison warnings\n");
                 if diff.identity_changed {
                     println!("- Host identity or OS context changed.");
@@ -764,6 +820,12 @@ fn print_diff(
                 }
                 if diff.coverage_changed {
                     println!("- Coverage status or fallback capability changed.");
+                }
+                if diff.profile_changed {
+                    println!("- Engagement profile changed.");
+                }
+                if diff.severity_filter_changed {
+                    println!("- Minimum severity filter changed; finding counts are not directly comparable.");
                 }
                 println!();
             }

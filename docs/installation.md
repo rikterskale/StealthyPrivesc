@@ -156,9 +156,11 @@ Windows PowerShell:
 & $Stealthy disclaimer
 ```
 
-A healthy `doctor` result reports a supported OS, at least one compiled
-plugin, and a usable working directory. If it fails, stop and fix the local
-environment before using `--authorized`.
+A healthy `doctor` result reports a supported OS, at least one compiled plugin,
+and a usable, writable working directory. Treat `READY WITH WARNINGS` as a
+usable native install with limited fallback recovery coverage. If the result
+is `BLOCKED`, stop and follow the numbered remediation steps before using
+`--authorized`.
 
 ## Continue with the guided first run
 

@@ -19,6 +19,10 @@ pub struct ReportDiff {
     pub identity_changed: bool,
     #[serde(default)]
     pub plugin_set_changed: bool,
+    #[serde(default)]
+    pub profile_changed: bool,
+    #[serde(default)]
+    pub severity_filter_changed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +68,8 @@ pub fn compare(baseline: &RunReport, current: &RunReport) -> Result<ReportDiff> 
             || baseline.capability_delta != current.capability_delta,
         identity_changed: baseline.identity != current.identity || baseline.os != current.os,
         plugin_set_changed: baseline.plugins_run != current.plugins_run,
+        profile_changed: baseline.profile != current.profile,
+        severity_filter_changed: baseline.min_severity != current.min_severity,
     })
 }
 
@@ -129,6 +135,9 @@ mod tests {
             coverage_mode: "native".into(),
             capability_delta: vec![],
             control_assessment: None,
+            min_severity: "info".into(),
+            selected_plugins: vec![],
+            skipped_plugins: vec![],
         }
     }
 
@@ -172,5 +181,16 @@ mod tests {
         let current = report(vec![], "b");
         let error = compare(&baseline, &current).unwrap_err();
         assert!(error.to_string().contains("duplicate finding identity"));
+    }
+
+    #[test]
+    fn legacy_reports_accept_new_comparison_metadata_defaults() {
+        let mut value = serde_json::to_value(report(vec![], "legacy")).unwrap();
+        value.as_object_mut().unwrap().remove("min_severity");
+        value.as_object_mut().unwrap().remove("selected_plugins");
+        value.as_object_mut().unwrap().remove("skipped_plugins");
+        let legacy: RunReport = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.min_severity, "");
+        assert!(compare(&legacy, &legacy).is_ok());
     }
 }

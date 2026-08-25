@@ -4,6 +4,22 @@ set -euo pipefail
 repo="${STEALTHY_REPO:-rikterskale/StealthyPrivesc}"
 version="${STEALTHY_VERSION:-latest}"
 install_dir="${STEALTHY_INSTALL_DIR:-$HOME/.local/bin}"
+dry_run=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry_run=1 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if [ "$dry_run" -eq 1 ]; then
+  echo "Would install stealthy ${version} from ${repo}"
+  echo "Binary destination: ${install_dir}/stealthy"
+  echo "Kit destination: ${STEALTHY_KIT_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/stealthy/${version}}"
+  echo "Validation: SHA256SUMS plus GitHub artifact attestation"
+  exit 0
+fi
 
 if [ "$version" = "latest" ]; then
   tag="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -n1)"
@@ -48,3 +64,4 @@ cp -a "$tmp/kit/." "$kit_dir/"
 install -m 0755 "$tmp/kit/stealthy" "$install_dir/stealthy"
 echo "Installed stealthy ${tag} binary to ${install_dir}/stealthy"
 echo "Installed verified delivery kit to ${kit_dir}"
+echo "Rollback: remove ${install_dir}/stealthy and ${kit_dir} after recording the installed version"

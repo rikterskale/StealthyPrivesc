@@ -176,6 +176,8 @@ jobs:
         run: |
           python3 scripts/ci/validate_windows_contract.py
           python3 scripts/ci/validate_production_readiness.py
+          python3 scripts/ci/validate_installer_contract.py
+          python3 scripts/ci/validate_html_report.py
 
   rust:
     name: Rust core checks
@@ -822,14 +824,25 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           python3 scripts/ci/validate_user_readiness.py \
-            ./target/release/stealthy --repo-root . --strict-warnings
+            ./target/release/stealthy --repo-root . --strict-warnings \
+            --report user-readiness-${{ matrix.os }}.json
 
       - name: User readiness validation (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           python scripts/ci/validate_user_readiness.py `
-            ./target/release/stealthy.exe --repo-root . --strict-warnings
+            ./target/release/stealthy.exe --repo-root . --strict-warnings `
+            --report user-readiness-${{ matrix.os }}.json
+
+      - name: Upload user-readiness evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: user-readiness-${{ matrix.os }}
+          path: user-readiness-${{ matrix.os }}.json
+          if-no-files-found: warn
+          retention-days: 14
 
   production-readiness:
     name: CI readiness gate

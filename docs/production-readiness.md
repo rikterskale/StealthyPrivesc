@@ -6,6 +6,8 @@ in CI or in the release record.
 
 ## Build and platform acceptance
 
+- [ ] `doctor --json` reports a stable readiness state, blocking flag, detailed checks, fallback tool inventory, and remediation recommendations.
+- [ ] Human `doctor` output clearly distinguishes READY, READY WITH WARNINGS, and BLOCKED states.
 - [ ] `cargo fmt --all -- --check` passes.
 - [ ] Locked workspace tests and clippy pass with `-D warnings`.
 - [ ] Linux x86_64 and aarch64 artifacts build and receive native smoke tests.
@@ -39,6 +41,7 @@ in CI or in the release record.
 
 ## Release and operational acceptance
 
+- [ ] Readiness failures preserve exit code `3`; authorization failures preserve exit code `2`.
 - [ ] The release is built from a clean checkout with no tracked local state,
       nested repositories, or generated artifacts.
 - [ ] Dependency advisories, licenses, bans, and source policies pass.

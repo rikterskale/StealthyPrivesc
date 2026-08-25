@@ -15,6 +15,7 @@ User readiness validation prevents:
 - ❌ Missing examples or broken examples
 - ❌ Inconsistent version information
 - ❌ Accessibility regressions (color, output formats)
+- ❌ Automation regressions in `--summary` and `--progress-json`
 
 ## Validation Categories
 
@@ -83,7 +84,19 @@ Different users need different output formats:
 
 If a format breaks, it blocks users who depend on it.
 
-### 5. Error Messages
+### 5. Automation and evidence contracts
+
+**What it checks:**
+- `--summary` contains stable operator markers and actionable priorities
+- `--progress-json` keeps stdout valid JSON and emits structured start/finish events on stderr
+- Each validator category has a stable ID, status, error count, and duration
+- CI uploads JSON evidence even when validation fails
+
+The evidence file uses schema version `1` and is retained as a CI artifact for
+release records and failure triage. It is separate from the application report
+schema.
+
+### 6. Error Messages
 
 **What it checks:**
 - Unknown plugin errors suggest `list-plugins`
@@ -94,7 +107,7 @@ If a format breaks, it blocks users who depend on it.
 **Why it matters:**
 Good error messages prevent user frustration and reduce support burden. A user who receives a helpful error message can often self-recover.
 
-### 6. Accessibility
+### 7. Accessibility
 
 **What it checks:**
 - `--no-color` flag works and removes all ANSI codes
@@ -105,7 +118,7 @@ Good error messages prevent user frustration and reduce support burden. A user w
 **Why it matters:**
 Not all users run in a color-capable terminal. Some users are color-blind. Automation systems may not parse ANSI codes correctly.
 
-### 7. Documentation References
+### 8. Documentation References
 
 **What it checks:**
 - Required documentation files exist:
@@ -119,7 +132,7 @@ Not all users run in a color-capable terminal. Some users are color-blind. Autom
 **Why it matters:**
 Users expect complete documentation. Missing docs create support tickets and reduce trust.
 
-### 8. Environment Variables
+### 9. Environment Variables
 
 **What it checks:**
 - Documented environment variables work:
@@ -129,7 +142,7 @@ Users expect complete documentation. Missing docs create support tickets and red
 **Why it matters:**
 Some users prefer environment variables over CLI flags (shell scripts, Docker, CI/CD). Broken env var support blocks these use cases.
 
-### 9. Plugin Coverage
+### 10. Plugin Coverage
 
 **What it checks:**
 - Both Linux and Windows plugins are available
@@ -140,7 +153,7 @@ Some users prefer environment variables over CLI flags (shell scripts, Docker, C
 **Why it matters:**
 If a platform's plugins are missing, users on that platform cannot enumerate.
 
-### 10. Exit Codes
+### 11. Exit Codes
 
 **What it checks:**
 - Unauthorized access exits with code 2
@@ -152,7 +165,7 @@ If a platform's plugins are missing, users on that platform cannot enumerate.
 **Why it matters:**
 Exit codes enable automation. CI/CD systems depend on knowing when to fail or succeed.
 
-### 11. Output Schema
+### 12. Output Schema
 
 **What it checks:**
 - JSON report has required top-level fields:
@@ -173,7 +186,7 @@ Exit codes enable automation. CI/CD systems depend on knowing when to fail or su
 **Why it matters:**
 External systems parse the JSON report. Missing fields break downstream analysis.
 
-### 12. Installation Script Validation
+### 13. Installation Script Validation
 
 **What it checks:**
 - Install scripts are syntactically valid (bash -n)
@@ -184,7 +197,7 @@ External systems parse the JSON report. Missing fields break downstream analysis
 **Why it matters:**
 Users follow these scripts. Broken or misleading installation procedures are a common failure point.
 
-### 13. Documentation Examples
+### 14. Documentation Examples
 
 **What it checks:**
 - Key documentation files exist and have examples
@@ -194,7 +207,7 @@ Users follow these scripts. Broken or misleading installation procedures are a c
 **Why it matters:**
 Users copy examples from docs. Broken examples waste time and erode trust.
 
-### 14. Version Consistency
+### 15. Version Consistency
 
 **What it checks:**
 - Version in `Cargo.toml` follows pre-1.0 format: `0.MINOR.PATCH`
@@ -204,7 +217,7 @@ Users copy examples from docs. Broken examples waste time and erode trust.
 **Why it matters:**
 Inconsistent versioning confuses users and makes support difficult. Outdated support policies create false expectations.
 
-### 15. CLI Help References
+### 16. CLI Help References
 
 **What it checks:**
 - `--help` output mentions all major commands

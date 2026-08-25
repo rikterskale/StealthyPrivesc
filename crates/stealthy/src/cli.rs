@@ -42,6 +42,14 @@ pub struct Cli {
     #[arg(short, long, global = true, action = ArgAction::SetTrue)]
     pub verbose: bool,
 
+    /// Print a concise operator summary instead of the full human report.
+    #[arg(long, global = true, action = ArgAction::SetTrue)]
+    pub summary: bool,
+
+    /// Emit machine-readable progress events to stderr.
+    #[arg(long, global = true, action = ArgAction::SetTrue)]
+    pub progress_json: bool,
+
     /// Disable ANSI colors (also honors NO_COLOR).
     #[arg(long, global = true)]
     pub no_color: bool,
@@ -190,6 +198,9 @@ pub enum Commands {
         status: DispositionStatus,
         #[arg(long)]
         out: Option<std::path::PathBuf>,
+        /// Operator rationale for the disposition.
+        #[arg(long, default_value = "")]
+        reason: String,
     },
 
     /// Show scan presets and their expected runtime/noise tradeoffs.

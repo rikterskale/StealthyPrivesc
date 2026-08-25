@@ -1,3 +1,4 @@
+param([switch]$DryRun)
 $ErrorActionPreference = 'Stop'
 $repo = if ($env:STEALTHY_REPO) { $env:STEALTHY_REPO } else { 'rikterskale/StealthyPrivesc' }
 $tag = if ($env:STEALTHY_VERSION) { $env:STEALTHY_VERSION } else { (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name }
@@ -10,6 +11,14 @@ $extractDir = Join-Path $tmp 'kit'
 $kitDir = if ($env:STEALTHY_KIT_DIR) { $env:STEALTHY_KIT_DIR } else { Join-Path $env:LOCALAPPDATA "StealthyPrivesc\$tag" }
 $installDir = if ($env:STEALTHY_INSTALL_DIR) { $env:STEALTHY_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'StealthyPrivesc\bin' }
 $base = "https://github.com/$repo/releases/download/$tag"
+
+if ($DryRun) {
+  Write-Host "Would install stealthy $tag from $repo"
+  Write-Host "Binary destination: $(Join-Path $installDir 'stealthy.exe')"
+  Write-Host "Kit destination: $kitDir"
+  Write-Host 'Validation: SHA256SUMS plus GitHub artifact attestation'
+  exit 0
+}
 
 try {
   New-Item -ItemType Directory -Force -Path $tmp, $extractDir | Out-Null
@@ -55,6 +64,7 @@ try {
   Copy-Item -LiteralPath (Join-Path $extractDir 'stealthy.exe') -Destination (Join-Path $installDir 'stealthy.exe') -Force
   Write-Host "Installed stealthy $tag binary to $(Join-Path $installDir 'stealthy.exe')"
   Write-Host "Installed verified delivery kit to $kitDir"
+  Write-Host "Rollback: remove $(Join-Path $installDir 'stealthy.exe') and $kitDir after recording the installed version"
 } finally {
   if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
 }

@@ -23,6 +23,7 @@ import io
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import tempfile
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -45,6 +46,7 @@ class UserReadinessValidator:
         self._doctor: Optional[dict] = None
         self._plugins: Optional[List[str]] = None
         self._raw_plugin_lines: Optional[List[str]] = None
+        self.check_results = []
 
     def run(
         self,
@@ -155,6 +157,21 @@ class UserReadinessValidator:
             self.errors.append(
                 f"doctor schema version is {doctor.get('schema_version')}, expected 1"
             )
+
+        readiness = doctor.get("readiness")
+        if readiness not in {"ready", "ready_with_warnings", "blocked"}:
+            self.errors.append(f"doctor readiness has invalid value: {readiness!r}")
+        if not isinstance(doctor.get("blocking"), bool):
+            self.errors.append("doctor blocking must be boolean")
+        elif doctor.get("blocking") == doctor.get("healthy"):
+            self.errors.append("doctor blocking must be the inverse of healthy")
+        if not isinstance(doctor.get("check_details"), dict):
+            self.errors.append("doctor output missing check_details object")
+        if not isinstance(doctor.get("recommendations"), list):
+            self.errors.append("doctor output missing recommendations array")
+        fallback_tools = doctor.get("fallback_tools", {})
+        if not isinstance(fallback_tools, dict) or not isinstance(fallback_tools.get("required"), list) or not isinstance(fallback_tools.get("available"), list):
+            self.errors.append("doctor output has invalid fallback_tools metadata")
 
         checks = doctor.get("checks", {})
         if not isinstance(checks, dict):
@@ -345,6 +362,56 @@ class UserReadinessValidator:
                     self.errors.append("Human output does not include StealthyPrivesc header")
                 if stdout.lstrip().startswith("{"):
                     self.errors.append("Human output appears to be JSON")
+
+    def check_automation_contracts(self):
+        """Validate stable operator summary and structured progress channels."""
+        print("Checking automation and operator UX contracts...")
+
+        plugin = self.get_smoke_plugin()
+        if not plugin:
+            self.errors.append("No plugin available for automation checks")
+            return
+
+        code, stdout, stderr = self.run(
+            "--authorized", "--summary", "--no-color", "enum", "--plugins", plugin
+        )
+        if code not in [0, 4]:
+            self.errors.append(f"--summary failed with exit {code}")
+        for marker in ("StealthyPrivesc summary", "Target:", "Coverage:", "Top priorities"):
+            if marker not in stdout:
+                self.errors.append(f"--summary output missing stable marker: {marker}")
+        if "error:" in stderr.lower():
+            self.errors.append("--summary emitted an unexpected error")
+
+        code, stdout, stderr = self.run(
+            "--authorized", "--quiet", "--progress-json", "--format", "json",
+            "enum", "--plugins", plugin,
+        )
+        if code not in [0, 4]:
+            self.errors.append(f"--progress-json failed with exit {code}")
+            return
+        try:
+            json.loads(stdout)
+        except json.JSONDecodeError:
+            self.errors.append("--progress-json polluted the stdout JSON stream")
+        events = []
+        for line in stderr.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("event", "").startswith("plugin_"):
+                events.append(event)
+        event_names = [event.get("event") for event in events]
+        if "plugin_started" not in event_names or "plugin_finished" not in event_names:
+            self.errors.append("--progress-json did not emit start and finish plugin events")
+        for event in events:
+            if not isinstance(event.get("plugin"), str) or not event.get("plugin"):
+                self.errors.append("progress event is missing plugin identity")
+            if not isinstance(event.get("index"), int) or not isinstance(event.get("total"), int):
+                self.errors.append("progress event has invalid index/total metadata")
+            if event.get("event") == "plugin_finished" and not isinstance(event.get("elapsed_ms"), int):
+                self.errors.append("plugin_finished event is missing elapsed_ms")
 
     def check_error_messages(self):
         """Validate error messages are helpful."""
@@ -1128,24 +1195,45 @@ class UserReadinessValidator:
                     f"{context}: finding.plugin '{plugin_id}' not present in plugins_run"
                 )
 
-    def validate_all(self) -> bool:
-        """Run all validations."""
-        self.check_installation_readiness()
-        self.check_first_user_journey()
-        self.check_help_text()
-        self.check_output_formats()
-        self.check_error_messages()
-        self.check_output_modes()
-        self.check_accessibility()
-        self.check_documentation_references()
-        self.check_environment_variables()
-        self.check_installation_checks()
-        self.check_plugin_coverage()
-        self.check_report_consistency()
-        self.check_exit_codes()
-        self.check_output_schema()
+    def validate_all(self, report_path: Optional[Path] = None) -> bool:
+        """Run all validations and optionally write machine-readable evidence."""
+        checks = [
+            ("installation", self.check_installation_readiness),
+            ("first_user_journey", self.check_first_user_journey),
+            ("help_text", self.check_help_text),
+            ("output_formats", self.check_output_formats),
+            ("automation_contracts", self.check_automation_contracts),
+            ("error_messages", self.check_error_messages),
+            ("output_modes", self.check_output_modes),
+            ("accessibility", self.check_accessibility),
+            ("documentation", self.check_documentation_references),
+            ("environment", self.check_environment_variables),
+            ("installation_scripts", self.check_installation_checks),
+            ("plugin_coverage", self.check_plugin_coverage),
+            ("report_consistency", self.check_report_consistency),
+            ("exit_codes", self.check_exit_codes),
+            ("output_schema", self.check_output_schema),
+        ]
+        self.check_results = []
+        for check_id, check in checks:
+            before = len(self.errors)
+            started = time.monotonic()
+            try:
+                check()
+            except Exception as exc:  # Keep CI output actionable if a validator itself breaks.
+                self.errors.append(f"{check_id}: unexpected validator exception: {exc}")
+            self.check_results.append({
+                "id": check_id,
+                "status": "passed" if len(self.errors) == before else "failed",
+                "errors": len(self.errors) - before,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
 
         print("\n" + "=" * 60)
+        print("Check ID                         Status    Errors   Duration")
+        print("-" * 60)
+        for result in self.check_results:
+            print(f"{result['id']:<32} {result['status']:<9} {result['errors']:<8} {result['duration_ms']}ms")
         print("User Readiness Validation Report")
         print("=" * 60)
 
@@ -1153,6 +1241,21 @@ class UserReadinessValidator:
             print(f"\n❌ ERRORS ({len(self.errors)}):")
             for error in self.errors:
                 print(f"  • {error}")
+
+        if report_path:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps({
+                    "schema_version": "1",
+                    "binary": str(self.binary),
+                    "platform": sys.platform,
+                    "passed": not self.errors,
+                    "errors": self.errors,
+                    "checks": self.check_results,
+                }, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(f"Readiness evidence: {report_path}")
 
         if not self.errors:
             print("\n✅ All user readiness checks passed")
@@ -1173,10 +1276,15 @@ def main():
         action="store_true",
         help="Legacy compatibility switch; currently retained for CI scripts (no warning channel is emitted)",
     )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        help="Write machine-readable readiness evidence JSON to this path",
+    )
     args = parser.parse_args()
 
     validator = UserReadinessValidator(args.binary, args.repo_root)
-    success = validator.validate_all()
+    success = validator.validate_all(args.report)
     sys.exit(0 if success else 1)
 
 

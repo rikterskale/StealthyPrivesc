@@ -78,6 +78,8 @@ fn beginner_and_offline_cli_helpers_are_executable() {
             report_path.to_str().unwrap(),
             finding_id,
             "needs-review",
+            "--reason",
+            "confirmed during operator review",
         ],
     ] {
         let output = stealthy().args(args).output().unwrap();
@@ -87,6 +89,15 @@ fn beginner_and_offline_cli_helpers_are_executable() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+    let dispositions: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(format!("{}.dispositions.json", report_path.display())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        dispositions["dispositions"][0]["reason"],
+        "confirmed during operator review"
+    );
+    assert!(dispositions["dispositions"][0]["recorded_at_unix"].is_number());
     let lab_root = dir.path().join("lab");
     let output = stealthy()
         .args(["security-lab", "--root", lab_root.to_str().unwrap()])
@@ -252,6 +263,48 @@ fn doctor_json_reports_schema_and_checks() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schema_version"], "1");
     assert!(value["checks"].is_object());
+    assert!(value["check_details"].is_object());
+    assert!(matches!(
+        value["readiness"].as_str(),
+        Some("ready" | "ready_with_warnings" | "blocked")
+    ));
+    assert_eq!(value["blocking"], !value["healthy"].as_bool().unwrap());
+    assert!(value["recommendations"].is_array());
+    assert!(value["fallback_tools"]["required"].is_array());
+}
+
+#[test]
+fn summary_and_progress_json_are_automation_friendly() {
+    let summary = stealthy()
+        .args([
+            "--authorized",
+            "--summary",
+            "scan",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(summary.status.success());
+    assert!(String::from_utf8_lossy(&summary.stdout).contains("StealthyPrivesc summary"));
+
+    let progress = stealthy()
+        .args([
+            "--authorized",
+            "--progress-json",
+            "--quiet",
+            "--format",
+            "json",
+            "scan",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(progress.status.success());
+    let stderr = String::from_utf8_lossy(&progress.stderr);
+    assert!(stderr.contains("\"event\":\"plugin_started\""));
+    assert!(stderr.contains("\"event\":\"plugin_finished\""));
 }
 
 #[test]
@@ -348,6 +401,9 @@ fn json_findings_have_next_step_guidance() {
                     .is_empty(),
                 "positive finding has no next step: {finding}"
             );
+            assert!(finding["remediation"]["prerequisite"].is_string());
+            assert!(finding["remediation"]["verification"].is_string());
+            assert!(finding["remediation"]["rollback"].is_string());
         }
         assert!(finding["what_next"].is_string());
         assert!(finding["next_command"].is_string());

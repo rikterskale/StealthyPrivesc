@@ -104,7 +104,16 @@ jobs:
           bin=target/x86_64-unknown-linux-gnu/release/stealthy
           # Build a temporary binary for validation
           cargo build --locked -p stealthy --release --target x86_64-unknown-linux-gnu
-          python3 scripts/ci/validate_user_readiness.py "$bin" --repo-root . --strict-warnings
+          python3 scripts/ci/validate_user_readiness.py "$bin" --repo-root . --strict-warnings --report readiness-evidence.json
+
+      - name: Upload user-readiness evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-user-readiness
+          path: readiness-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
 
   build:
     name: Build ${{ matrix.target }}
