@@ -410,7 +410,9 @@ fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cleanup, load_ledger, save_ledger, write_private_atomic, ArtifactLedger};
+    #[cfg(unix)]
+    use super::write_private_atomic;
+    use super::{cleanup, load_ledger, save_ledger, ArtifactLedger};
 
     #[test]
     fn ledgers_are_private_and_tamper_evident() {
