@@ -287,15 +287,15 @@ jobs:
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
-              apt-get install -y --no-install-recommends ca-certificates curl build-essential python3 bash perl
-              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-              . "$HOME/.cargo/env"
-              cargo metadata --locked --format-version 1 --no-deps >/dev/null
-              cargo test --locked --workspace
-              cargo build --locked -p stealthy --release
-              ./target/release/stealthy doctor --json
-              ./target/release/stealthy --authorized --quiet --format json enum --plugins linux.kernel_cve |
-                python3 -c "import json,sys; r=json.load(sys.stdin); assert r['coverage_mode'] == 'native'; assert r['authorized_use_ack'] is True"
+          apt-get install -y --no-install-recommends ca-certificates curl build-essential python3 bash perl
+          curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          . "$HOME/.cargo/env"
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo test --locked --workspace
+          cargo build --locked -p stealthy --release
+          ./target/release/stealthy doctor --json
+          ./target/release/stealthy --authorized --quiet --format json enum --plugins linux.kernel_cve |
+                python3 -c "import json,sys; r=json.load(sys.stdin); assert r[\"coverage_mode\"] == \"native\"; assert r[\"authorized_use_ack\"] is True"
             '
 
   ux:
