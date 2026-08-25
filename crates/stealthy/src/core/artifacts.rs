@@ -349,6 +349,8 @@ fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> 
         let status = crate::core::command::trusted_command("icacls.exe")
             .arg(_path)
             .args(["/inheritance:r", "/grant:r", &grant])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .context("apply restrictive Windows private-file ACL")?;
         if !status.success() {
