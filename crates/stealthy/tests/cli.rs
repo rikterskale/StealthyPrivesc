@@ -20,14 +20,19 @@ fn stealthy_in(dir: &std::path::Path) -> Command {
 
 #[test]
 fn beginner_and_offline_cli_helpers_are_executable() {
+    let helper_plugin = if cfg!(target_os = "windows") {
+        "windows.services"
+    } else {
+        "linux.sudo"
+    };
     for args in [
         vec!["quickstart"],
         vec!["demo"],
         vec!["demo", "--html"],
         vec!["presets"],
         vec!["plugin-picker"],
-        vec!["explain-plugin", "linux.sudo"],
-        vec!["playbook", "linux.sudo"],
+        vec!["explain-plugin", helper_plugin],
+        vec!["playbook", helper_plugin],
         vec!["completions", "bash"],
         vec!["completions", "zsh"],
         vec!["completions", "fish"],
