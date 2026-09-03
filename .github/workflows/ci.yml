@@ -778,7 +778,19 @@ jobs:
           $evasionRejected = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-File', '.\scripts\windows\evasion.ps1', '-Technique', 'amsi-bypass', '-Authorized', '-AllowTechniques', 'amsi-bypass', '-Json') -Wait -PassThru -NoNewWindow
           if ($evasionRejected.ExitCode -ne 1) { throw "evasion scaffold missing-confirmation exit mismatch: $($evasionRejected.ExitCode)" }
 
-          $msbuild = (Get-Command msbuild.exe -ErrorAction Stop).Source
+          $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+          if ($msbuildCommand) {
+            $msbuild = $msbuildCommand.Source
+          } else {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+              throw 'MSBuild fallback validation requires msbuild.exe or Visual Studio vswhere.exe'
+            }
+            $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+            if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild -PathType Leaf)) {
+              throw 'Visual Studio installation does not expose a usable MSBuild.exe'
+            }
+          }
           $priorAuth = $env:STEALTHY_AUTHORIZED
           try {
             Remove-Item Env:STEALTHY_AUTHORIZED -ErrorAction SilentlyContinue
