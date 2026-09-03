@@ -40,7 +40,7 @@ def validate_archive(path: Path, platform: str) -> None:
         for name in (
             ["run.sh", "enum.py", "enum.sh", "enum-posix.sh", "enum.pl"]
             if platform == "linux"
-            else ["run.ps1", "enum.ps1", "enum.js", "EnumTasks.csproj"]
+            else ["run.ps1", "enum.ps1", "enum.js", "EnumTasks.csproj", "evasion.ps1"]
         )
     )
     missing = required - names
@@ -48,14 +48,19 @@ def validate_archive(path: Path, platform: str) -> None:
         raise AssertionError(f"{platform} release kit missing required files: {sorted(missing)}")
     if any(name.endswith(("report.key", ".jsonl", ".sealed")) for name in names):
         raise AssertionError(f"{platform} release kit contains report/key material")
-    if "scripts/windows/evasion.ps1" in names:
-        raise AssertionError("release kit contains excluded evasion helper material")
-
     manifest = json.loads(payloads["RELEASE-MANIFEST.json"])
     if manifest["authorization_required"] is not True or manifest["default_execution_mode"] != "enumerate-only":
         raise AssertionError(f"{platform} release manifest safety contract is invalid")
     if manifest["platform"] != platform or manifest["architecture"] != "x86_64":
         raise AssertionError(f"{platform} release manifest target metadata is invalid")
+    expected_features = ["windows-evasion-scaffolds"] if platform == "windows" else []
+    if manifest.get("features") != expected_features:
+        raise AssertionError(f"{platform} release feature metadata is invalid")
+    if platform == "windows":
+        scaffold = payloads["scripts/evasion.ps1"].decode("utf-8")
+        for marker in ("executed = $false", "modifies_controls = $false", "status = 'planned'"):
+            if marker not in scaffold:
+                raise AssertionError(f"Windows evasion scaffold missing safety marker: {marker}")
     entries = {item["path"]: item for item in manifest["contents"]}
     if set(entries) != names - {"RELEASE-MANIFEST.json", "SHA256SUMS"}:
         raise AssertionError(f"{platform} manifest contents do not match archive contents")

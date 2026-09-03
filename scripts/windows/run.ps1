@@ -59,6 +59,9 @@ if (-not $cfg.ContainsKey('operator_ack_required') -or $cfg.operator_ack_require
 }
 $executionMode = if ($cfg.ContainsKey('execution_mode') -and $cfg.execution_mode) { $cfg.execution_mode } else { 'enumerate-only' }
 if ($executionMode -ne 'enumerate-only') { throw 'dispatcher: only enumerate-only fallback mode is supported' }
+$bundleMode = if ($cfg.ContainsKey('bundle_mode') -and $cfg.bundle_mode) { $cfg.bundle_mode } else { 'native-with-fallbacks' }
+if ($bundleMode -notin @('native-with-fallbacks', 'script-only')) { throw 'dispatcher: unsupported bundle mode' }
+if ($bundleMode -eq 'script-only' -and $cfg.primary_binary) { throw 'dispatcher: script-only bundle must not declare a primary binary' }
 
 if ($cfg.target_hostname -ne 'AUTO' -and $env:COMPUTERNAME -ne $cfg.target_hostname) {
   throw "dispatcher: target hostname mismatch (expected $($cfg.target_hostname), got $env:COMPUTERNAME)"
@@ -75,8 +78,8 @@ if (-not ($authorizedArg -or $authorizedEnv)) {
 }
 $env:STEALTHY_AUTHORIZED = '1'
 
-$primaryName = if ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
-$primarySrc = Join-Path $bundleDir $primaryName
+$primaryName = if ($bundleMode -eq 'script-only') { $null } elseif ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
+$primarySrc = if ($primaryName) { Join-Path $bundleDir $primaryName } else { $null }
 
 # Empty drop_dir (staged default) → run PE in place to avoid a second AV scan event.
 $useInPlace = -not $cfg.ContainsKey('drop_dir') -or [string]::IsNullOrWhiteSpace($cfg.drop_dir)
@@ -86,8 +89,8 @@ if ($useInPlace) {
 } else {
   $dropDir = $cfg.drop_dir
   New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
-  $primary = Join-Path $dropDir $primaryName
-  if ((Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
+  $primary = if ($primaryName) { Join-Path $dropDir $primaryName } else { $null }
+  if ($primarySrc -and (Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
     try {
       Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
       if (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
@@ -119,7 +122,7 @@ foreach ($file in @('enum.ps1', 'enum.js', 'EnumTasks.csproj')) {
 $argsToRun = if ($Arguments) { @($Arguments) } else { @('--profile', 'balanced', 'enum') }
 $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
 $env:STEALTHY_EXECUTION_PATH = 'binary'
-$env:STEALTHY_PRIMARY_LAUNCH = 'ok'
+$env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'ok' }
 $isJson = ($argsToRun -contains '--json') -or ($argsToRun -contains '--format=json') -or (($argsToRun -contains '--format') -and ($argsToRun -contains 'json'))
 $approvedFallbacks = if ($cfg.windows_fallbacks) {
   @($cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -140,7 +143,7 @@ function Resolve-FallbackPath([string]$Name) {
 }
 
 function Invoke-ApprovedFallbacks {
-  $env:STEALTHY_PRIMARY_LAUNCH = 'blocked'
+  $env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'blocked' }
   $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
   foreach ($fallback in $approvedFallbacks) {
     switch ($fallback) {
@@ -151,7 +154,7 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved powershell fallback')
+        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved powershell fallback' } else { 'dispatcher: primary executable blocked; trying approved powershell fallback' }))
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Authorized')
         if ($isJson) { $psArgs += '-Json' }
         try {
@@ -181,7 +184,7 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'jscript-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved jscript fallback')
+        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved jscript fallback' } else { 'dispatcher: primary executable blocked; trying approved jscript fallback' }))
         $jsArgs = @('//nologo', $script, '--authorized')
         if ($isJson) { $jsArgs += '--json' }
         try {
@@ -211,7 +214,7 @@ function Invoke-ApprovedFallbacks {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'
-        [Console]::Error.WriteLine('dispatcher: primary executable blocked; trying approved msbuild fallback')
+        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved msbuild fallback' } else { 'dispatcher: primary executable blocked; trying approved msbuild fallback' }))
         try {
           if ($isJson) {
             & msbuild.exe $project /nologo /v:minimal /p:StealthyJson=true

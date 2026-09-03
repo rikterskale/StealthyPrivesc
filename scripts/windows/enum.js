@@ -5,7 +5,8 @@ var wsh = new ActiveXObject("WScript.Shell");
 var fso = new ActiveXObject("Scripting.FileSystemObject");
 var authorized = false;
 var wantJson = false;
-for (var a = 0; a < WScript.Arguments.Count; a++) {
+var coverageErrors = {};
+for (var a = 0; a < WScript.Arguments.length; a++) {
   var arg = String(WScript.Arguments.Item(a)).toLowerCase();
   if (arg === "--authorized" || arg === "--i-understand-authorized-use-only") {
     authorized = true;
@@ -39,11 +40,40 @@ function jsonEscape(value) {
     .replace(/\t/g, "\\t");
 }
 
+function recordCoverageError(plugin, source, error) {
+  if (!coverageErrors[plugin]) {
+    coverageErrors[plugin] = [];
+  }
+  if (coverageErrors[plugin].length >= 8) {
+    return;
+  }
+  var code = "";
+  if (error && typeof error.number !== "undefined") {
+    code = " (error " + error.number + ")";
+  }
+  coverageErrors[plugin].push(source + " unreadable" + code);
+}
+
+function isMissingRegistryValue(error) {
+  if (!error || typeof error.number === "undefined") {
+    return false;
+  }
+  var code = error.number >>> 0;
+  return code === 2147942402 || code === 2147942403;
+}
+
 function readAie(root) {
   try {
     var key = root + "\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer";
     return wsh.RegRead(key + "\\AlwaysInstallElevated");
   } catch (e) {
+    if (!isMissingRegistryValue(e)) {
+      recordCoverageError(
+        "windows.always_install_elevated",
+        root + " AlwaysInstallElevated",
+        e
+      );
+    }
     return null;
   }
 }
@@ -100,7 +130,15 @@ function collectFindings() {
           "\\EnforcementMode"
       );
       applocker.push(names[n]);
-    } catch (e) {}
+    } catch (e) {
+      if (!isMissingRegistryValue(e)) {
+        recordCoverageError(
+          "windows.endpoint_controls",
+          "AppLocker " + names[n] + " EnforcementMode",
+          e
+        );
+      }
+    }
   }
   if (applocker.length > 0) {
     findings.push({
@@ -135,7 +173,15 @@ function collectFindings() {
         condition: "virtualization-based-security-enabled"
       });
     }
-  } catch (e) {}
+  } catch (e) {
+    if (!isMissingRegistryValue(e)) {
+      recordCoverageError(
+        "windows.endpoint_controls",
+        "DeviceGuard EnableVirtualizationBasedSecurity",
+        e
+      );
+    }
+  }
 
   return findings;
 }
@@ -222,6 +268,7 @@ function emitJson(findings) {
   out.push('"coverage":[');
   for (var c = 0; c < collected.length; c++) {
     var findingCount = 0;
+    var pluginErrors = coverageErrors[collected[c]] || [];
     for (var cf = 0; cf < findings.length; cf++) {
       if (findings[cf].plugin === collected[c]) {
         findingCount++;
@@ -230,9 +277,15 @@ function emitJson(findings) {
     out.push(
       '{"id":"' +
         collected[c] +
-        '","status":"ok","findings":' +
+        '","status":"' +
+        (pluginErrors.length > 0 ? "partial" : "ok") +
+        '","findings":' +
         findingCount +
-        ',"error":null,"duration_ms":0},'
+        ',"error":' +
+        (pluginErrors.length > 0
+          ? '"' + jsonEscape(pluginErrors.join("; ")) + '"'
+          : "null") +
+        ',"duration_ms":0},'
     );
   }
   for (var s = 0; s < delta.length; s++) {

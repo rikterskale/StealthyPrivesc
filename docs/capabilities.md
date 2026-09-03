@@ -36,7 +36,7 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
 | `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; AMSI/ETW/EDR disable and quarantine tamper are Planned separate families) |
 | Windows service/task ACL context | Native service-object DACL evaluation, registry-backed Task Scheduler descriptor checks for `WRITE_DAC`/`WRITE_OWNER`/`DELETE`, token-aware service/task file ACL checks, and read-only `icacls` fallback |
-| Silent network C2 client | Deferred (operator-printed sealed blob) |
+| Encrypted remote HTTPS output | Done (bounded external `curl` client, TLS 1.2 minimum, 2xx required, protected key retained on ambiguous delivery) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
 | Stable finding IDs + attack paths | Done (schema v2) |
 | MITRE / technique catalog | Done (engine-enriched) |
@@ -166,7 +166,7 @@ Optional:
 
 1. Encrypted seal file via `--output file --output-path PATH --key-output-path KEY_PATH`
 2. Plaintext JSON via `--plaintext-file`
-3. Operator-driven remote POST instructions via `--output remote --exfil-url URL`
+3. Encrypted HTTPS POST via `--output remote --exfil-url URL`; delivery failures are fatal
 
 ## Security, privacy, and operational controls
 
@@ -202,22 +202,55 @@ Optional:
 Intentional backlog. Items that change host protections require a distinct
 technique-family ID, ROE gate, and contract revision — they must not ship under
 today's `endpoint-bypass` meaning (alternate-path + approved-fixture
-validation). The three listed evasion IDs already exist as scaffold markers;
-dormant prototypes are retained in source but excluded from declaration,
-compilation, dispatch, and release packaging.
+validation). The three listed evasion IDs already exist as scaffold markers.
+Windows kits include a separately reviewed `windows-evasion-scaffolds` module
+that reports gated planned/not-executed status and contains no interference
+implementation; it is never selected by the enumeration dispatcher.
 
 | Enhancement | Status | Gate / notes |
 | --- | --- | --- |
-| Silent in-process HTTPS exfil client | Deferred | Operator-printed sealed blob today |
-| AMSI bypass / patching / blinding | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
-| ETW unhooking / patching / provider disablement | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
-| AV / EDR service stop or sensor unload | Scaffold/planned only | Separately confirmed ID; dormant prototype is not compiled, dispatched, or packaged |
+| In-process HTTPS exfil client | Deferred | Current encrypted remote delivery uses a bounded external `curl` client |
+| AMSI bypass / patching / blinding | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
+| ETW unhooking / patching / provider disablement | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
+| AV / EDR service stop or sensor unload | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
 | AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
 | Quarantine restore / quarantine-tamper helpers | Planned (contract change required) | New family; delivery-PE recovery / inspection |
 | Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |
 | Generic control-disable / "hide from sensor" payloads | Planned (contract change required) | New family; ROE-gated product decision |
 | Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still alternate-path only under `endpoint-bypass` |
 | Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Scaffold today | Existing allowlist IDs; follow-up revisions |
+
+### Audit-derived production-readiness roadmap
+
+The following backlog records the findings from the September 2026 module
+completion audit. Priorities put broken or weakly enforced user paths first,
+then remove placeholder behavior, then close verification gaps. A roadmap entry
+is not evidence that the work is implemented or production-ready.
+
+| Priority | Roadmap addition | Acceptance gate |
+| --- | --- | --- |
+| P0 | Repair the `cscript.exe` JScript fallback argument handling and replace swallowed registry errors with structured coverage notes. | Authorized and unauthorized JScript runs execute under Windows Script Host; JSON parses; authorization exit code remains `2`; registry access failures are represented in coverage output. |
+| P0 | Make the Windows native, quarantine-fallback, and JScript CI checks fail on unexpected execution paths, invalid JSON, or runtime errors instead of emitting warnings. | The Windows job fails when `coverage_mode`, `primary_launch`, `execution_path`, or JScript safety metadata differs from the contract. This is a CI configuration change and requires explicit approval before implementation. |
+| P0 | Align the normal CI Rust line-coverage floor with the documented 80% minimum. | CI and tag gates both enforce at least 80%; the documentation and workflow values agree. Raising the workflow threshold is a CI configuration change and requires explicit approval before implementation. |
+| P1 | Replace fallback-only staging's fake executable with an explicit bundle mode that never presents placeholder text as a binary. | `stage` either copies a verified binary or deliberately creates a script-only bundle whose manifest, dispatcher, verification, and help text identify that mode. |
+| P1 | Remove `copy_or_placeholder` behavior from control validation. | Required artifact fixtures fail with an actionable error when absent; deliberately synthetic fixtures are typed and reported as synthetic rather than silently substituted. |
+| P1 | Report Linux Python fallback filesystem failures instead of swallowing `OSError`. | Permission, read, and enumeration failures produce bounded structured coverage notes without exposing credential contents. |
+| P1 | Add a direct Windows runtime contract test for the packaged MSBuild fallback. | The packaged `EnumTasks.csproj` path is executed in an approved fixture, enforces authorization, emits valid reduced-coverage JSON, and preserves exit-code contracts. |
+| P2 | Close Rust core and CLI test gaps, starting with control validation, plugin workers, delivery, engine error paths, triage, UX, OS detection, and CLI parsing. | Every public behavior and material error path is mapped to a test; Clippy has zero warnings; the full default and constrained-flavor suites pass. |
+| P2 | Close Linux plugin test gaps, starting with endpoint controls, polkit, sudo, app control, SUID, PATH/LD, and credentials. | Fixture tests cover positive, negative, permission-denied, empty-input, cancellation, and bounded-resource paths without executing escalation techniques. |
+| P2 | Add per-file Windows coverage and close native plugin test gaps, especially `admin_sessions`, `app_control`, `autoruns`, `credentials`, `endpoint_controls`, `env_path`, `privileges`, and `uac`. | Windows coverage identifies unexecuted functions and lines; each public plugin behavior and unavailable/error state has a deterministic fixture test. |
+| P2 | Make clean-workstation verification reproducible where a Rust toolchain is initially absent. | Documented setup installs or locates the pinned toolchain, then runs fmt, Clippy, all tests, release builds, and the platform smoke suite from a clean checkout. Dependency or toolchain changes require explicit approval. |
+| P3 | Review AMSI, ETW, and AV/EDR prototype sources and decide whether to retain, remove, or redesign them under separately approved contracts. | Done: active Rust and PowerShell actions were replaced by compiled/tested status-only Rust gates and the shipped `windows-evasion-scaffolds` PowerShell module. Both require the distinct family ID, authorization, and confirmation and expose no execution/control-modification path. |
+| P3 | Decide the product contract for scaffold-only high-impact families (`persistence`, `host-crash`, `potato`, `kernel-exploit`, `service-replace`, `msi`, and `credential-dump`). | Each family is either explicitly retained as a non-executing roadmap marker or receives a separate specification, ROE gate, reversibility policy where possible, failure handling, and end-to-end acceptance plan. None may be folded into `endpoint-bypass`. |
+
+Recommended execution order is P0 → P1 → P2. P3 is a governance and safety
+decision, not a prerequisite for certifying the supported enumerate-and-validate
+product surface.
+
+Implementation update: the three P0 items, all four P1 items, and the reviewed
+Windows evasion-scaffold contract are implemented in this revision. The P2
+verification work is enforced by CI and remains a continuing coverage program;
+the other governance items retain their acceptance gates above.
 
 ## Phase 2 coverage (implemented)
 

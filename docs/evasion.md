@@ -5,12 +5,18 @@ service manipulation. The IDs `amsi-bypass`, `etw-unhook`, and
 `av-edr-service` are retained as separately gated, scaffold/planned technique
 families so an operator can record ROE intent without running a payload.
 
-Dormant source prototypes for those families are retained for future review,
-but they are not declared by the Rust module tree, compiled into the binary,
-dispatched by the CLI, or included in release kits. An allowlisted family
-produces a `scaffold` finding with low-confidence scaffold evidence; it is not
-an `exploit_attempt`, does not patch memory, does not alter providers, and does
-not change service state.
+Windows kits ship `scripts/evasion.ps1` as the separately reviewed
+`windows-evasion-scaffolds` feature. The module applies the same three gates and
+returns structured `planned`, `executed=false`, and `modifies_controls=false`
+status. It contains no control-interference implementation and is not invoked
+by the enumeration dispatcher. An allowlisted family produces a `scaffold`
+finding with low-confidence scaffold evidence; it is not an `exploit_attempt`,
+does not patch memory, does not alter providers, and does not change service
+state.
+
+The Rust companion modules in `crates/stealthy/src/exploit/` are compiled and
+test-covered status gates. They contain no memory-patching, telemetry-unhooking,
+or service-control APIs.
 
 ## Gates and resulting behavior
 
@@ -58,8 +64,8 @@ high-impact-family contract.
 
 Windows PowerShell, JScript, and MSBuild-hosted enumeration fallbacks are
 reduced, enumerate-only collectors. The dispatcher and enumeration scripts do
-not import or invoke the dormant evasion prototype. Their JSON must report the
-data actually collected and make native coverage gaps explicit.
+not import or invoke the separately shipped scaffold module. Their JSON must
+report the data actually collected and make native coverage gaps explicit.
 
 ## Related documentation
 

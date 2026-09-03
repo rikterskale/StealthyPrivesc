@@ -5,7 +5,7 @@
 //! It never changes policy, ACLs, trust databases, certificates, mounts,
 //! capabilities, SUID bits, or kernel state.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -36,6 +36,7 @@ struct Fixtures {
     root: PathBuf,
     base: PathBuf,
     comparison_base: PathBuf,
+    comparison_origin: &'static str,
     unsigned: PathBuf,
     changed: PathBuf,
     shell: PathBuf,
@@ -55,6 +56,31 @@ struct EventSnapshot {
 }
 
 pub fn run(options: &Options) -> Result<ControlValidationReport> {
+    let cases = controls::validation_cases_for(&options.platform);
+    if let Some(filter) = options.case_filter.as_deref() {
+        if filter.trim().is_empty() {
+            bail!("control validation case cannot be empty");
+        }
+        let recognized = filter == "policy-drift"
+            || cases.iter().any(|case| {
+                case.id == filter
+                    || (filter == "hash-drift" && case.id == "integrity-drift")
+                    || (filter == "integrity-drift" && case.id == "hash-drift")
+            });
+        if !recognized {
+            let mut valid = cases
+                .iter()
+                .map(|case| case.id.as_str())
+                .collect::<Vec<_>>();
+            if !valid.contains(&"policy-drift") {
+                valid.push("policy-drift");
+            }
+            bail!(
+                "unknown control validation case '{filter}'; valid cases: {}",
+                valid.join(", ")
+            );
+        }
+    }
     let started_at_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -94,7 +120,7 @@ pub fn run(options: &Options) -> Result<ControlValidationReport> {
     }
     let (root, owned_root) = fixture_root(options)?;
     let fixtures = prepare_fixtures(&root, options.artifact.as_deref())?;
-    let selected = controls::validation_cases_for(&options.platform)
+    let selected = cases
         .into_iter()
         .filter(|case| {
             options.case_filter.as_deref().is_none_or(|filter| {
@@ -126,6 +152,7 @@ pub fn run(options: &Options) -> Result<ControlValidationReport> {
     let mut notes = vec![
         "Fixtures are disposable and were never used to change host policy, trust databases, ACLs, mounts, capabilities, certificates, or kernel state.".into(),
         "A result of observed means evidence was collected; it does not mean the effective policy allowed or blocked an artifact unless that result is explicitly recorded.".into(),
+        format!("comparison_fixture_type={}", fixtures.comparison_origin),
     ];
     if let Some(baseline) = &options.baseline {
         let baseline_assessment = load_baseline(baseline)?;
@@ -325,7 +352,7 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
     fs::create_dir_all(root)?;
     let base = root.join(if cfg!(windows) { "probe.exe" } else { "probe" });
     let probe_source = std::env::current_exe().unwrap_or_else(|_| root.join("missing-source"));
-    copy_or_placeholder(&probe_source, &base)?;
+    copy_required_fixture(&probe_source, &base)?;
     make_executable(&base)?;
 
     let comparison_base = root.join(if cfg!(windows) {
@@ -333,16 +360,23 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
     } else {
         "comparison-base"
     });
+    let comparison_origin;
     // Windows Defender can briefly hold a copied PE in TEMP. Comparison cases
     // only need deterministic artifact metadata, so use a text fixture when no
     // operator-supplied artifact is under test.
     if cfg!(windows) && source.is_none() {
+        comparison_origin = "synthetic-metadata";
         write_fixture(
             &comparison_base,
             b"disposable comparison artifact metadata\n",
         )?;
     } else {
-        copy_or_placeholder(source.unwrap_or(&probe_source), &comparison_base)?;
+        comparison_origin = if source.is_some() {
+            "operator-supplied-copy"
+        } else {
+            "current-executable-copy"
+        };
+        copy_required_fixture(source.unwrap_or(&probe_source), &comparison_base)?;
     }
     make_executable(&comparison_base)?;
 
@@ -351,14 +385,14 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
     } else {
         "unsigned"
     });
-    copy_or_placeholder(&comparison_base, &unsigned)?;
+    copy_required_fixture(&comparison_base, &unsigned)?;
     make_executable(&unsigned)?;
     let changed = root.join(if cfg!(windows) {
         "hash-drift.exe"
     } else {
         "hash-drift"
     });
-    copy_or_placeholder(&comparison_base, &changed)?;
+    copy_required_fixture(&comparison_base, &changed)?;
     OpenOptions::new()
         .append(true)
         .open(&changed)
@@ -403,6 +437,7 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
         root: root.to_path_buf(),
         base,
         comparison_base,
+        comparison_origin,
         unsigned,
         changed,
         shell,
@@ -710,7 +745,7 @@ fn run_case(
                     .file_name()
                     .unwrap_or_else(|| std::ffi::OsStr::new("probe")),
             );
-            copy_or_placeholder(&fixtures.base, &staged)?;
+            copy_required_fixture(&fixtures.base, &staged)?;
             make_executable(&staged)?;
             result
                 .observations
@@ -1037,13 +1072,15 @@ fn compare_policy_drift(before: &ControlAssessment, after: &ControlAssessment) -
     }
 }
 
-fn copy_or_placeholder(source: &Path, target: &Path) -> Result<()> {
-    if source.is_file() {
-        fs::copy(source, target)
-            .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
-    } else {
-        write_fixture(target, b"disposable control-test placeholder\n")?;
+fn copy_required_fixture(source: &Path, target: &Path) -> Result<()> {
+    if !source.is_file() {
+        bail!(
+            "required control-test fixture source is missing or not a file: {}",
+            source.display()
+        );
     }
+    fs::copy(source, target)
+        .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
     Ok(())
 }
 
@@ -1095,7 +1132,36 @@ fn configure_windows_acl_fixtures(_user_path: &Path, _admin_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
-    use super::{run, Options};
+    use super::{copy_required_fixture, run, Options};
+
+    #[test]
+    fn missing_required_fixture_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing-source");
+        let target = root.path().join("target");
+        let error = copy_required_fixture(&missing, &target).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("required control-test fixture source is missing"));
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn invalid_case_filters_are_rejected_before_fixture_creation() {
+        for filter in ["", "missing-case"] {
+            let root = tempfile::tempdir().unwrap();
+            let fixture_root = root.path().join("must-not-exist");
+            let error = run(&Options {
+                platform: "linux".into(),
+                case_filter: Some(filter.into()),
+                root: Some(fixture_root.clone()),
+                ..Default::default()
+            })
+            .unwrap_err();
+            assert!(error.to_string().contains("control validation case"));
+            assert!(!fixture_root.exists());
+        }
+    }
 
     #[test]
     fn suite_creates_and_cleans_only_generated_fixtures() {
@@ -1108,6 +1174,10 @@ mod tests {
         assert!(report.fixtures_cleaned);
         assert_eq!(report.results.len(), 1);
         assert_eq!(report.results[0].status, "observed_drift");
+        assert!(report
+            .notes
+            .iter()
+            .any(|note| note == "comparison_fixture_type=current-executable-copy"));
     }
 
     #[test]

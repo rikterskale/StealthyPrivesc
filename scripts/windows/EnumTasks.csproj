@@ -21,7 +21,7 @@
     <StealthyHost>$([System.Environment]::GetEnvironmentVariable('COMPUTERNAME'))</StealthyHost>
     <StealthyArch>$([System.Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE'))</StealthyArch>
     <StealthyRunId>$([System.Guid]::NewGuid().ToString('N').Substring(0, 24))</StealthyRunId>
-    <StealthyStarted>$([System.Convert]::ToInt64([System.DateTime]::UtcNow.Subtract([System.DateTime]::new(1970, 1, 1)).TotalSeconds))</StealthyStarted>
+    <StealthyStarted>$([System.DateTime]::UtcNow.Subtract($([System.DateTime]::Parse('1970-01-01'))).TotalSeconds.ToString('0'))</StealthyStarted>
   </PropertyGroup>
 
   <Target Name="Enum">

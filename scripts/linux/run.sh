@@ -43,6 +43,15 @@ require operator_ack_required
 [[ "${cfg[execution_mode]:-enumerate-only}" == "enumerate-only" ]] || {
   echo "dispatcher: only enumerate-only fallback mode is supported" >&2; exit 78;
 }
+bundle_mode="${cfg[bundle_mode]:-native-with-fallbacks}"
+case "$bundle_mode" in
+  native-with-fallbacks|script-only) ;;
+  *) echo "dispatcher: unsupported bundle mode" >&2; exit 78 ;;
+esac
+if [[ "$bundle_mode" == "script-only" && -n "${cfg[primary_binary]:-}" ]]; then
+  echo "dispatcher: script-only bundle must not declare a primary binary" >&2
+  exit 78
+fi
 
 actual_host="$(cat /etc/hostname 2>/dev/null || hostname 2>/dev/null || true)"
 expected_host="${cfg[target_hostname]}"
@@ -74,10 +83,16 @@ export STEALTHY_AUTHORIZED=1
 
 drop_dir="${cfg[drop_dir]:-$bundle_dir/.run-cache}"
 mkdir -p "$drop_dir"
-primary_name="${cfg[primary_binary]:-stealthy}"
-primary_src="$bundle_dir/$primary_name"
-primary="$drop_dir/$primary_name"
-if [[ -f "$primary_src" && "$primary_src" != "$primary" ]]; then
+if [[ "$bundle_mode" == "script-only" ]]; then
+  primary_name=""
+  primary_src=""
+  primary=""
+else
+  primary_name="${cfg[primary_binary]:-stealthy}"
+  primary_src="$bundle_dir/$primary_name"
+  primary="$drop_dir/$primary_name"
+fi
+if [[ -n "$primary_src" && -f "$primary_src" && "$primary_src" != "$primary" ]]; then
   install -m 0750 "$primary_src" "$primary"
 fi
 for file in enum.py enum.sh enum-posix.sh enum.pl; do
@@ -96,7 +111,11 @@ primary_args=("${args[@]}")
 # may enrich it, but it never creates or broadens that authorization.
 export STEALTHY_MANIFEST_ROE_REF="${STEALTHY_ROE_REF:-${cfg[roe_ref]}}"
 export STEALTHY_EXECUTION_PATH="binary"
-export STEALTHY_PRIMARY_LAUNCH="ok"
+if [[ "$bundle_mode" == "script-only" ]]; then
+  export STEALTHY_PRIMARY_LAUNCH="not_applicable"
+else
+  export STEALTHY_PRIMARY_LAUNCH="ok"
+fi
 
 is_json=false
 for ((i = 0; i < ${#args[@]}; i++)); do
@@ -134,9 +153,17 @@ try_fallback() {
   local -a extra_args=("$@")
 
   export STEALTHY_EXECUTION_PATH="${label}-fallback"
-  export STEALTHY_PRIMARY_LAUNCH="blocked"
+  if [[ "$bundle_mode" == "script-only" ]]; then
+    export STEALTHY_PRIMARY_LAUNCH="not_applicable"
+  else
+    export STEALTHY_PRIMARY_LAUNCH="blocked"
+  fi
   export STEALTHY_MANIFEST_ROE_REF="${STEALTHY_ROE_REF:-${cfg[roe_ref]}}"
-  echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2
+  if [[ "$bundle_mode" == "script-only" ]]; then
+    echo "dispatcher: script-only bundle; trying approved $label fallback" >&2
+  else
+    echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2
+  fi
 
   local -a cmd=("$interpreter" "$script" --authorized)
   if [[ "$is_json" == true ]]; then

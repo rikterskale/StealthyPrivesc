@@ -48,93 +48,11 @@ impl Plugin for ContainersPlugin {
             ),
         ];
 
-        let mut any_sock = false;
-        for (path, label, sev) in sockets {
-            if ctx.cancelled() {
-                break;
-            }
-            let p = Path::new(path);
-            let Ok(link_meta) = std::fs::symlink_metadata(p) else {
-                continue;
-            };
-            if link_meta.file_type().is_symlink() {
-                continue;
-            }
-            if !link_meta.file_type().is_socket() {
-                findings.push(Finding {
-                    plugin: self.id().into(),
-                    kind: FindingKind::Enumeration,
-                    severity: Severity::Low,
-                    title: format!("Expected {label} socket path is not a socket"),
-                    detail: format!("path={path} symlink=false socket=false"),
-                    recommendation: "Verify whether this is a stale or replaced runtime path; it was not opened.".into(),
-                    noisy: false,
-                    leaves_artifacts: false,
-                    object: path.into(),
-                    condition: "container-socket-path-non-socket".into(),
-                    ..Default::default()
-                });
-                continue;
-            }
-            any_sock = true;
-            if let Ok(meta) = std::fs::metadata(p) {
-                let access = classify_socket_permissions(
-                    meta.mode(),
-                    meta.uid(),
-                    meta.gid(),
-                    util::euid(),
-                    &util::current_gids(),
-                );
-                findings.push(Finding {
-                    plugin: self.id().into(),
-                    kind: FindingKind::Enumeration,
-                    severity: Severity::Info,
-                    title: format!("{label} socket present"),
-                    detail: format!(
-                        "path={} mode={:o} uid={} gid={} permission_class={}",
-                        p.display(),
-                        meta.mode(),
-                        meta.uid(),
-                        meta.gid(),
-                        access.as_str()
-                    ),
-                    recommendation: format!(
-                        "RW access to {label} sockets is often host-root equivalent."
-                    ),
-                    noisy: false,
-                    leaves_artifacts: false,
-                    object: p.display().to_string(),
-                    condition: "container-socket-present".into(),
-                    ..Default::default()
-                });
-
-                let writable = util::is_effectively_writable_opts(
-                    p,
-                    util::euid(),
-                    &util::current_gids(),
-                    !ctx.prefer_quiet,
-                )
-                .unwrap_or(false);
-                if writable {
-                    findings.push(Finding {
-                        plugin: self.id().into(),
-                        kind: FindingKind::Misconfiguration,
-                        severity: sev,
-                        title: format!("Current user can open {label} socket RW"),
-                        detail: path.into(),
-                        recommendation: "Do not start privileged containers unless ROE allows."
-                            .into(),
-                        noisy: false,
-                        leaves_artifacts: false,
-                        object: p.display().to_string(),
-                        condition: "container-socket-current-user-writable".into(),
-                        mitre_techniques: vec!["T1611".into()],
-                        technique_id: "container-socket".into(),
-                        ..Default::default()
-                    });
-                }
-            }
-        }
+        let socket_paths =
+            sockets.map(|(path, label, severity)| (Path::new(path), label, severity));
+        let (socket_findings, any_sock) =
+            scan_sockets(ctx, &socket_paths, util::euid(), &util::current_gids());
+        findings.extend(socket_findings);
 
         if !any_sock {
             findings.push(Finding {
@@ -156,28 +74,8 @@ impl Plugin for ContainersPlugin {
         if !ctx.cancelled() {
             if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
                 let rootless = Path::new(&xdg).join("podman/podman.sock");
-                let rootless_is_socket =
-                    std::fs::symlink_metadata(&rootless)
-                        .ok()
-                        .is_some_and(|meta| {
-                            !meta.file_type().is_symlink() && meta.file_type().is_socket()
-                        });
-                if rootless_is_socket {
-                    findings.push(Finding {
-                        plugin: self.id().into(),
-                        kind: FindingKind::Enumeration,
-                        severity: Severity::Medium,
-                        title: "Rootless podman socket present".into(),
-                        detail: rootless.display().to_string(),
-                        recommendation:
-                            "Assess whether this user can escalate within/out of the rootless context."
-                                .into(),
-                        noisy: false,
-                        leaves_artifacts: false,
-                        object: rootless.display().to_string(),
-                        condition: "rootless-container-socket-present".into(),
-                        ..Default::default()
-                    });
+                if let Some(finding) = rootless_socket_finding(&rootless) {
+                    findings.push(finding);
                 }
             }
         }
@@ -208,6 +106,112 @@ impl Plugin for ContainersPlugin {
 
         Ok(findings)
     }
+}
+
+fn scan_sockets(
+    ctx: &PluginContext<'_>,
+    sockets: &[(&Path, &str, Severity)],
+    euid: u32,
+    gids: &[u32],
+) -> (Vec<Finding>, bool) {
+    let mut findings = Vec::new();
+    let mut any_sock = false;
+    for (path, label, severity) in sockets {
+        if ctx.cancelled() {
+            break;
+        }
+        let Ok(link_meta) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if link_meta.file_type().is_symlink() {
+            continue;
+        }
+        if !link_meta.file_type().is_socket() {
+            findings.push(Finding {
+                plugin: "linux.containers".into(),
+                kind: FindingKind::Enumeration,
+                severity: Severity::Low,
+                title: format!("Expected {label} socket path is not a socket"),
+                detail: format!("path={} symlink=false socket=false", path.display()),
+                recommendation:
+                    "Verify whether this is a stale or replaced runtime path; it was not opened."
+                        .into(),
+                noisy: false,
+                leaves_artifacts: false,
+                object: path.display().to_string(),
+                condition: "container-socket-path-non-socket".into(),
+                ..Default::default()
+            });
+            continue;
+        }
+        any_sock = true;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let access =
+                classify_socket_permissions(meta.mode(), meta.uid(), meta.gid(), euid, gids);
+            findings.push(Finding {
+                plugin: "linux.containers".into(),
+                kind: FindingKind::Enumeration,
+                severity: Severity::Info,
+                title: format!("{label} socket present"),
+                detail: format!(
+                    "path={} mode={:o} uid={} gid={} permission_class={}",
+                    path.display(),
+                    meta.mode(),
+                    meta.uid(),
+                    meta.gid(),
+                    access.as_str()
+                ),
+                recommendation: format!(
+                    "RW access to {label} sockets is often host-root equivalent."
+                ),
+                noisy: false,
+                leaves_artifacts: false,
+                object: path.display().to_string(),
+                condition: "container-socket-present".into(),
+                ..Default::default()
+            });
+            if util::is_effectively_writable_opts(path, euid, gids, !ctx.prefer_quiet)
+                .unwrap_or(false)
+            {
+                findings.push(Finding {
+                    plugin: "linux.containers".into(),
+                    kind: FindingKind::Misconfiguration,
+                    severity: *severity,
+                    title: format!("Current user can open {label} socket RW"),
+                    detail: path.display().to_string(),
+                    recommendation: "Do not start privileged containers unless ROE allows.".into(),
+                    noisy: false,
+                    leaves_artifacts: false,
+                    object: path.display().to_string(),
+                    condition: "container-socket-current-user-writable".into(),
+                    mitre_techniques: vec!["T1611".into()],
+                    technique_id: "container-socket".into(),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+    (findings, any_sock)
+}
+
+fn rootless_socket_finding(path: &Path) -> Option<Finding> {
+    let is_socket = std::fs::symlink_metadata(path)
+        .ok()
+        .is_some_and(|meta| !meta.file_type().is_symlink() && meta.file_type().is_socket());
+    is_socket.then(|| Finding {
+        plugin: "linux.containers".into(),
+        kind: FindingKind::Enumeration,
+        severity: Severity::Medium,
+        title: "Rootless podman socket present".into(),
+        detail: path.display().to_string(),
+        recommendation: "Assess whether this user can escalate within/out of the rootless context."
+            .into(),
+        noisy: false,
+        leaves_artifacts: false,
+        object: path.display().to_string(),
+        condition: "rootless-container-socket-present".into(),
+        ..Default::default()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,7 +253,18 @@ fn classify_socket_permissions(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_socket_permissions, SocketPermission};
+    use super::{
+        classify_socket_permissions, rootless_socket_finding, scan_sockets, SocketPermission,
+    };
+    use crate::core::plugin::PluginContext;
+    use crate::core::profile::EngagementProfile;
+    use crate::core::store::EncryptedStore;
+    use crate::core::types::Severity;
+    use crate::exploit::TechniqueAllowlist;
+    use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
+    use std::os::unix::net::UnixListener;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn golden_docker_socket_modes_are_classified() {
@@ -281,5 +296,71 @@ mod tests {
                 fields[0]
             );
         }
+    }
+
+    #[test]
+    fn socket_fixture_scan_covers_types_access_rootless_and_cancellation() {
+        let root = tempfile::tempdir().unwrap();
+        let socket = root.path().join("runtime.sock");
+        let _listener = UnixListener::bind(&socket).unwrap();
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let regular = root.path().join("stale.sock");
+        std::fs::write(&regular, b"not a socket").unwrap();
+        let linked = root.path().join("linked.sock");
+        symlink(&socket, &linked).unwrap();
+        let missing = root.path().join("missing.sock");
+
+        let metadata = std::fs::metadata(&socket).unwrap();
+        let euid = metadata.uid().saturating_add(1);
+        let allow = TechniqueAllowlist::default();
+        let mut store = EncryptedStore::new();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let context = PluginContext {
+            verbose: false,
+            auto_exploit: false,
+            prefer_quiet: true,
+            noise_budget: EngagementProfile::Ci.noise_budget(),
+            allow_techniques: &allow,
+            store: &mut store,
+            approved_probe_ids: &[],
+            artifact_path: None,
+            control_assessment: None,
+            cancel: cancel.clone(),
+        };
+        let (findings, any_socket) = scan_sockets(
+            &context,
+            &[
+                (socket.as_path(), "fixture", Severity::Critical),
+                (regular.as_path(), "stale", Severity::High),
+                (linked.as_path(), "linked", Severity::Low),
+                (missing.as_path(), "missing", Severity::Low),
+            ],
+            euid,
+            &[],
+        );
+        assert!(any_socket);
+        assert!(findings
+            .iter()
+            .any(|finding| finding.condition == "container-socket-present"));
+        assert!(findings.iter().any(|finding| {
+            finding.condition == "container-socket-current-user-writable"
+                && finding.severity == Severity::Critical
+        }));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.condition == "container-socket-path-non-socket"));
+        assert!(rootless_socket_finding(&socket).is_some());
+        assert!(rootless_socket_finding(&regular).is_none());
+        assert!(rootless_socket_finding(&linked).is_none());
+
+        cancel.store(true, Ordering::SeqCst);
+        let (findings, any_socket) = scan_sockets(
+            &context,
+            &[(socket.as_path(), "fixture", Severity::Critical)],
+            euid,
+            &[],
+        );
+        assert!(findings.is_empty());
+        assert!(!any_socket);
     }
 }

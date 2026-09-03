@@ -339,7 +339,7 @@ pub enum Commands {
         /// Output directory.
         #[arg(long)]
         out: std::path::PathBuf,
-        /// Optional real binary to copy into the bundle.
+        /// Optional real binary to copy. If omitted, create an explicit script-only bundle.
         #[arg(long)]
         binary: Option<std::path::PathBuf>,
         /// Hostname the staged dispatcher is allowed to run on.
@@ -459,7 +459,7 @@ pub enum OutputMode {
     Memory,
     /// Write an encrypted blob (or plaintext JSON with --plaintext-file) to --output-path.
     File,
-    /// Attempt optional HTTPS POST of encrypted findings to --exfil-url.
+    /// POST encrypted findings to --exfil-url over HTTPS.
     Remote,
 }
 

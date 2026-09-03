@@ -28,6 +28,7 @@ from typing import Any
 
 FINDINGS: list[dict[str, Any]] = []
 PLUGINS_RUN: list[str] = []
+COVERAGE_ERRORS: dict[str, list[str]] = {}
 JSON_MODE = False
 
 
@@ -66,6 +67,16 @@ def add_finding(
             "technique_id": f"{plugin}.{kind}",
         }
     )
+
+
+def record_coverage_error(plugin: str, source: str, error: OSError) -> None:
+    errors = COVERAGE_ERRORS.setdefault(plugin, [])
+    if len(errors) >= 8:
+        return
+    message = f"{source}: {type(error).__name__}"
+    errors.append(message)
+    if not JSON_MODE:
+        print(f"coverage warning: {message}")
 
 
 def banner() -> None:
@@ -111,9 +122,9 @@ def sudoers() -> None:
     if d.is_dir():
         try:
             paths.extend(sorted(d.iterdir()))
-        except OSError:
+        except OSError as error:
             # A locked-down target may expose the directory but deny listing it.
-            pass
+            record_coverage_error("linux.sudo", "/etc/sudoers.d listing", error)
     for p in paths:
         try:
             text = p.read_text(errors="replace")
@@ -255,8 +266,8 @@ def polkit() -> None:
     if pk.exists():
         try:
             print(f"pkexec mode={oct(pk.stat().st_mode)}")
-        except OSError:
-            pass
+        except OSError as error:
+            record_coverage_error("linux.polkit", "/usr/bin/pkexec metadata", error)
     print()
 
 
@@ -296,8 +307,8 @@ def mounts() -> None:
     try:
         for line in Path("/proc/self/mountinfo").read_text().splitlines()[:8]:
             print(line)
-    except OSError:
-        pass
+    except OSError as error:
+        record_coverage_error("linux.mounts", "/proc/self/mountinfo", error)
     print()
 
 
@@ -326,8 +337,8 @@ def endpoint_controls() -> None:
     if enforce.is_file():
         try:
             print(f"SELinux enforce={enforce.read_text().strip()}")
-        except OSError:
-            pass
+        except OSError as error:
+            record_coverage_error("linux.endpoint_controls", "SELinux enforce", error)
 
     watch = ["/tmp", "/var/tmp", "/dev/shm"]
     home = os.environ.get("HOME")
@@ -354,8 +365,8 @@ def endpoint_controls() -> None:
     if yama.is_file():
         try:
             print(f"yama.ptrace_scope={yama.read_text().strip()}")
-        except OSError:
-            pass
+        except OSError as error:
+            record_coverage_error("linux.endpoint_controls", "Yama ptrace_scope", error)
     print(
         "NOTE: if custom ELF is blocked, prefer this script or enum.sh (approved fallback)."
     )
@@ -380,8 +391,8 @@ def kernel() -> None:
     print("[*] kernel")
     try:
         print(Path("/proc/version").read_text().splitlines()[0])
-    except OSError:
-        pass
+    except OSError as error:
+        record_coverage_error("linux.kernel_cve", "/proc/version", error)
     print("NOTE: kernel LPE is not executed by this fallback.")
     print()
 
@@ -424,9 +435,11 @@ def emit_json() -> None:
         "coverage": [
             {
                 "id": pid,
-                "status": "ok",
+                "status": "partial" if COVERAGE_ERRORS.get(pid) else "ok",
                 "findings": sum(1 for finding in FINDINGS if finding["plugin"] == pid),
-                "error": None,
+                "error": "; ".join(COVERAGE_ERRORS[pid])
+                if COVERAGE_ERRORS.get(pid)
+                else None,
                 "duration_ms": 0,
             }
             for pid in PLUGINS_RUN
@@ -437,6 +450,10 @@ def emit_json() -> None:
         "notes": [
             "Script fallback coverage is reduced versus the Rust binary.",
             "Use `stealthy ingest` to normalize and enrich this report.",
+        ]
+        + [
+            f"{plugin} coverage partial: {'; '.join(errors)}"
+            for plugin, errors in sorted(COVERAGE_ERRORS.items())
         ],
     }
     print(json.dumps(report, indent=2))

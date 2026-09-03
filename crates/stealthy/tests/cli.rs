@@ -113,6 +113,21 @@ fn beginner_and_offline_cli_helpers_are_executable() {
         "confirmed during operator review"
     );
     assert!(dispositions["dispositions"][0]["recorded_at_unix"].is_number());
+    let rejected_disposition = dir.path().join("rejected-disposition.json");
+    let output = stealthy()
+        .args([
+            "disposition",
+            report_path.to_str().unwrap(),
+            "missing-id",
+            "fixed",
+            "--out",
+            rejected_disposition.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("was not found"));
+    assert!(!rejected_disposition.exists());
     let lab_root = dir.path().join("lab");
     let output = stealthy()
         .args(["security-lab", "--root", lab_root.to_str().unwrap()])
@@ -269,6 +284,31 @@ fn encrypted_file_output_requires_protected_key_sink() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--key-output-path"));
+}
+
+#[test]
+fn remote_output_rejects_non_https_destinations_before_creating_a_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_path = dir.path().join("remote.key");
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--output",
+            "remote",
+            "--exfil-url",
+            "http://127.0.0.1/ingest",
+            "--key-output-path",
+            key_path.to_str().unwrap(),
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("absolute https:// URL"));
+    assert!(!key_path.exists());
 }
 
 #[test]
@@ -747,6 +787,58 @@ fn allow_techniques_records_scaffold_findings() {
 
 #[cfg(not(feature = "enum-only"))]
 #[test]
+fn evasion_families_require_confirmation_and_emit_status_only_findings() {
+    let rejected = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "enum",
+            "--allow-techniques",
+            "amsi-bypass",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("--confirm-evasion"));
+
+    let output = stealthy()
+        .args([
+            "--authorized",
+            "--confirm-evasion",
+            "--quiet",
+            "--format",
+            "json",
+            "enum",
+            "--allow-techniques",
+            "amsi-bypass,etw-unhook,av-edr-service",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings = report["findings"].as_array().unwrap();
+    for technique in ["amsi-bypass", "etw-unhook", "av-edr-service"] {
+        let finding = findings
+            .iter()
+            .find(|finding| finding["technique_id"] == technique)
+            .unwrap_or_else(|| panic!("missing {technique} scaffold"));
+        assert_eq!(finding["plugin"], "windows.evasion");
+        assert_eq!(finding["kind"], "scaffold");
+        assert_eq!(finding["leaves_artifacts"], false);
+        assert_eq!(finding["condition"], "technique-scaffold-opted-in");
+    }
+}
+
+#[cfg(not(feature = "enum-only"))]
+#[test]
 fn endpoint_bypass_wires_next_command_to_validation() {
     let artifact = tempfile::NamedTempFile::new().unwrap();
     let artifact_path = artifact.path().display().to_string();
@@ -990,6 +1082,91 @@ fn stage_and_verify_local_bundle() {
     );
 }
 
+#[test]
+fn controls_rejects_unknown_and_empty_case_filters() {
+    for filter in ["", "missing-case"] {
+        let output = stealthy()
+            .args(["--authorized", "controls", "--case", filter])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "filter={filter:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("control validation case"),
+            "filter={filter:?} stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn empty_plugin_ids_fail_with_actionable_error() {
+    for flag in ["--plugins", "--skip"] {
+        let output = stealthy()
+            .args(["--authorized", "--quiet", "enum", flag, ""])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "flag={flag}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("plugin ID lists cannot contain empty values"),
+            "flag={flag} stderr={stderr}"
+        );
+        assert!(
+            stderr.contains("list-plugins"),
+            "flag={flag} stderr={stderr}"
+        );
+        assert!(
+            !stderr.contains("Suggestions:"),
+            "flag={flag} stderr={stderr}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn staged_script_only_bundle_runs_without_a_primary_artifact() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        stage.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&stage.stderr)
+    );
+    assert!(!out.join("stealthy").exists());
+    let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+    assert!(manifest.contains("bundle_mode=script-only"));
+    assert!(manifest.contains("\nprimary_binary=\n"));
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["coverage_mode"], "script");
+    assert_eq!(report["primary_launch"], "not_applicable");
+    assert_eq!(report["execution_path"], "python-fallback");
+}
+
 #[cfg(unix)]
 #[test]
 fn stage_output_must_be_empty() {
@@ -1094,10 +1271,12 @@ fn stage_windows_manifest_lists_script_hosts() {
     );
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
     assert!(manifest.contains("windows_fallbacks=powershell,jscript,msbuild"));
+    assert!(manifest.contains("shipped_features=windows-evasion-scaffolds"));
     assert!(out.join("scripts/run.ps1").is_file());
     assert!(out.join("scripts/enum.ps1").is_file());
     assert!(out.join("scripts/enum.js").is_file());
     assert!(out.join("scripts/EnumTasks.csproj").is_file());
+    assert!(out.join("scripts/evasion.ps1").is_file());
 }
 
 #[cfg(unix)]

@@ -517,7 +517,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      COVERAGE_MIN_LINES: "79"
+      COVERAGE_MIN_LINES: "80"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -683,15 +683,14 @@ jobs:
           } else {
             Write-Warning "Staged binary quarantined by Defender — validating script fallback path"
             $scriptOutput = & (Join-Path $stage 'scripts\run.ps1') --authorized --format=json enum
-            if ($LASTEXITCODE -ne 0) { Write-Warning "Script fallback exit code: $LASTEXITCODE" }
+            if ($LASTEXITCODE -ne 0) { throw "script fallback failed with exit $LASTEXITCODE" }
             try {
               $fallthrough = $scriptOutput | ConvertFrom-Json
-              if ($fallthrough.coverage_mode -ne 'script') {
-                Write-Warning "Note: Staged binary may have bypassed Defender quarantine (got '$($fallthrough.coverage_mode)' instead of 'script')"
-              }
             } catch {
-              Write-Warning "Could not validate script fallback: $_"
+              throw "could not parse script fallback JSON: $_"
             }
+            if ($fallthrough.coverage_mode -ne 'script') { throw "script fallback coverage_mode mismatch: $($fallthrough.coverage_mode)" }
+            if ($fallthrough.authorized_use_ack -ne $true -or $fallthrough.mode -ne 'enumerate-only') { throw 'script fallback safety metadata mismatch' }
           }
           & $bin --ledger-dir $ledger cleanup --latest
 
@@ -700,6 +699,7 @@ jobs:
           & $bin stage --os windows --target-hostname $env:COMPUTERNAME --out $fallbackRoot --name stealthy --ledger-dir $fallbackLedger
           $reduced = & (Join-Path $fallbackRoot 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
           if ($reduced.coverage_mode -ne 'script') { throw 'dispatcher fallback coverage mode mismatch' }
+          if ($reduced.primary_launch -ne 'not_applicable') { throw "script-only primary_launch mismatch: $($reduced.primary_launch)" }
           & $bin --ledger-dir $fallbackLedger cleanup --latest
 
           # Simulate AV quarantine: stage a real PE, delete it, expect script fallback.
@@ -712,37 +712,67 @@ jobs:
           } else {
             Write-Warning "Defender already quarantined $qExe — proceeding with fallback validation"
           }
+          $qManifestPath = Join-Path $qRoot 'scripts\stealthy-run.conf'
+          $qManifest = (Get-Content -Raw $qManifestPath) -replace '(?m)^primary_binary=.*$', 'primary_binary=quarantined-stealthy.exe'
+          Set-Content -LiteralPath $qManifestPath -Value $qManifest -Encoding utf8
+          if (Test-Path -LiteralPath (Join-Path $qRoot 'quarantined-stealthy.exe') -PathType Leaf) {
+            throw 'quarantine-sim fixture unexpectedly contains its declared primary binary'
+          }
           $qOutput = & (Join-Path $qRoot 'scripts\run.ps1') --authorized --format=json enum
           if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Quarantine-sim script failed with exit $LASTEXITCODE — may indicate fallback working as designed"
+            throw "quarantine-sim script failed with exit $LASTEXITCODE"
           }
           try {
             $quarantined = $qOutput | ConvertFrom-Json
           } catch {
-            Write-Warning "Could not parse quarantine-sim output: $qOutput"
-            $quarantined = @{}
+            throw "could not parse quarantine-sim output as JSON: $_"
           }
           if ($quarantined.coverage_mode -ne 'script') {
-            Write-Warning "quarantine-sim coverage_mode: expected 'script', got '$($quarantined.coverage_mode)'"
+            throw "quarantine-sim coverage_mode: expected 'script', got '$($quarantined.coverage_mode)'"
           }
           if ($quarantined.primary_launch -ne 'blocked') {
-            Write-Warning "quarantine-sim primary_launch: expected 'blocked', got '$($quarantined.primary_launch)'"
+            throw "quarantine-sim primary_launch: expected 'blocked', got '$($quarantined.primary_launch)'"
           }
           if ($quarantined.execution_path -ne 'powershell-fallback') {
-            Write-Warning "quarantine-sim execution_path: expected 'powershell-fallback', got '$($quarantined.execution_path)'"
+            throw "quarantine-sim execution_path: expected 'powershell-fallback', got '$($quarantined.execution_path)'"
           }
           & $bin --ledger-dir $qLedger cleanup --latest
 
+          $jsUnauthorized = & cscript.exe //nologo .\scripts\windows\enum.js
+          if ($LASTEXITCODE -ne 2) { throw "unauthorized JScript fallback exit mismatch: $LASTEXITCODE" }
+          if (($jsUnauthorized -join "`n") -notmatch 'Authorization required') { throw 'unauthorized JScript fallback did not explain the authorization gate' }
+
+          $jsOutput = & cscript.exe //nologo .\scripts\windows\enum.js --authorized --json
+          if ($LASTEXITCODE -ne 0) { throw "JScript fallback failed with exit $LASTEXITCODE" }
           try {
-            $js = & cscript.exe //nologo .\scripts\windows\enum.js --authorized --json | ConvertFrom-Json
-            if ($js.coverage_mode -ne 'script') {
-              Write-Warning "JScript coverage_mode: expected 'script', got '$($js.coverage_mode)'"
-            }
-            if ($js.identity.elevation_source -ne 'jscript') {
-              Write-Warning "JScript elevation_source: expected 'jscript', got '$($js.identity.elevation_source)'"
-            }
+            $js = $jsOutput | ConvertFrom-Json
           } catch {
-            Write-Warning "JScript validation skipped: $_"
+            throw "could not parse JScript fallback output as JSON: $_"
+          }
+          if ($js.coverage_mode -ne 'script') { throw "JScript coverage_mode mismatch: $($js.coverage_mode)" }
+          if ($js.authorized_use_ack -ne $true -or $js.mode -ne 'enumerate-only') { throw 'JScript safety metadata mismatch' }
+          if ($js.identity.elevation_source -ne 'jscript') { throw "JScript elevation_source mismatch: $($js.identity.elevation_source)" }
+
+          $evasion = & powershell.exe -NoProfile -File .\scripts\windows\evasion.ps1 -Technique amsi-bypass -Authorized -ConfirmEvasion -AllowTechniques amsi-bypass -Json | ConvertFrom-Json
+          if ($evasion.feature -ne 'windows-evasion-scaffolds' -or $evasion.status -ne 'planned') { throw 'evasion scaffold identity/status mismatch' }
+          if ($evasion.executed -ne $false -or $evasion.modifies_controls -ne $false) { throw 'evasion scaffold reported an action or control modification' }
+          $evasionRejected = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-File', '.\scripts\windows\evasion.ps1', '-Technique', 'amsi-bypass', '-Authorized', '-AllowTechniques', 'amsi-bypass', '-Json') -Wait -PassThru -NoNewWindow
+          if ($evasionRejected.ExitCode -ne 1) { throw "evasion scaffold missing-confirmation exit mismatch: $($evasionRejected.ExitCode)" }
+
+          $msbuild = (Get-Command msbuild.exe -ErrorAction Stop).Source
+          $priorAuth = $env:STEALTHY_AUTHORIZED
+          try {
+            Remove-Item Env:STEALTHY_AUTHORIZED -ErrorAction SilentlyContinue
+            $msbuildRejected = Start-Process -FilePath $msbuild -ArgumentList @('.\scripts\windows\EnumTasks.csproj', '/nologo', '/v:minimal', '/p:StealthyJson=true') -Wait -PassThru -NoNewWindow
+            if ($msbuildRejected.ExitCode -eq 0) { throw 'MSBuild fallback accepted a missing authorization acknowledgment' }
+            $env:STEALTHY_AUTHORIZED = '1'
+            $msbuildOutput = & $msbuild .\scripts\windows\EnumTasks.csproj /nologo /v:minimal /p:StealthyJson=true
+            if ($LASTEXITCODE -ne 0) { throw "MSBuild fallback failed with exit $LASTEXITCODE" }
+            $msbuildJson = $msbuildOutput | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1 | ConvertFrom-Json
+            if ($msbuildJson.coverage_mode -ne 'script' -or $msbuildJson.identity.elevation_source -ne 'msbuild') { throw 'MSBuild fallback JSON contract mismatch' }
+            if ($msbuildJson.started_at_unix -le 0) { throw 'MSBuild fallback timestamp contract mismatch' }
+          } finally {
+            if ($null -eq $priorAuth) { Remove-Item Env:STEALTHY_AUTHORIZED -ErrorAction SilentlyContinue } else { $env:STEALTHY_AUTHORIZED = $priorAuth }
           }
 
           Remove-Item -LiteralPath $root -Recurse -Force
@@ -774,6 +804,7 @@ jobs:
           python3 -m py_compile scripts/linux/enum.py scripts/ci/*.py scripts/release/*.py
           python3 scripts/linux/enum.py --authorized --json > /tmp/stealthy-script-report.json
           python3 -c 'import json; r=json.load(open("/tmp/stealthy-script-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"; assert r["plugins_run"]; assert len(r["capability_delta"]) == 6'
+          python3 -c 'import contextlib,importlib.util,io,json; s=importlib.util.spec_from_file_location("stealthy_enum", "scripts/linux/enum.py"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.JSON_MODE=True; m.PLUGINS_RUN.append("linux.test"); m.record_coverage_error("linux.test", "fixture", PermissionError("denied")); out=io.StringIO(); c=contextlib.redirect_stdout(out); c.__enter__(); m.emit_json(); c.__exit__(None,None,None); r=json.loads(out.getvalue()); e=r["coverage"][0]; assert e["status"] == "partial" and e["error"] == "fixture: PermissionError"'
           bash scripts/linux/enum.sh --authorized --json > /tmp/stealthy-shell-report.json
           python3 -c 'import json; r=json.load(open("/tmp/stealthy-shell-report.json")); assert r["schema_version"] == "2"; assert r["coverage_mode"] == "script"'
 

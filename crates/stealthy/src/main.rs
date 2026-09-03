@@ -329,11 +329,13 @@ fn run_enum(
             "evasion technique families require --confirm-evasion in addition to --allow-techniques"
         );
     }
+    let evasion_confirmed = cli.confirm_evasion || confirm_evasion;
     let mut engine = Engine::from_cli(
         cli,
         overrides,
         auto_exploit,
         allow,
+        evasion_confirmed,
         only,
         skip,
         checkpoint,

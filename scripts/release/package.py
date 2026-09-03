@@ -36,6 +36,7 @@ PLATFORM_FILES = {
         "scripts/windows/enum.ps1",
         "scripts/windows/enum.js",
         "scripts/windows/EnumTasks.csproj",
+        "scripts/windows/evasion.ps1",
     ],
 }
 
@@ -74,6 +75,7 @@ def write_dispatcher_example(stage, platform, binary_name):
         "target_username=\n"
         "drop_dir=\n"
         f"primary_binary={binary_name}\n"
+        f"shipped_features={'windows-evasion-scaffolds' if platform == 'windows' else ''}\n"
         f"{fallback_key}={fallback_value}\n"
     )
     scripts = stage / "scripts"
@@ -151,6 +153,9 @@ def main():
             "build_flavor": args.build_flavor,
             "authorization_required": True,
             "default_execution_mode": "enumerate-only",
+            "features": (
+                ["windows-evasion-scaffolds"] if args.platform == "windows" else []
+            ),
             "contents": [
                 {
                     "path": path.relative_to(stage).as_posix(),

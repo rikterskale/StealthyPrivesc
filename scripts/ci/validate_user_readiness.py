@@ -573,7 +573,7 @@ class UserReadinessValidator:
                 "--output",
                 "remote",
                 "--exfil-url",
-                "https://example.invalid",
+                "https://127.0.0.1:1/ingest",
                 "enum",
                 "--plugins",
                 plugin,
@@ -582,25 +582,48 @@ class UserReadinessValidator:
             if "--key-output-path" not in stderr:
                 self.errors.append("output=remote missing key-output-path validation")
 
-            # output=remote succeeds when key sink is present
+            # An unreachable HTTPS destination fails closed after retaining the key.
             remote_key = Path(tmp) / "findings.remote.key"
-            code, _, _ = self.run(
+            _, stdout, stderr = self.run(
                 "--authorized",
                 "--quiet",
                 "--output",
                 "remote",
                 "--exfil-url",
-                "https://example.invalid",
+                "https://127.0.0.1:1/ingest",
                 "--key-output-path",
                 str(remote_key),
                 "enum",
                 "--plugins",
                 plugin,
+                expected_exit=1,
             )
-            if code not in [0, 4]:
-                self.errors.append(f"--output remote returned unexpected code {code}")
-            elif not remote_key.is_file():
-                self.errors.append("--output remote did not create key output file")
+            if "remote delivery failed" not in stderr:
+                self.errors.append("--output remote did not propagate HTTPS delivery failure")
+            if stdout.strip():
+                self.errors.append("--output remote leaked report data to stdout on failure")
+            if not remote_key.is_file():
+                self.errors.append("--output remote did not retain the protected key on failure")
+
+            insecure_key = Path(tmp) / "insecure.remote.key"
+            _, _, stderr = self.run(
+                "--authorized",
+                "--quiet",
+                "--output",
+                "remote",
+                "--exfil-url",
+                "http://127.0.0.1/ingest",
+                "--key-output-path",
+                str(insecure_key),
+                "enum",
+                "--plugins",
+                plugin,
+                expected_exit=1,
+            )
+            if "absolute https:// URL" not in stderr:
+                self.errors.append("--output remote did not reject an insecure URL")
+            if insecure_key.exists():
+                self.errors.append("--output remote created a key before URL validation")
 
             # output=file should work end-to-end for valid args
             code, stdout, _ = self.run(

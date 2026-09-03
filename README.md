@@ -225,7 +225,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--key-output-path PATH` | Protected key destination required for encrypted file/remote output (`STEALTHY_KEY_OUTPUT_PATH`) |
 | `--plaintext-file` | Write JSON instead of sealed blob |
 | `--also-markdown` | Also write `PATH.md` evidence report |
-| `--exfil-url URL` | Operator-configured HTTPS target for `--output remote` (v1 prints sealed body; no silent client) |
+| `--exfil-url URL` | Operator-configured HTTPS target for encrypted `--output remote` delivery |
 | `guide` | First-run operator guide (no auth) |
 | `doctor` | Local readiness checks (no auth) |
 | `report PATH --key-file KEY_PATH` | Decode a sealed report (preferred; env: `STEALTHY_KEY_FILE`) |

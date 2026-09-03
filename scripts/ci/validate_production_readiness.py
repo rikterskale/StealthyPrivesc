@@ -46,9 +46,20 @@ def main() -> int:
         "--report user-readiness-${{ matrix.os }}.json",
         "Upload user-readiness evidence",
         "cargo test --locked --workspace --all-features",
+        'COVERAGE_MIN_LINES: "80"',
+        "throw \"quarantine-sim coverage_mode:",
+        "throw \"script-only primary_launch mismatch:",
+        "throw \"unauthorized JScript fallback exit mismatch:",
+        "throw \"JScript coverage_mode mismatch:",
+        "evasion scaffold reported an action or control modification",
+        "MSBuild fallback JSON contract mismatch",
     ):
         if token not in ci:
             failures.append(f"CI missing production check {token}")
+    if re.search(r"quarantine-sim (coverage_mode|primary_launch|execution_path).*Write-Warning", ci):
+        failures.append("CI quarantine simulation contract is warning-only")
+    if re.search(r"JScript (coverage_mode|elevation_source).*Write-Warning", ci):
+        failures.append("CI JScript contract is warning-only")
     for token in (
         "generate_evidence.py",
         "RELEASE-EVIDENCE.json",

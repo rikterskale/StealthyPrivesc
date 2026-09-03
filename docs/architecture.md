@@ -64,9 +64,12 @@ record alternate-path intent and wire What's next / `next_command` to
 (`controls --execute`). Under today's `endpoint-bypass` contract they do not
 disable, unhook, or kill AppLocker, WDAC, SmartScreen, AMSI, ETW providers,
 AppArmor, antivirus, or EDR — those interference capabilities are planned as
-separate gated scaffold families. Dormant source prototypes are retained but
-are not declared, compiled, dispatched, or packaged; allowlisting them records
-scaffold findings only. See `docs/techniques.md`.
+separate gated scaffold families. The separately shipped
+`windows-evasion-scaffolds` PowerShell module only returns gated
+planned/not-executed status and is not imported by the dispatcher. Its Rust
+companion modules are compiled and test-covered status gates with no control
+mutation APIs; allowlisting those families in the CLI records scaffold
+findings only. See `docs/techniques.md` and `docs/evasion.md`.
 
 ## Script fallbacks
 

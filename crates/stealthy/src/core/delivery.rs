@@ -1,7 +1,6 @@
 //! Operator delivery kit: stage, verify, one-liners.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -97,55 +96,15 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     if let Some(username) = opts.target_username {
         validate_manifest_value(username, "target username", false)?;
     }
-    if opts.out_dir.exists() {
-        if !opts.out_dir.is_dir() {
-            bail!(
-                "stage output is not a directory: {}",
-                opts.out_dir.display()
-            );
-        }
-        if fs::read_dir(opts.out_dir)?.next().transpose()?.is_some() {
-            bail!(
-                "stage output directory must be empty: {}",
-                opts.out_dir.display()
-            );
-        }
-    }
-    fs::create_dir_all(opts.out_dir)?;
     validate_bundle_name(opts.name)?;
-    let bin_name = if opts.os == "windows" {
-        format!("{}.exe", opts.name)
-    } else {
-        opts.name.to_string()
-    };
-    let stage_root = fs::canonicalize(opts.out_dir)?;
-    let dest_bin = stage_root.join(&bin_name);
-    if dest_bin.parent() != Some(stage_root.as_path()) {
-        bail!("staged binary must remain inside the stage directory");
-    }
-
     if let Some(src) = opts.binary {
-        fs::copy(src, &dest_bin)
-            .with_context(|| format!("copy {} -> {}", src.display(), dest_bin.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&dest_bin)?.permissions();
-            perms.set_mode(0o750);
-            fs::set_permissions(&dest_bin, perms)?;
+        let metadata = fs::metadata(src)
+            .with_context(|| format!("read staged binary metadata {}", src.display()))?;
+        if !metadata.is_file() {
+            bail!("staged binary is not a file: {}", src.display());
         }
-    } else {
-        // Placeholder notice when no binary provided.
-        let mut f = fs::File::create(&dest_bin)?;
-        writeln!(
-            f,
-            "PLACEHOLDER: pass --binary PATH to stage a real stealthy artifact for {}/{}",
-            opts.os, opts.arch
-        )?;
     }
 
-    // Copy script fallbacks when present. Prefer cwd / exe-adjacent paths (no
-    // absolute build-machine CARGO_MANIFEST_DIR embedding in release binaries).
     let scripts_rel = if opts.os == "windows" {
         "scripts/windows"
     } else {
@@ -168,12 +127,56 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     let scripts_src = candidates
         .into_iter()
         .find(|path| path.is_dir())
-        .unwrap_or_else(|| PathBuf::from(scripts_rel));
+        .ok_or_else(|| anyhow::anyhow!("required fallback directory not found: {scripts_rel}"))?;
+
+    if opts.out_dir.exists() {
+        if !opts.out_dir.is_dir() {
+            bail!(
+                "stage output is not a directory: {}",
+                opts.out_dir.display()
+            );
+        }
+        if fs::read_dir(opts.out_dir)?.next().transpose()?.is_some() {
+            bail!(
+                "stage output directory must be empty: {}",
+                opts.out_dir.display()
+            );
+        }
+    }
+    fs::create_dir_all(opts.out_dir)?;
+    let bin_name = if opts.os == "windows" {
+        format!("{}.exe", opts.name)
+    } else {
+        opts.name.to_string()
+    };
+    let stage_root = fs::canonicalize(opts.out_dir)?;
+    let dest_bin = stage_root.join(&bin_name);
+    if dest_bin.parent() != Some(stage_root.as_path()) {
+        bail!("staged binary must remain inside the stage directory");
+    }
+
+    let bundle_mode = if opts.binary.is_some() {
+        "native-with-fallbacks"
+    } else {
+        "script-only"
+    };
+    if let Some(src) = opts.binary {
+        fs::copy(src, &dest_bin)
+            .with_context(|| format!("copy {} -> {}", src.display(), dest_bin.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&dest_bin)?.permissions();
+            perms.set_mode(0o750);
+            fs::set_permissions(&dest_bin, perms)?;
+        }
+    }
+
+    // Copy script fallbacks. Prefer cwd / exe-adjacent paths (no
+    // absolute build-machine CARGO_MANIFEST_DIR embedding in release binaries).
     let scripts_dst = opts.out_dir.join("scripts");
     fs::create_dir_all(&scripts_dst)?;
-    if scripts_src.is_dir() {
-        copy_dir_recursive(&scripts_src, &scripts_dst)?;
-    }
+    copy_dir_recursive(&scripts_src, &scripts_dst, opts.os == "linux")?;
 
     let fallback_order = if opts.os == "windows" {
         "powershell,jscript,msbuild"
@@ -188,15 +191,23 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
          allow_fallback=true\n\
          roe_ref=INHERITED_PRIMARY_RUN\n\
          execution_mode=enumerate-only\n\
+         bundle_mode={bundle_mode}\n\
          target_hostname={target_hostname}\n\
          target_username={target_username}\n\
          drop_dir=\n\
-         primary_binary={bin_name}\n\
+         primary_binary={primary_binary}\n\
+         shipped_features={shipped_features}\n\
          {os_key}_fallbacks={fallback_order}\n",
         os_key = if opts.os == "windows" {
             "windows"
         } else {
             "linux"
+        },
+        primary_binary = if opts.binary.is_some() { &bin_name } else { "" },
+        shipped_features = if opts.os == "windows" {
+            "windows-evasion-scaffolds"
+        } else {
+            ""
         },
         target_hostname = opts.target_hostname,
         target_username = opts.target_username.unwrap_or(""),
@@ -204,45 +215,66 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     fs::write(scripts_dst.join("stealthy-run.conf"), manifest)
         .with_context(|| format!("write {} dispatcher manifest", opts.os))?;
 
-    let hash = if dest_bin.is_file() {
-        sha256_file(&dest_bin).unwrap_or_else(|_| "unavailable".into())
+    let hash = if opts.binary.is_some() {
+        sha256_file(&dest_bin)?
     } else {
-        "unavailable".into()
+        "not-applicable".into()
     };
-    fs::write(
-        opts.out_dir.join("SHA256SUMS"),
-        format!("{hash}  {bin_name}\n"),
-    )?;
+    let checksums = if opts.binary.is_some() {
+        format!("{hash}  {bin_name}\n")
+    } else {
+        let mut files = Vec::new();
+        collect_files_recursive(&scripts_dst, &mut files)?;
+        files.sort();
+        let mut body = String::from("# script-only bundle: no primary binary\n");
+        for path in files {
+            let relative = path
+                .strip_prefix(&stage_root)
+                .with_context(|| format!("resolve staged path {}", path.display()))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            body.push_str(&format!("{}  {relative}\n", sha256_file(&path)?));
+        }
+        body
+    };
+    fs::write(opts.out_dir.join("SHA256SUMS"), checksums)?;
 
+    let verification = if opts.binary.is_some() {
+        format!("Verify primary binary:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n")
+    } else {
+        "Primary binary: not included (script-only bundle)\nVerify: compare every staged script against SHA256SUMS before execution.\n".into()
+    };
     let operator = if opts.os == "windows" {
         format!(
             "StealthyPrivesc stage bundle\n\
-             os={} arch={} name={}\n\
+             os={} arch={} name={} mode={}\n\
              binary_sha256={}\n\n\
-             Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
+             {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
              If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: powershell,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
-            opts.os, opts.arch, opts.name, hash
+            opts.os, opts.arch, opts.name, bundle_mode, hash, verification
         )
     } else {
         format!(
             "StealthyPrivesc stage bundle\n\
-             os={} arch={} name={}\n\
+             os={} arch={} name={} mode={}\n\
              binary_sha256={}\n\n\
-             Verify:\n  stealthy verify --path ./{bin_name} --expect-sha256 {hash}\n\n\
+             {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  bash ./scripts/run.sh --authorized --profile balanced enum\n\n\
              If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
-            opts.os, opts.arch, opts.name, hash
+            opts.os, opts.arch, opts.name, bundle_mode, hash, verification
         )
     };
     fs::write(opts.out_dir.join("OPERATOR.txt"), operator)?;
 
     let mut ledger = ArtifactLedger::new(opts.run_id);
     ledger.register("stage_bundle", opts.out_dir, true, "staged delivery bundle");
-    ledger.register("binary_drop", &dest_bin, true, "staged binary");
+    if opts.binary.is_some() {
+        ledger.register("binary_drop", &dest_bin, true, "staged binary");
+    }
     ledger.register(
         "stage_bundle",
         opts.out_dir.join("SHA256SUMS"),
@@ -286,16 +318,55 @@ fn validate_bundle_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+fn copy_dir_recursive(src: &Path, dst: &Path, normalize_linux_text: bool) -> Result<()> {
     fs::create_dir_all(dst)?;
     for ent in fs::read_dir(src)? {
         let ent = ent?;
+        let name = ent.file_name();
+        if name == "__pycache__" || ent.path().extension().is_some_and(|ext| ext == "pyc") {
+            continue;
+        }
         let ty = ent.file_type()?;
-        let to = dst.join(ent.file_name());
+        let to = dst.join(name);
         if ty.is_dir() {
-            copy_dir_recursive(&ent.path(), &to)?;
+            copy_dir_recursive(&ent.path(), &to, normalize_linux_text)?;
         } else if ty.is_file() {
             fs::copy(ent.path(), &to)?;
+            if normalize_linux_text
+                && to
+                    .extension()
+                    .is_some_and(|ext| matches!(ext.to_str(), Some("sh" | "py" | "pl")))
+            {
+                let body = fs::read(&to)?;
+                if body.windows(2).any(|pair| pair == b"\r\n") {
+                    let mut normalized = Vec::with_capacity(body.len());
+                    let mut index = 0;
+                    while index < body.len() {
+                        if body.get(index..index + 2) == Some(b"\r\n") {
+                            normalized.push(b'\n');
+                            index += 2;
+                        } else {
+                            normalized.push(body[index]);
+                            index += 1;
+                        }
+                    }
+                    fs::write(&to, normalized)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_files_recursive(root: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            collect_files_recursive(&path, files)?;
+        } else if kind.is_file() {
+            files.push(path);
         }
     }
     Ok(())
@@ -346,8 +417,8 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 #[cfg(test)]
 mod tests {
     use super::{
-        one_liners, sha256_file, shell_quote, stage, validate_bundle_name, validate_ssh_target,
-        verify_local, StageOptions,
+        one_liners, sha256_file, shell_quote, stage, validate_bundle_name, validate_manifest_value,
+        validate_ssh_target, verify_local, StageOptions,
     };
 
     #[test]
@@ -373,11 +444,49 @@ mod tests {
     }
 
     #[test]
+    fn manifest_values_reject_reserved_and_unsafe_inputs() {
+        for value in ["", "AUTO", "REQUIRED", "SET_TARGET_HOSTNAME"] {
+            assert!(validate_manifest_value(value, "target hostname", true).is_err());
+        }
+        for value in ["host\nname", "host\rname", "host=name", "host\0name"] {
+            assert!(validate_manifest_value(value, "target hostname", true).is_err());
+        }
+        assert!(validate_manifest_value("approved-host", "target hostname", true).is_ok());
+        assert!(validate_manifest_value("", "target username", false).is_ok());
+    }
+
+    #[test]
+    fn local_hashing_reports_missing_files() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing");
+        assert!(sha256_file(&missing).is_err());
+        assert!(verify_local(&missing, "00").is_err());
+    }
+
+    #[test]
     fn windows_http_one_liner_avoids_temp() {
         let snippet = one_liners("windows", "http");
         assert!(snippet.contains("PUBLIC"));
         assert!(snippet.contains("Documents\\cache-update"));
         assert!(!snippet.contains("$env:TEMP\\stealthy-drop"));
+    }
+
+    #[test]
+    fn one_liners_cover_every_supported_transport() {
+        for (os, transport) in [
+            ("linux", "ssh"),
+            ("linux", "scp"),
+            ("linux", "http"),
+            ("linux", "smb"),
+            ("windows", "winrm"),
+            ("windows", "smb"),
+            ("windows", "http"),
+        ] {
+            let snippet = one_liners(os, transport);
+            assert!(!snippet.contains("No built-in snippet"), "{os}/{transport}");
+            assert!(snippet.contains("authorized"), "{os}/{transport}");
+        }
+        assert!(one_liners("plan9", "telepathy").contains("No built-in snippet"));
     }
 
     #[test]
@@ -404,8 +513,123 @@ mod tests {
         verify_local(&staged, &hash).unwrap();
         assert!(verify_local(&staged, "00").is_err());
         let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+        assert!(manifest.contains("bundle_mode=native-with-fallbacks"));
         assert!(manifest.contains("primary_binary=stealthy"));
+        assert!(!out.join("scripts/__pycache__").exists());
+        let dispatcher = std::fs::read(out.join("scripts/run.sh")).unwrap();
+        assert!(!dispatcher.windows(2).any(|pair| pair == b"\r\n"));
         assert!(out.join("OPERATOR.txt").is_file());
         assert!(ledger.join("delivery-test.json").is_file());
+    }
+
+    #[test]
+    fn stage_without_binary_creates_an_explicit_script_only_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("drop");
+        let ledger = root.path().join("ledger");
+        stage(StageOptions {
+            os: "windows",
+            arch: "x86_64",
+            name: "stealthy",
+            out_dir: &out,
+            binary: None,
+            target_hostname: "approved-host",
+            target_username: None,
+            run_id: "script-only-test",
+            ledger_dir: &ledger,
+        })
+        .unwrap();
+        assert!(!out.join("stealthy.exe").exists());
+        let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+        assert!(manifest.contains("bundle_mode=script-only"));
+        assert!(manifest.contains("\nprimary_binary=\n"));
+        let sums = std::fs::read_to_string(out.join("SHA256SUMS")).unwrap();
+        assert!(sums.starts_with("# script-only bundle: no primary binary\n"));
+        assert!(sums.contains("  scripts/run.ps1\n"));
+        assert!(sums.contains("  scripts/evasion.ps1\n"));
+        assert!(!sums.contains("stealthy.exe"));
+        assert!(manifest.contains("shipped_features=windows-evasion-scaffolds"));
+        let evasion = std::fs::read_to_string(out.join("scripts/evasion.ps1")).unwrap();
+        assert!(evasion.contains("status = 'planned'"));
+        assert!(evasion.contains("executed = $false"));
+        assert!(evasion.contains("modifies_controls = $false"));
+        for forbidden in [
+            "GetType(",
+            ".SetValue(",
+            "Get-Service",
+            "Stop-Service",
+            "Start-Service",
+            ".Pause()",
+        ] {
+            assert!(!evasion.contains(forbidden), "found {forbidden}");
+        }
+        let operator = std::fs::read_to_string(out.join("OPERATOR.txt")).unwrap();
+        assert!(operator.contains("mode=script-only"));
+        assert!(operator.contains("Primary binary: not included"));
+    }
+
+    #[test]
+    fn stage_rejects_nonempty_or_nondirectory_destinations() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = root.path().join("ledger");
+        let file = root.path().join("file-output");
+        std::fs::write(&file, b"existing").unwrap();
+        let nonempty = root.path().join("nonempty-output");
+        std::fs::create_dir(&nonempty).unwrap();
+        std::fs::write(nonempty.join("existing"), b"keep").unwrap();
+        for out_dir in [&file, &nonempty] {
+            let error = stage(StageOptions {
+                os: "linux",
+                arch: "x86_64",
+                name: "stealthy",
+                out_dir,
+                binary: None,
+                target_hostname: "approved-host",
+                target_username: None,
+                run_id: "invalid-output-test",
+                ledger_dir: &ledger,
+            })
+            .unwrap_err();
+            assert!(error.to_string().contains("stage output"));
+        }
+    }
+
+    #[test]
+    fn stage_rejects_invalid_inputs_before_creating_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = root.path().join("ledger");
+        let invalid_name_out = root.path().join("invalid-name");
+        let error = stage(StageOptions {
+            os: "linux",
+            arch: "x86_64",
+            name: "../escape",
+            out_dir: &invalid_name_out,
+            binary: None,
+            target_hostname: "approved-host",
+            target_username: None,
+            run_id: "invalid-name-test",
+            ledger_dir: &ledger,
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("safe file basename"));
+        assert!(!invalid_name_out.exists());
+
+        let missing_binary_out = root.path().join("missing-binary");
+        let missing_binary = root.path().join("missing");
+        let error = stage(StageOptions {
+            os: "linux",
+            arch: "x86_64",
+            name: "stealthy",
+            out_dir: &missing_binary_out,
+            binary: Some(&missing_binary),
+            target_hostname: "approved-host",
+            target_username: None,
+            run_id: "missing-binary-test",
+            ledger_dir: &ledger,
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("staged binary metadata"));
+        assert!(!missing_binary_out.exists());
+        assert!(!ledger.exists());
     }
 }

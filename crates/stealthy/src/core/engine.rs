@@ -39,6 +39,7 @@ pub struct Engine {
     noise_budget: NoiseBudget,
     auto_exploit: bool,
     allow_techniques: TechniqueAllowlist,
+    evasion_confirmed: bool,
     only: Option<Vec<String>>,
     skip: Option<Vec<String>>,
     output: OutputOptions,
@@ -66,6 +67,7 @@ impl Engine {
         overrides: &CliOverrides,
         auto_exploit: bool,
         allow_techniques: TechniqueAllowlist,
+        evasion_confirmed: bool,
         only: Option<Vec<String>>,
         skip: Option<Vec<String>>,
         checkpoint: Option<PathBuf>,
@@ -112,10 +114,11 @@ impl Engine {
             OutputMode::File if cli.output_path.is_none() => {
                 bail!("--output=file requires --output-path");
             }
-            OutputMode::Remote if cli.exfil_url.is_none() => {
-                bail!("--output=remote requires --exfil-url");
-            }
-            OutputMode::File | OutputMode::Remote => {}
+            OutputMode::Remote => match cli.exfil_url.as_deref() {
+                Some(url) => output::validate_remote_url(url)?,
+                None => bail!("--output=remote requires --exfil-url"),
+            },
+            OutputMode::File => {}
         }
         let encrypted_output = (cli.output == OutputMode::File && !cli.plaintext_file)
             || cli.output == OutputMode::Remote;
@@ -141,6 +144,7 @@ impl Engine {
             noise_budget: profile.noise_budget(),
             auto_exploit,
             allow_techniques,
+            evasion_confirmed,
             only,
             skip,
             fail_on: cli.fail_on.map(|m| m.to_severity()),
@@ -307,14 +311,36 @@ impl Engine {
             store.note(note);
             for technique in crate::exploit::TechniqueFamily::ALL {
                 if self.allow_techniques.allows(*technique) {
-                    store.push(finalize_finding(
-                        crate::exploit::technique_status_with_artifact(
+                    let finding = match technique {
+                        crate::exploit::TechniqueFamily::AmsiBypass => {
+                            crate::exploit::amsi_bypass::planned_status(
+                                true,
+                                true,
+                                self.evasion_confirmed,
+                            )?
+                        }
+                        crate::exploit::TechniqueFamily::EtwUnhook => {
+                            crate::exploit::etw_unhook::planned_status(
+                                true,
+                                true,
+                                self.evasion_confirmed,
+                            )?
+                        }
+                        crate::exploit::TechniqueFamily::AvEdrService => {
+                            crate::exploit::av_edr_service::planned_status(
+                                true,
+                                true,
+                                self.evasion_confirmed,
+                            )?
+                        }
+                        _ => crate::exploit::technique_status_with_artifact(
                             "allow_techniques",
                             *technique,
                             true,
                             self.artifact.as_deref(),
                         ),
-                    ));
+                    };
+                    store.push(finalize_finding(finding));
                 }
             }
         }
@@ -327,6 +353,11 @@ impl Engine {
             .collect();
         let mut unknown = Vec::new();
         for requested in self.only.iter().chain(self.skip.iter()).flatten() {
+            if requested.trim().is_empty() {
+                bail!(
+                    "plugin ID lists cannot contain empty values; provide one or more IDs from `stealthy --authorized list-plugins`"
+                );
+            }
             if !available.contains(&requested.as_str()) {
                 unknown.push(requested.as_str());
             }

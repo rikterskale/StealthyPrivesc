@@ -45,6 +45,7 @@ pub fn quickstart(cli: &Cli, overrides: &CliOverrides) -> Result<()> {
             overrides,
             false,
             crate::exploit::TechniqueAllowlist::from_ids(&[])?,
+            false,
             None,
             None,
             None,
@@ -221,6 +222,17 @@ pub fn disposition(
     out: Option<&Path>,
 ) -> Result<()> {
     let mut value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    let finding_exists = value["findings"].as_array().is_some_and(|findings| {
+        findings
+            .iter()
+            .any(|finding| finding["finding_id"].as_str() == Some(id))
+    });
+    if !finding_exists {
+        anyhow::bail!(
+            "finding '{id}' was not found in {}; use a report finding_id",
+            path.display()
+        );
+    }
     let previous_status = value["dispositions"].as_array().and_then(|items| {
         items.iter().rev().find_map(|item| {
             (item["finding_id"].as_str() == Some(id))
@@ -315,6 +327,17 @@ mod tests {
         let updated: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&disposition_path).unwrap()).unwrap();
         assert_eq!(updated["dispositions"][0]["finding_id"], id);
+        let rejected = path.with_extension("rejected.json");
+        let error = disposition(
+            &path,
+            "missing-id",
+            DispositionStatus::Fixed,
+            "invalid",
+            Some(&rejected),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("was not found"));
+        assert!(!rejected.exists());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_file(disposition_path).unwrap();
     }
