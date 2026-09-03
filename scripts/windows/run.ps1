@@ -88,7 +88,12 @@ foreach ($name in $dispatcherEnvironmentNames) {
 }
 function Restore-DispatcherEnvironment {
   foreach ($name in $dispatcherEnvironmentNames) {
-    [Environment]::SetEnvironmentVariable($name, $priorDispatcherEnvironment[$name], 'Process')
+    $priorValue = $priorDispatcherEnvironment[$name]
+    if ($null -eq $priorValue) {
+      Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+    } else {
+      [Environment]::SetEnvironmentVariable($name, $priorValue, 'Process')
+    }
   }
 }
 try {
