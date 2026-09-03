@@ -654,7 +654,24 @@ jobs:
 
           # Stage under the workspace, not %TEMP%: Defender real-time scanning
           # often quarantines freshly copied unsigned PEs in TEMP before verify.
-          $dispatcherAuthorization = [Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process')
+          $dispatcherEnvironmentNames = @(
+            'STEALTHY_AUTHORIZED',
+            'STEALTHY_MANIFEST_ROE_REF',
+            'STEALTHY_EXECUTION_PATH',
+            'STEALTHY_PRIMARY_LAUNCH'
+          )
+          $dispatcherEnvironment = @{}
+          foreach ($name in $dispatcherEnvironmentNames) {
+            $dispatcherEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+          }
+          function Assert-DispatcherEnvironmentRestored([string]$Scenario) {
+            foreach ($name in $dispatcherEnvironmentNames) {
+              $actual = [Environment]::GetEnvironmentVariable($name, 'Process')
+              if ($actual -ne $dispatcherEnvironment[$name]) {
+                throw "$Scenario dispatcher leaked process environment variable $name"
+              }
+            }
+          }
           $root = Join-Path $PWD ('stealthy-smoke-' + [guid]::NewGuid().ToString('N'))
           $stage = Join-Path $root 'stage'
           $ledger = Join-Path $root 'ledger'
@@ -684,9 +701,7 @@ jobs:
           } else {
             Write-Warning 'Staged binary unavailable after write; deterministic script-only and quarantine fallback gates follow'
           }
-          if ([Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process') -ne $dispatcherAuthorization) {
-            throw 'dispatcher leaked its authorization acknowledgment into the caller process'
-          }
+          Assert-DispatcherEnvironmentRestored 'native'
           & $bin --ledger-dir $ledger cleanup --latest
 
           $fallbackRoot = Join-Path $root 'fallback'
@@ -695,9 +710,7 @@ jobs:
           $reduced = & (Join-Path $fallbackRoot 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
           if ($reduced.coverage_mode -ne 'script') { throw 'dispatcher fallback coverage mode mismatch' }
           if ($reduced.primary_launch -ne 'not_applicable') { throw "script-only primary_launch mismatch: $($reduced.primary_launch)" }
-          if ([Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process') -ne $dispatcherAuthorization) {
-            throw 'script-only dispatcher leaked its authorization acknowledgment into the caller process'
-          }
+          Assert-DispatcherEnvironmentRestored 'script-only'
           & $bin --ledger-dir $fallbackLedger cleanup --latest
 
           # Simulate AV quarantine: stage a real PE, delete it, expect script fallback.
@@ -734,9 +747,7 @@ jobs:
           if ($quarantined.execution_path -ne 'powershell-fallback') {
             throw "quarantine-sim execution_path: expected 'powershell-fallback', got '$($quarantined.execution_path)'"
           }
-          if ([Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process') -ne $dispatcherAuthorization) {
-            throw 'quarantine dispatcher leaked its authorization acknowledgment into the caller process'
-          }
+          Assert-DispatcherEnvironmentRestored 'quarantine'
           & $bin --ledger-dir $qLedger cleanup --latest
 
           $jsUnauthorized = & cscript.exe //nologo .\scripts\windows\enum.js

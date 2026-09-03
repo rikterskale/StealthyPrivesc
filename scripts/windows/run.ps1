@@ -76,7 +76,21 @@ if (-not ($authorizedArg -or $authorizedEnv)) {
   [Console]::Error.WriteLine('Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1')
   exit 2
 }
-$priorAuthorization = [Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process')
+$dispatcherEnvironmentNames = @(
+  'STEALTHY_AUTHORIZED',
+  'STEALTHY_MANIFEST_ROE_REF',
+  'STEALTHY_EXECUTION_PATH',
+  'STEALTHY_PRIMARY_LAUNCH'
+)
+$priorDispatcherEnvironment = @{}
+foreach ($name in $dispatcherEnvironmentNames) {
+  $priorDispatcherEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+function Restore-DispatcherEnvironment {
+  foreach ($name in $dispatcherEnvironmentNames) {
+    [Environment]::SetEnvironmentVariable($name, $priorDispatcherEnvironment[$name], 'Process')
+  }
+}
 try {
 $env:STEALTHY_AUTHORIZED = '1'
 
@@ -167,11 +181,12 @@ function Invoke-ApprovedFallbacks {
           [Console]::Error.WriteLine("dispatcher: powershell fallback launch failed: $($_.Exception.Message)")
           $status = 126
         }
-        if ($status -eq 0) { exit 0 }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
         if (Test-BlockStatus $status) {
           [Console]::Error.WriteLine("dispatcher: powershell fallback blocked (exit $status); trying next host")
           break
         }
+        Restore-DispatcherEnvironment
         exit $status
       }
       'jscript' {
@@ -197,11 +212,12 @@ function Invoke-ApprovedFallbacks {
           [Console]::Error.WriteLine("dispatcher: jscript fallback launch failed: $($_.Exception.Message)")
           $status = 126
         }
-        if ($status -eq 0) { exit 0 }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
         if (Test-BlockStatus $status) {
           [Console]::Error.WriteLine("dispatcher: jscript fallback blocked (exit $status); trying next host")
           break
         }
+        Restore-DispatcherEnvironment
         exit $status
       }
       'msbuild' {
@@ -229,11 +245,12 @@ function Invoke-ApprovedFallbacks {
           [Console]::Error.WriteLine("dispatcher: msbuild fallback launch failed: $($_.Exception.Message)")
           $status = 126
         }
-        if ($status -eq 0) { exit 0 }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
         if (Test-BlockStatus $status) {
           [Console]::Error.WriteLine("dispatcher: msbuild fallback blocked (exit $status); trying next host")
           break
         }
+        Restore-DispatcherEnvironment
         exit $status
       }
       default {
@@ -242,6 +259,7 @@ function Invoke-ApprovedFallbacks {
     }
   }
   [Console]::Error.WriteLine('dispatcher: no approved executable or fallback is available')
+  Restore-DispatcherEnvironment
   exit 126
 }
 
@@ -258,6 +276,7 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
       [Console]::Error.WriteLine('dispatcher: primary vanished after launch (possible quarantine)')
       $primaryBlocked = $true
     } else {
+      Restore-DispatcherEnvironment
       exit $status
     }
   } catch {
@@ -272,5 +291,5 @@ if ($primaryBlocked) {
   Invoke-ApprovedFallbacks
 }
 } finally {
-  [Environment]::SetEnvironmentVariable('STEALTHY_AUTHORIZED', $priorAuthorization, 'Process')
+  Restore-DispatcherEnvironment
 }
