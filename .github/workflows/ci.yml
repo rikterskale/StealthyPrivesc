@@ -681,16 +681,7 @@ jobs:
             if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
             if ($native.authorized_use_ack -ne $true -or $native.mode -ne 'enumerate-only') { throw 'native Windows safety metadata mismatch' }
           } else {
-            Write-Warning "Staged binary quarantined by Defender — validating script fallback path"
-            $scriptOutput = & (Join-Path $stage 'scripts\run.ps1') --authorized --format=json enum
-            if ($LASTEXITCODE -ne 0) { throw "script fallback failed with exit $LASTEXITCODE" }
-            try {
-              $fallthrough = $scriptOutput | ConvertFrom-Json
-            } catch {
-              throw "could not parse script fallback JSON: $_"
-            }
-            if ($fallthrough.coverage_mode -ne 'script') { throw "script fallback coverage_mode mismatch: $($fallthrough.coverage_mode)" }
-            if ($fallthrough.authorized_use_ack -ne $true -or $fallthrough.mode -ne 'enumerate-only') { throw 'script fallback safety metadata mismatch' }
+            Write-Warning 'Staged binary unavailable after write; deterministic script-only and quarantine fallback gates follow'
           }
           & $bin --ledger-dir $ledger cleanup --latest
 

@@ -79,6 +79,14 @@ def record_coverage_error(plugin: str, source: str, error: OSError) -> None:
         print(f"coverage warning: {message}")
 
 
+def path_matches(path: Path, predicate: str, plugin: str, source: str) -> bool:
+    try:
+        return bool(getattr(path, predicate)())
+    except OSError as error:
+        record_coverage_error(plugin, source, error)
+        return False
+
+
 def banner() -> None:
     if JSON_MODE:
         return
@@ -119,7 +127,7 @@ def sudoers() -> None:
     print("[*] readable sudoers")
     paths = [Path("/etc/sudoers")]
     d = Path("/etc/sudoers.d")
-    if d.is_dir():
+    if path_matches(d, "is_dir", "linux.sudo", "/etc/sudoers.d metadata"):
         try:
             paths.extend(sorted(d.iterdir()))
         except OSError as error:
@@ -166,7 +174,7 @@ def suid_shallow() -> None:
     }
     for root in ("/usr/bin", "/usr/sbin", "/bin", "/sbin"):
         base = Path(root)
-        if not base.is_dir():
+        if not path_matches(base, "is_dir", "linux.suid", f"{base} metadata"):
             continue
         try:
             entries = list(base.iterdir())
@@ -239,7 +247,7 @@ def containers() -> None:
     found = False
     for path in socks:
         sock = Path(path)
-        if not sock.exists():
+        if not path_matches(sock, "exists", "linux.containers", f"{path} metadata"):
             continue
         found = True
         try:
@@ -260,10 +268,12 @@ def polkit() -> None:
     print("[*] polkit")
     for p in ("/etc/polkit-1/rules.d", "/etc/polkit-1/localauthority"):
         path = Path(p)
-        if path.exists() and os.access(path, os.W_OK):
+        if path_matches(path, "exists", "linux.polkit", f"{p} metadata") and os.access(
+            path, os.W_OK
+        ):
             print(f"FINDING: writable polkit path {p}")
     pk = Path("/usr/bin/pkexec")
-    if pk.exists():
+    if path_matches(pk, "exists", "linux.polkit", "/usr/bin/pkexec metadata"):
         try:
             print(f"pkexec mode={oct(pk.stat().st_mode)}")
         except OSError as error:
@@ -279,15 +289,14 @@ def ssh_keys() -> None:
         roots.append(Path(home) / ".ssh")
     roots.append(Path("/root/.ssh"))
     for root in roots:
-        try:
-            is_dir = root.is_dir()
-        except OSError:
-            continue
+        is_dir = path_matches(root, "is_dir", "linux.ssh_keys", f"{root} metadata")
         if not is_dir:
             continue
         for name in ("id_rsa", "id_ed25519", "id_ecdsa", "authorized_keys"):
             p = root / name
-            if p.is_file() and os.access(p, os.R_OK):
+            if path_matches(p, "is_file", "linux.ssh_keys", f"{p} metadata") and os.access(
+                p, os.R_OK
+            ):
                 try:
                     mode = p.stat().st_mode & 0o777
                 except OSError:
@@ -314,9 +323,17 @@ def mounts() -> None:
 
 def endpoint_controls() -> None:
     print("[*] endpoint controls (AppArmor / SELinux / noexec)")
-    if Path("/sys/module/apparmor").is_dir() or Path(
-        "/sys/kernel/security/apparmor"
-    ).is_dir():
+    if path_matches(
+        Path("/sys/module/apparmor"),
+        "is_dir",
+        "linux.endpoint_controls",
+        "/sys/module/apparmor metadata",
+    ) or path_matches(
+        Path("/sys/kernel/security/apparmor"),
+        "is_dir",
+        "linux.endpoint_controls",
+        "/sys/kernel/security/apparmor metadata",
+    ):
         profile = "unreadable"
         for p in (
             Path("/proc/self/attr/current"),
@@ -334,7 +351,12 @@ def endpoint_controls() -> None:
         print("AppArmor module not evident")
 
     enforce = Path("/sys/fs/selinux/enforce")
-    if enforce.is_file():
+    if path_matches(
+        enforce,
+        "is_file",
+        "linux.endpoint_controls",
+        "SELinux enforce metadata",
+    ):
         try:
             print(f"SELinux enforce={enforce.read_text().strip()}")
         except OSError as error:
@@ -362,7 +384,12 @@ def endpoint_controls() -> None:
             print(f"FINDING: noexec mount on drop path {mountpoint}")
 
     yama = Path("/proc/sys/kernel/yama/ptrace_scope")
-    if yama.is_file():
+    if path_matches(
+        yama,
+        "is_file",
+        "linux.endpoint_controls",
+        "Yama ptrace_scope metadata",
+    ):
         try:
             print(f"yama.ptrace_scope={yama.read_text().strip()}")
         except OSError as error:
@@ -382,7 +409,9 @@ def credentials() -> None:
         "/etc/security/opasswd",
     ):
         path = Path(p)
-        if path.exists() and os.access(path, os.R_OK):
+        if path_matches(path, "exists", "linux.credentials", f"{p} metadata") and os.access(
+            path, os.R_OK
+        ):
             print(f"FINDING: readable {p}")
     print()
 
