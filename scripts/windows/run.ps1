@@ -76,6 +76,8 @@ if (-not ($authorizedArg -or $authorizedEnv)) {
   [Console]::Error.WriteLine('Authorization required: pass --authorized or set STEALTHY_AUTHORIZED=1')
   exit 2
 }
+$priorAuthorization = [Environment]::GetEnvironmentVariable('STEALTHY_AUTHORIZED', 'Process')
+try {
 $env:STEALTHY_AUTHORIZED = '1'
 
 $primaryName = if ($bundleMode -eq 'script-only') { $null } elseif ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
@@ -268,4 +270,7 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
 
 if ($primaryBlocked) {
   Invoke-ApprovedFallbacks
+}
+} finally {
+  [Environment]::SetEnvironmentVariable('STEALTHY_AUTHORIZED', $priorAuthorization, 'Process')
 }
