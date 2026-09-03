@@ -750,8 +750,15 @@ jobs:
           Assert-DispatcherEnvironmentRestored 'quarantine'
           & $bin --ledger-dir $qLedger cleanup --latest
 
-          $jsUnauthorized = & cscript.exe //nologo .\scripts\windows\enum.js
-          if ($LASTEXITCODE -ne 2) { throw "unauthorized JScript fallback exit mismatch: $LASTEXITCODE" }
+          $nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $jsUnauthorized = & cscript.exe //nologo .\scripts\windows\enum.js
+            $jsUnauthorizedExit = $LASTEXITCODE
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+          }
+          if ($jsUnauthorizedExit -ne 2) { throw "unauthorized JScript fallback exit mismatch: $jsUnauthorizedExit" }
           if (($jsUnauthorized -join "`n") -notmatch 'Authorization required') { throw 'unauthorized JScript fallback did not explain the authorization gate' }
 
           $jsOutput = & cscript.exe //nologo .\scripts\windows\enum.js --authorized --json
