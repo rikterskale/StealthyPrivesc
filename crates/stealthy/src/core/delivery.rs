@@ -174,7 +174,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
 
     // Copy script fallbacks. Prefer cwd / exe-adjacent paths (no
     // absolute build-machine CARGO_MANIFEST_DIR embedding in release binaries).
-    let scripts_dst = opts.out_dir.join("scripts");
+    let scripts_dst = stage_root.join("scripts");
     fs::create_dir_all(&scripts_dst)?;
     copy_dir_recursive(&scripts_src, &scripts_dst, opts.os == "linux")?;
 

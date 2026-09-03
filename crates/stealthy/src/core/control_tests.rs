@@ -1174,10 +1174,12 @@ mod tests {
         assert!(report.fixtures_cleaned);
         assert_eq!(report.results.len(), 1);
         assert_eq!(report.results[0].status, "observed_drift");
-        assert!(report
-            .notes
-            .iter()
-            .any(|note| note == "comparison_fixture_type=current-executable-copy"));
+        let expected_origin = if cfg!(windows) {
+            "comparison_fixture_type=synthetic-metadata"
+        } else {
+            "comparison_fixture_type=current-executable-copy"
+        };
+        assert!(report.notes.iter().any(|note| note == expected_origin));
     }
 
     #[test]
