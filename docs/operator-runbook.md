@@ -655,8 +655,9 @@ done
 ### 2.12 Script-only deploy (no custom ELF)
 
 When AppArmor/`noexec`/policy blocks the binary. The script fallbacks now also
-print AppArmor/SELinux/`noexec` inventory. They do not disable those controls
-(see `docs/techniques.md` for the `endpoint-bypass` alternate-path / approved-fixture contract).
+print AppArmor/SELinux/`noexec` inventory. Enumeration fallbacks do not disable
+those controls; `endpoint-bypass` remains alternate-path / approved-fixture
+only (see `docs/techniques.md`).
 
 ```bash
 scp scripts/linux/enum.sh scripts/linux/enum.py scripts/linux/enum-posix.sh scripts/linux/enum.pl \
@@ -817,10 +818,12 @@ STEALTHY_AUTHORIZED=1 "$BIN" enum --auto-exploit \
   --allow-techniques kernel-exploit,service-replace,persistence
 ```
 
-In this revision most of those IDs are scaffolded (flag accepted + findings
-recorded); payload execution lands in follow-up work. `endpoint-bypass` is the
-documented exception: alternate-path + approved-fixture validation only — never
-AMSI/ETW/EDR/AppLocker/WDAC disable (see `docs/techniques.md`).
+In this revision most non-evasion IDs are scaffolded (flag accepted + findings
+recorded); payload execution for those families lands in follow-up work.
+`endpoint-bypass` is alternate-path + approved-fixture validation only.
+AMSI/ETW/AV-EDR interference uses `amsi-bypass` / `etw-unhook` /
+`av-edr-service` with `--confirm-evasion` (see `docs/techniques.md` and
+`docs/evasion.md`).
 
 ### 3.7 Script fallback execution
 
@@ -1383,8 +1386,10 @@ copy /Y W:\engagement\stealthy.exe C:\Users\Public\Documents\cache-update\stealt
 ### 4.10 Script-only deploy (custom `.exe` blocked)
 
 Drop scripts without the PE. `enum.ps1` / `enum.js` inventory AppLocker, WDAC/CI,
-SmartScreen, and AMSI signals. They do not disable those controls; see
-`docs/techniques.md` for the `endpoint-bypass` contract.
+SmartScreen, and AMSI signals. Those enumeration fallbacks do not disable
+controls; `endpoint-bypass` stays alternate-path / approved-fixture only.
+Gated AMSI/ETW/AV-EDR interference belongs under the evasion IDs (see
+`docs/techniques.md` and `docs/evasion.md`).
 
 ```powershell
 $Dir = 'C:\Users\Public\Documents\cache-update'
@@ -1434,7 +1439,7 @@ where msbuild
 msbuild C:\Users\Public\Documents\cache-update\EnumTasks.csproj
 ```
 
-If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, escalate within ROE or use `--allow-techniques endpoint-bypass` only when approved (alternate-path + approved-fixture validation; never control disable — see `docs/techniques.md`).
+If AppLocker blocks `powershell.exe` but allows `cscript.exe`, use `enum.js`. If both are blocked, escalate within ROE or use `--allow-techniques endpoint-bypass` only when approved (alternate-path + approved-fixture validation). Control interference is not part of `endpoint-bypass`; use evasion-family IDs with `--confirm-evasion` when ROE permits (see `docs/techniques.md` and `docs/evasion.md`).
 
 ### 4.11 Post-deploy verify (Windows)
 
@@ -1608,8 +1613,9 @@ Before cleanup, confirm:
 - SmartScreen, AppLocker, WDAC, AMSI, or EDR signals are recorded via
   `windows.endpoint_controls` or script fallbacks; use approved script paths
   when the PE is blocked. `--allow-techniques endpoint-bypass` means
-  alternate-path + approved-fixture validation (never AMSI/ETW/EDR/AppLocker/WDAC
-  disable); see `docs/techniques.md`.
+  alternate-path + approved-fixture validation only. AMSI/ETW/AV-EDR
+  interference uses evasion IDs with `--confirm-evasion`; see
+  `docs/techniques.md` and `docs/evasion.md`.
 - Any service, task, registry, or file write is attributable to an approved
   action and has a recorded rollback or cleanup result.
 - The sealed-file hash, report run ID, and key custody are recorded off-host.
@@ -1879,9 +1885,11 @@ name or directory. Resolve the exact artifact against the run log first.
 Remember: Linux builds do not contain Windows plugins and vice versa.
 Endpoint-control plugins detect constraints and recommend approved script
 fallbacks; with `--allow-techniques endpoint-bypass` they also record
-alternate-path / approved-fixture validation intent. They do not disable,
+alternate-path / approved-fixture validation intent. That ID does not disable,
 unhook, or kill AppLocker, WDAC, SmartScreen, AMSI, ETW providers, AppArmor,
-or AV/EDR (see `docs/techniques.md`).
+or AV/EDR — use `amsi-bypass` / `etw-unhook` / `av-edr-service` with
+`--confirm-evasion` when ROE permits (see `docs/techniques.md` and
+`docs/evasion.md`).
 
 ---
 

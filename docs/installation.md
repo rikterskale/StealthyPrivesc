@@ -362,8 +362,11 @@ This product **detects** those controls (`linux.endpoint_controls` /
 endpoint-bypass` records alternate-path intent and approved-fixture validation
 guidance when ROE permits (use `--artifact` and/or `controls --execute` for
 benign allow/block observation). Disabling or tampering with those controls is
-**not** part of `endpoint-bypass`; it is Planned under separate gated technique
-families. See `docs/techniques.md`.
+**not** part of `endpoint-bypass`. AMSI/ETW/AV-EDR interference uses the gated
+opt-in IDs `amsi-bypass`, `etw-unhook`, and `av-edr-service` with
+`--confirm-evasion`. Other helpers (AppLocker/WDAC weakening, quarantine
+tamper, path exclusions) remain planned under separate family IDs. See
+`docs/techniques.md` and `docs/evasion.md`.
 
 ### Approved paths when a custom binary cannot run
 

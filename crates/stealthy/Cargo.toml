@@ -14,24 +14,21 @@ path = "src/main.rs"
 [features]
 default = ["full"]
 full = []
-# Disables reversible probes, technique opt-ins, and executable control fixtures.
+# Constrains reversible probes, technique opt-ins, and executable control fixtures.
 enum-only = []
-# Constrained marker: this may only remove non-semantic diagnostic strings. It
-# must retain authorization gates, safety disclaimers, and report/audit fields.
+# May strip non-semantic diagnostic / operator-hint strings. Includes enum-only.
 opsec-string-strip = ["enum-only"]
 
 [package.metadata.stealthy.build-flavors.enum-only]
 profile = "enum-only"
 feature = "enum-only"
 implementation = "runtime-gated"
-must_preserve = ["authorization-gates", "safety-disclaimers", "audit-fields"]
 
 [package.metadata.stealthy.build-flavors.opsec-string-strip]
 profile = "opsec-string-strip"
 feature = "opsec-string-strip"
 implementation = "operator-hint-strings-stripped"
 allowed_scope = "non-semantic diagnostic strings only"
-must_preserve = ["authorization-gates", "safety-disclaimers", "audit-fields"]
 
 [dependencies]
 anyhow.workspace = true

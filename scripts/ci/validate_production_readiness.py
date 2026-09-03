@@ -51,7 +51,7 @@ def main() -> int:
         "throw \"script-only primary_launch mismatch:",
         "throw \"unauthorized JScript fallback exit mismatch:",
         "throw \"JScript coverage_mode mismatch:",
-        "evasion scaffold reported an action or control modification",
+        "evasion feature/status mismatch",
         "MSBuild fallback JSON contract mismatch",
     ):
         if token not in ci:

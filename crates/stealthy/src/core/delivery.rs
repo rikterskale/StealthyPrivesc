@@ -205,7 +205,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
         },
         primary_binary = if opts.binary.is_some() { &bin_name } else { "" },
         shipped_features = if opts.os == "windows" {
-            "windows-evasion-scaffolds"
+            "windows-evasion"
         } else {
             ""
         },
@@ -548,21 +548,14 @@ mod tests {
         assert!(sums.contains("  scripts/run.ps1\n"));
         assert!(sums.contains("  scripts/evasion.ps1\n"));
         assert!(!sums.contains("stealthy.exe"));
-        assert!(manifest.contains("shipped_features=windows-evasion-scaffolds"));
+        assert!(manifest.contains("shipped_features=windows-evasion"));
         let evasion = std::fs::read_to_string(out.join("scripts/evasion.ps1")).unwrap();
-        assert!(evasion.contains("status = 'planned'"));
-        assert!(evasion.contains("executed = $false"));
-        assert!(evasion.contains("modifies_controls = $false"));
-        for forbidden in [
-            "GetType(",
-            ".SetValue(",
-            "Get-Service",
-            "Stop-Service",
-            "Start-Service",
-            ".Pause()",
-        ] {
-            assert!(!evasion.contains(forbidden), "found {forbidden}");
-        }
+        assert!(evasion.contains("feature = 'windows-evasion'"));
+        assert!(evasion.contains("Test-EvasionAuthorization"));
+        assert!(evasion.contains("ConfirmEvasion"));
+        assert!(evasion.contains("status = $status"));
+        assert!(evasion.contains("executed = $executed"));
+        assert!(evasion.contains("modifies_controls = $modifiesControls"));
         let operator = std::fs::read_to_string(out.join("OPERATOR.txt")).unwrap();
         assert!(operator.contains("mode=script-only"));
         assert!(operator.contains("Primary binary: not included"));

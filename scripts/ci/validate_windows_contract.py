@@ -12,7 +12,7 @@ FALLBACK = ROOT / "scripts/windows/enum.ps1"
 JSCRIPT = ROOT / "scripts/windows/enum.js"
 MSBUILD = ROOT / "scripts/windows/EnumTasks.csproj"
 EXPLOIT_MOD = ROOT / "crates/stealthy/src/exploit/mod.rs"
-RUST_EVASION_SCAFFOLDS = (
+RUST_EVASION_MODULES = (
     ROOT / "crates/stealthy/src/exploit/amsi_bypass.rs",
     ROOT / "crates/stealthy/src/exploit/etw_unhook.rs",
     ROOT / "crates/stealthy/src/exploit/av_edr_service.rs",
@@ -39,11 +39,11 @@ def main() -> int:
     require(evasion, "-split ','", "evasion", failures)
     require(evasion, "ToLowerInvariant()", "evasion", failures)
     require(evasion, "Test-EvasionAuthorization -Authorized:$Authorized", "evasion", failures)
-    require(evasion, "feature = 'windows-evasion-scaffolds'", "evasion", failures)
-    require(evasion, "status = 'planned'", "evasion", failures)
-    require(evasion, "executed = $false", "evasion", failures)
-    require(evasion, "modifies_controls = $false", "evasion", failures)
-    require(evasion, "throw 'Evasion scaffold requires -Technique'", "evasion", failures)
+    require(evasion, "feature = 'windows-evasion'", "evasion", failures)
+    require(evasion, "status = $status", "evasion", failures)
+    require(evasion, "executed = $executed", "evasion", failures)
+    require(evasion, "modifies_controls = $modifiesControls", "evasion", failures)
+    require(evasion, "throw 'Evasion technique requires -Technique'", "evasion", failures)
     require(evasion, "$result | ConvertTo-Json", "evasion", failures)
     require(dispatcher, "$authorizedArg = ($Arguments -contains '--authorized')", "dispatcher", failures)
     require(dispatcher, "$authorizedEnv = $env:STEALTHY_AUTHORIZED -eq '1'", "dispatcher", failures)
@@ -69,31 +69,13 @@ def main() -> int:
 
     if "-like '*amsi-bypass*'" in evasion or "-like '*etw-unhook*'" in evasion or "-like '*av-edr-service*'" in evasion:
         failures.append("evasion: allowlist matching must be exact, not wildcard-based")
-    for forbidden in ("GetType(", ".SetValue(", "Get-Service", "Stop-Service", "Start-Service", ".Pause()"):
-        if forbidden in evasion:
-            failures.append(f"evasion: scaffold contains forbidden control action {forbidden!r}")
 
     for module in ("amsi_bypass", "etw_unhook", "av_edr_service"):
         require(exploit_mod, f"pub mod {module};", "Rust exploit module graph", failures)
-    rust_forbidden = (
-        "VirtualProtect",
-        "GetProcAddress",
-        "OpenSCManager",
-        "OpenService",
-        "ControlService",
-        "StartService",
-        "copy_nonoverlapping",
-        "PAGE_EXECUTE_READWRITE",
-    )
-    for path in RUST_EVASION_SCAFFOLDS:
-        scaffold = path.read_text(encoding="utf-8")
-        require(scaffold, "pub fn check_evasion_gate", str(path.relative_to(ROOT)), failures)
-        require(scaffold, "pub fn planned_status", str(path.relative_to(ROOT)), failures)
-        for forbidden in rust_forbidden:
-            if forbidden in scaffold:
-                failures.append(
-                    f"{path.relative_to(ROOT)}: scaffold contains forbidden action API {forbidden!r}"
-                )
+    for path in RUST_EVASION_MODULES:
+        module = path.read_text(encoding="utf-8")
+        require(module, "pub fn check_evasion_gate", str(path.relative_to(ROOT)), failures)
+        require(module, "pub fn run", str(path.relative_to(ROOT)), failures)
 
     if failures:
         print(*failures, sep="\n")

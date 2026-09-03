@@ -25,13 +25,15 @@ EDR sensors, AppArmor, SELinux, fapolicyd, and `noexec` mounts.
 
 `--allow-techniques endpoint-bypass` means **alternate-path + approved validation**
 only. It does **not** authorize control disable, unhook, kill, quarantine
-tamper, or evasion. Those behaviors are tracked as **planned, separately gated
-technique families** below. AMSI, ETW, and AV/EDR already have distinct IDs,
-but they are scaffold markers only. Any future execution requires an explicit
-ROE gate, tests, safety/restoration review, and a contract rewrite.
+tamper, or evasion. AMSI, ETW, and AV/EDR interference use the separately
+gated IDs `amsi-bypass`, `etw-unhook`, and `av-edr-service` (see below) and
+require `--confirm-evasion` in addition to `--authorized` and
+`--allow-techniques`. AppLocker/WDAC policy weakening, quarantine tamper, and
+generic control-disable helpers remain planned under other distinct family IDs
+and must not be folded into `endpoint-bypass`.
 
-Until those families ship, the supported response when a custom binary is
-blocked is detect → recommend → script/dispatcher fallback (and optional
+When a custom binary is blocked and evasion is outside ROE, the supported
+response remains detect → recommend → script/dispatcher fallback (and optional
 approved-fixture validation).
 
 ### Operator workflow when a binary is constrained
@@ -40,7 +42,7 @@ approved-fixture validation).
 | --- | --- |
 | Linux ELF blocked / `noexec` / AppArmor | staged `run.sh` (`python → bash → sh → perl`) or direct `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl` |
 | Windows PE blocked (AppLocker/WDAC/SmartScreen/AV) | Dispatcher `run.ps1` chain, or `enum.ps1` / `enum.js` / `EnumTasks.csproj` |
-| Defender/AV quarantines the staged PE | Prefer non-`TEMP` drop path + lab exclusion/signing; use dispatcher fallback. Stronger interference is Planned (separate family) |
+| Defender/AV quarantines the staged PE | Prefer non-`TEMP` drop path + lab exclusion/signing; use dispatcher fallback. Use `av-edr-service` with `--confirm-evasion` for read-only product observation and the operator playbook when ROE permits |
 | PowerShell constrained but `cscript` allowed | `enum.js` |
 | ROE permits alternate-path tracking | `--allow-techniques endpoint-bypass` |
 | ROE permits policy outcome validation | `--artifact PATH` and/or `stealthy --authorized controls --execute` with disposable fixtures |
@@ -74,22 +76,24 @@ validation only.
 
 ---
 
-## Evasion technique families (scaffold/planned only)
+## Evasion technique families (gated opt-in)
 
-These IDs are **explicitly gated** and require `--authorized`, the exact
-`--allow-techniques <id>`, and `--confirm-evasion`. Passing all gates records a
-`scaffold` finding only. Dormant source prototypes are retained for future
-review, but they are not declared, compiled, dispatched, or included in release
-kits. No executable payload is available through the current product surface.
+These IDs are **explicitly gated** offensive capabilities for authorized
+red-team / lab use. They require `--authorized`, the exact
+`--allow-techniques <id>`, and `--confirm-evasion`. After all gates pass, Rust
+emits `FindingKind::ExploitAttempt` with `condition=technique-opted-in`
+(plugin `windows.evasion`). Contributors may implement real family payloads
+behind those gates. Windows kits ship `scripts/windows/evasion.ps1` under the
+`windows-evasion` feature with `status=ready`.
 
 | Technique ID | Contract in this build | Gate |
 |--------------|------------------------|------|
-| `amsi-bypass` | Planned marker; no AMSI patching or weakening | `--allow-techniques amsi-bypass --confirm-evasion` |
-| `etw-unhook` | Planned marker; no ETW patching, unhooking, or provider disablement | `--allow-techniques etw-unhook --confirm-evasion` |
-| `av-edr-service` | Planned marker; no service/driver/sensor manipulation | `--allow-techniques av-edr-service --confirm-evasion` |
+| `amsi-bypass` | Gated AMSI bypass / patching / blinding path | `--allow-techniques amsi-bypass --confirm-evasion` |
+| `etw-unhook` | Gated ETW unhook / patch / provider-disable path | `--allow-techniques etw-unhook --confirm-evasion` |
+| `av-edr-service` | Read-only AV/EDR product observation + thorough operator playbook (non-executing; no service stop / memory patch / quarantine tamper) | `--allow-techniques av-edr-service --confirm-evasion` |
 
-The extra confirmation records that the planned family is inside the ROE; it
-does not make an implementation available. See [Evasion-family status](evasion.md).
+The extra confirmation records that the family is inside the ROE. See
+[Evasion-family status](evasion.md).
 
 ---
 
@@ -139,13 +143,18 @@ set `recommend_only=true`, and never execute a catalog technique.
 ## High-impact opt-in (`--allow-techniques`)
 
 These families are off by default and require an explicit CLI opt-in when ROE
-permits. Most families still record scaffold findings only in this revision;
-payload execution for those families lands in follow-up work.
+permits. Several non-evasion families still record scaffold findings only in
+this revision; payload execution for those families lands in follow-up work.
 
-**Exception — `endpoint-bypass`:** the contract is fully defined here as
-detect + alternate-path + approved-fixture validation. Control disable,
-quarantine tamper, and related interference are **planned separate families**
-(see above), not part of this ID.
+**`endpoint-bypass`:** detect + alternate-path + approved-fixture validation
+only. Control interference is not part of this ID — use the evasion-family IDs
+below (or other planned families for AppLocker/WDAC/quarantine helpers).
+
+**Evasion IDs (`amsi-bypass`, `etw-unhook`, `av-edr-service`):** gated opt-in
+families. They additionally require `--confirm-evasion`. `amsi-bypass` /
+`etw-unhook` emit `ExploitAttempt` / `technique-opted-in`. `av-edr-service`
+emits read-only product observation findings plus `av-edr-playbook-ready`
+(see `docs/evasion.md`).
 
 | ID | Family | Contract in this build |
 | --- | --- | --- |
@@ -156,14 +165,15 @@ quarantine tamper, and related interference are **planned separate families**
 | `service-replace` | Service binary replacement | Scaffold findings only |
 | `msi` | MSI payload construction/execution | Scaffold findings only |
 | `credential-dump` | Credential dumping/exfiltration | Scaffold findings only |
-| `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. Does not include AMSI/ETW/EDR/AppLocker/WDAC disable or quarantine tamper (those are Planned separate families) |
-| `amsi-bypass` | AMSI interference | Separately confirmed scaffold/planned marker only; no execution |
-| `etw-unhook` | ETW interference | Separately confirmed scaffold/planned marker only; no execution |
-| `av-edr-service` | AV/EDR service or driver interference | Separately confirmed scaffold/planned marker only; no execution |
+| `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. Does not include AMSI/ETW/EDR interference (use evasion IDs) or AppLocker/WDAC/quarantine helpers (planned separate families) |
+| `amsi-bypass` | AMSI interference | Gated opt-in offensive capability; requires `--confirm-evasion` |
+| `etw-unhook` | ETW interference | Gated opt-in offensive capability; requires `--confirm-evasion` |
+| `av-edr-service` | AV/EDR observation + operator playbook | Gated opt-in; read-only product observation and comprehensive What's-next; requires `--confirm-evasion`; does not disable sensors |
 
 Example:
 
 ```bash
 stealthy --authorized enum --allow-techniques kernel-exploit,potato,msi
 stealthy --authorized enum --allow-techniques endpoint-bypass --artifact /approved/test/artifact
+stealthy --authorized --confirm-evasion enum --allow-techniques amsi-bypass,etw-unhook,av-edr-service
 ```

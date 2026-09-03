@@ -75,7 +75,7 @@ def write_dispatcher_example(stage, platform, binary_name):
         "target_username=\n"
         "drop_dir=\n"
         f"primary_binary={binary_name}\n"
-        f"shipped_features={'windows-evasion-scaffolds' if platform == 'windows' else ''}\n"
+        f"shipped_features={'windows-evasion' if platform == 'windows' else ''}\n"
         f"{fallback_key}={fallback_value}\n"
     )
     scripts = stage / "scripts"
@@ -154,7 +154,7 @@ def main():
             "authorization_required": True,
             "default_execution_mode": "enumerate-only",
             "features": (
-                ["windows-evasion-scaffolds"] if args.platform == "windows" else []
+                ["windows-evasion"] if args.platform == "windows" else []
             ),
             "contents": [
                 {

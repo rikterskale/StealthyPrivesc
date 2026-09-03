@@ -124,8 +124,8 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub checkpoint: Option<std::path::PathBuf>,
 
-    /// Extra confirmation for planned evasion-family scaffold markers.
-    /// Does not enable an implementation. Env: STEALTHY_EVASION_CONFIRMED=1
+    /// Extra confirmation required to run gated evasion technique families.
+    /// Env: STEALTHY_EVASION_CONFIRMED=1
     #[arg(
         long = "confirm-evasion",
         global = true,
@@ -389,7 +389,7 @@ pub enum Commands {
         /// Opt-in high-impact technique families when ROE permits.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
-        /// Extra confirmation for planned evasion-family scaffold markers; no implementation exists.
+        /// Extra confirmation required to run gated evasion technique families.
         #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
         confirm_evasion: bool,
         /// Comma-separated plugin IDs to run (default: all for this OS).
@@ -411,15 +411,13 @@ pub enum Commands {
         /// Known IDs: persistence, host-crash, potato, kernel-exploit,
         /// service-replace, msi, credential-dump, endpoint-bypass,
         /// amsi-bypass, etw-unhook, av-edr-service.
-        /// Most families are scaffold-only in this revision. `endpoint-bypass`
-        /// means alternate-path + approved-fixture validation only (AMSI/ETW/EDR
-        /// disable and quarantine tamper are separate families). Evasion techniques
-        /// (amsi-bypass, etw-unhook, av-edr-service) require --confirm-evasion.
-        /// See docs/techniques.md and docs/evasion.md.
+        /// `endpoint-bypass` means alternate-path + approved-fixture validation
+        /// only. Evasion techniques (amsi-bypass, etw-unhook, av-edr-service)
+        /// require --confirm-evasion. See docs/techniques.md and docs/evasion.md.
         #[arg(long, value_delimiter = ',')]
         allow_techniques: Option<Vec<String>>,
 
-        /// Extra confirmation for planned evasion-family scaffold markers; no implementation exists.
+        /// Extra confirmation required to run gated evasion technique families.
         /// Env: STEALTHY_EVASION_CONFIRMED=1
         #[arg(long, env = "STEALTHY_EVASION_CONFIRMED", value_parser = BoolishValueParser::new(), action = ArgAction::SetTrue)]
         confirm_evasion: bool,
@@ -529,7 +527,8 @@ Default mode enumerates and recommends. Auto-exploitation is opt-in for \
 reversible probes. High-impact families (kernel exploits, persistence, Potato, \
 MSI, credential dump, service replace, host-crash, endpoint-bypass) require \
 explicit --allow-techniques when ROE permits. endpoint-bypass means \
-alternate-path + approved-fixture validation only (never AMSI/ETW/EDR disable).
+alternate-path + approved-fixture validation only; AMSI/ETW/AV-EDR interference \
+uses amsi-bypass / etw-unhook / av-edr-service with --confirm-evasion.
 
 Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 

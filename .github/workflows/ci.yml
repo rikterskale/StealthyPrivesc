@@ -773,10 +773,9 @@ jobs:
           if ($js.identity.elevation_source -ne 'jscript') { throw "JScript elevation_source mismatch: $($js.identity.elevation_source)" }
 
           $evasion = & powershell.exe -NoProfile -File .\scripts\windows\evasion.ps1 -Technique amsi-bypass -Authorized -ConfirmEvasion -AllowTechniques amsi-bypass -Json | ConvertFrom-Json
-          if ($evasion.feature -ne 'windows-evasion-scaffolds' -or $evasion.status -ne 'planned') { throw 'evasion scaffold identity/status mismatch' }
-          if ($evasion.executed -ne $false -or $evasion.modifies_controls -ne $false) { throw 'evasion scaffold reported an action or control modification' }
+          if ($evasion.feature -ne 'windows-evasion' -or $evasion.status -ne 'ready') { throw 'evasion feature/status mismatch' }
           $evasionRejected = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-File', '.\scripts\windows\evasion.ps1', '-Technique', 'amsi-bypass', '-Authorized', '-AllowTechniques', 'amsi-bypass', '-Json') -Wait -PassThru -NoNewWindow
-          if ($evasionRejected.ExitCode -ne 1) { throw "evasion scaffold missing-confirmation exit mismatch: $($evasionRejected.ExitCode)" }
+          if ($evasionRejected.ExitCode -ne 1) { throw "evasion missing-confirmation exit mismatch: $($evasionRejected.ExitCode)" }
 
           $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
           if ($msbuildCommand) {

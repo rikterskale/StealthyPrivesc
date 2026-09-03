@@ -1,20 +1,18 @@
 # Contributing
 
-Contributions are welcome for authorized, defensive, and lab-safe use cases.
+Contributions are welcome for authorized assessment, red-team, and lab use
+cases.
 
 ## Before opening a pull request
 
 - Read the README and `SECURITY.md`.
 - Keep the default behavior enumeration-only.
 - High-impact techniques (kernel exploit, persistence, Potato, MSI, credential
-  dump, service replace, host-crash, endpoint-bypass) must stay behind
-  `--allow-techniques` and document ROE expectations. `endpoint-bypass` is
-  alternate-path + approved-fixture validation only — never AMSI/ETW/EDR/
-  AppLocker/WDAC disable, unhook, or kill payloads (see `docs/techniques.md`).
-- `amsi-bypass`, `etw-unhook`, and `av-edr-service` are separately gated
-  scaffold/planned IDs only. Do not add execution modules or script equivalents
-  without a new safety review, tests, restoration contract, and documentation
-  change.
+  dump, service replace, host-crash, endpoint-bypass, amsi-bypass, etw-unhook,
+  av-edr-service, and related families) must stay behind `--allow-techniques`
+  and document ROE expectations. Evasion-family work belongs under the
+  dedicated IDs and `--confirm-evasion`; see `docs/evasion.md` and
+  `docs/techniques.md`.
 - Add or update tests for behavior changes.
 - Run `cargo fmt --all`, `cargo test --workspace`, and
   `cargo clippy --workspace --all-targets -- -D warnings`.

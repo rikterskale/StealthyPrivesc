@@ -53,14 +53,21 @@ def validate_archive(path: Path, platform: str) -> None:
         raise AssertionError(f"{platform} release manifest safety contract is invalid")
     if manifest["platform"] != platform or manifest["architecture"] != "x86_64":
         raise AssertionError(f"{platform} release manifest target metadata is invalid")
-    expected_features = ["windows-evasion-scaffolds"] if platform == "windows" else []
+    expected_features = ["windows-evasion"] if platform == "windows" else []
     if manifest.get("features") != expected_features:
         raise AssertionError(f"{platform} release feature metadata is invalid")
     if platform == "windows":
-        scaffold = payloads["scripts/evasion.ps1"].decode("utf-8")
-        for marker in ("executed = $false", "modifies_controls = $false", "status = 'planned'"):
-            if marker not in scaffold:
-                raise AssertionError(f"Windows evasion scaffold missing safety marker: {marker}")
+        evasion = payloads["scripts/evasion.ps1"].decode("utf-8")
+        for marker in (
+            "feature = 'windows-evasion'",
+            "Test-EvasionAuthorization",
+            "ConfirmEvasion",
+            "status = $status",
+            "executed = $executed",
+            "modifies_controls = $modifiesControls",
+        ):
+            if marker not in evasion:
+                raise AssertionError(f"Windows evasion helper missing gate/status marker: {marker}")
     entries = {item["path"]: item for item in manifest["contents"]}
     if set(entries) != names - {"RELEASE-MANIFEST.json", "SHA256SUMS"}:
         raise AssertionError(f"{platform} manifest contents do not match archive contents")

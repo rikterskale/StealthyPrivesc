@@ -299,48 +299,58 @@ impl Engine {
                 .allows(crate::exploit::TechniqueFamily::EndpointBypass)
             {
                 format!(
-                    "ALLOW-TECHNIQUES enabled: {} (endpoint-bypass wires What's next / next_command to live-controls --artifact and controls --execute; other families remain scaffold)",
+                    "ALLOW-TECHNIQUES enabled: {} (endpoint-bypass wires What's next / next_command to live-controls --artifact and controls --execute; evasion families use --confirm-evasion)",
+                    self.allow_techniques.ids().join(", ")
+                )
+            } else if self.allow_techniques.contains_evasion_family() {
+                format!(
+                    "ALLOW-TECHNIQUES enabled (evasion gated): {}",
                     self.allow_techniques.ids().join(", ")
                 )
             } else {
                 format!(
-                    "ALLOW-TECHNIQUES enabled (scaffold): {}",
+                    "ALLOW-TECHNIQUES enabled: {}",
                     self.allow_techniques.ids().join(", ")
                 )
             };
             store.note(note);
             for technique in crate::exploit::TechniqueFamily::ALL {
                 if self.allow_techniques.allows(*technique) {
-                    let finding = match technique {
+                    match technique {
                         crate::exploit::TechniqueFamily::AmsiBypass => {
-                            crate::exploit::amsi_bypass::planned_status(
+                            store.push(finalize_finding(crate::exploit::amsi_bypass::run(
                                 true,
                                 true,
                                 self.evasion_confirmed,
-                            )?
+                            )?));
                         }
                         crate::exploit::TechniqueFamily::EtwUnhook => {
-                            crate::exploit::etw_unhook::planned_status(
+                            store.push(finalize_finding(crate::exploit::etw_unhook::run(
                                 true,
                                 true,
                                 self.evasion_confirmed,
-                            )?
+                            )?));
                         }
                         crate::exploit::TechniqueFamily::AvEdrService => {
-                            crate::exploit::av_edr_service::planned_status(
+                            for finding in crate::exploit::av_edr_service::run(
                                 true,
                                 true,
                                 self.evasion_confirmed,
-                            )?
+                            )? {
+                                store.push(finalize_finding(finding));
+                            }
                         }
-                        _ => crate::exploit::technique_status_with_artifact(
-                            "allow_techniques",
-                            *technique,
-                            true,
-                            self.artifact.as_deref(),
-                        ),
-                    };
-                    store.push(finalize_finding(finding));
+                        _ => {
+                            store.push(finalize_finding(
+                                crate::exploit::technique_status_with_artifact(
+                                    "allow_techniques",
+                                    *technique,
+                                    true,
+                                    self.artifact.as_deref(),
+                                ),
+                            ));
+                        }
+                    }
                 }
             }
         }

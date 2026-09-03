@@ -124,8 +124,9 @@ The command surface is deliberately small:
   for telemetry and cleanup.
 - Script fallbacks are intentionally documented as lower-coverage alternatives.
   Endpoint alternate-path / approved-fixture validation stays behind
-  `--allow-techniques endpoint-bypass` (never control disable/evasion; see
-  `docs/techniques.md`).
+  `--allow-techniques endpoint-bypass` (non-interference ID). AMSI/ETW/AV-EDR
+  interference uses the gated evasion IDs with `--confirm-evasion`; see
+  `docs/techniques.md` and `docs/evasion.md`.
 
 ## Risks
 

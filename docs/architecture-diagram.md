@@ -62,8 +62,9 @@ flowchart TD
 
 - Authorization is required before host enumeration.
 - Default execution is enumeration-only.
-- High-impact families require `--allow-techniques` (scaffolded in this revision;
-  AMSI/ETW/AV-EDR families have no execution modules).
+- High-impact families require `--allow-techniques` (most non-evasion families
+  remain scaffolded; `amsi-bypass` / `etw-unhook` / `av-edr-service` are gated
+  opt-in offensive capabilities that also require `--confirm-evasion`).
 - Reversible write probes require an exact finding approval or explicit
   standalone `--auto-exploit`.
 - Reports and keys are kept separate when evidence is persisted.

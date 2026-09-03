@@ -34,7 +34,7 @@ Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
 | Application-control / EDR assessment | Done (`linux.app_control`, `windows.app_control`; read-only policy, provenance, sensor, audit, fixture validation, baseline drift, and detection-exposure inventory) |
 | Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
-| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; AMSI/ETW/EDR disable and quarantine tamper are Planned separate families) |
+| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; `amsi-bypass` / `etw-unhook` / `av-edr-service`: gated opt-in offensive capabilities with `--confirm-evasion`) |
 | Windows service/task ACL context | Native service-object DACL evaluation, registry-backed Task Scheduler descriptor checks for `WRITE_DAC`/`WRITE_OWNER`/`DELETE`, token-aware service/task file ACL checks, and read-only `icacls` fallback |
 | Encrypted remote HTTPS output | Done (bounded external `curl` client, TLS 1.2 minimum, 2xx required, protected key retained on ambiguous delivery) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
@@ -102,7 +102,7 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
 | `stealthy enum` / `stealthy scan` | Run enumeration (default mode) |
 | `stealthy enum --auto-exploit` | Add reversible probes |
-| `stealthy enum --allow-techniques ...` | Opt into high-impact families (`endpoint-bypass` = alternate-path + approved-fixture validation; others mostly scaffold) |
+| `stealthy enum --allow-techniques ...` | Opt into high-impact families (`endpoint-bypass` = alternate-path + approved-fixture validation; evasion IDs gated with `--confirm-evasion`; other families mostly scaffold) |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
 | `stealthy controls` / `validate-controls` | Run disposable control-validation cases; authorization required |
@@ -200,20 +200,22 @@ Optional:
 ## Planned future enhancements
 
 Intentional backlog. Items that change host protections require a distinct
-technique-family ID, ROE gate, and contract revision — they must not ship under
-today's `endpoint-bypass` meaning (alternate-path + approved-fixture
-validation). The three listed evasion IDs already exist as scaffold markers.
-Windows kits include a separately reviewed `windows-evasion-scaffolds` module
-that reports gated planned/not-executed status and contains no interference
-implementation; it is never selected by the enumeration dispatcher.
+technique-family ID and ROE gate — they must not ship under today's
+`endpoint-bypass` meaning (alternate-path + approved-fixture validation). The
+three evasion IDs (`amsi-bypass`, `etw-unhook`, `av-edr-service`) are gated
+opt-in offensive capabilities: after `--authorized`, `--allow-techniques`, and
+`--confirm-evasion`, Rust emits `ExploitAttempt` / `technique-opted-in`, and
+Windows kits ship the `windows-evasion` PowerShell module (`status=ready`).
+Contributors may implement real payloads behind those gates. The evasion module
+is never selected by the enumeration dispatcher unless the operator opts in.
 
 | Enhancement | Status | Gate / notes |
 | --- | --- | --- |
 | In-process HTTPS exfil client | Deferred | Current encrypted remote delivery uses a bounded external `curl` client |
-| AMSI bypass / patching / blinding | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
-| ETW unhooking / patching / provider disablement | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
-| AV / EDR service stop or sensor unload | Scaffold/planned only | Separately confirmed ID; shipped Windows scaffold explicitly reports `executed=false` |
-| AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation |
+| AMSI bypass / patching / blinding | Gated opt-in (`amsi-bypass`) | Requires `--confirm-evasion`; see `docs/evasion.md` |
+| ETW unhooking / patching / provider disablement | Gated opt-in (`etw-unhook`) | Requires `--confirm-evasion`; see `docs/evasion.md` |
+| AV / EDR product observation + operator playbook | Gated opt-in (`av-edr-service`) | Read-only observation; requires `--confirm-evasion`; no service stop / sensor tamper; see `docs/evasion.md` |
+| AppLocker / WDAC / SmartScreen policy weakening or removal | Planned (contract change required) | New family; not validation; not `endpoint-bypass` |
 | Quarantine restore / quarantine-tamper helpers | Planned (contract change required) | New family; delivery-PE recovery / inspection |
 | Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |
 | Generic control-disable / "hide from sensor" payloads | Planned (contract change required) | New family; ROE-gated product decision |
@@ -240,17 +242,17 @@ is not evidence that the work is implemented or production-ready.
 | P2 | Close Linux plugin test gaps, starting with endpoint controls, polkit, sudo, app control, SUID, PATH/LD, and credentials. | Fixture tests cover positive, negative, permission-denied, empty-input, cancellation, and bounded-resource paths without executing escalation techniques. |
 | P2 | Add per-file Windows coverage and close native plugin test gaps, especially `admin_sessions`, `app_control`, `autoruns`, `credentials`, `endpoint_controls`, `env_path`, `privileges`, and `uac`. | Windows coverage identifies unexecuted functions and lines; each public plugin behavior and unavailable/error state has a deterministic fixture test. |
 | P2 | Make clean-workstation verification reproducible where a Rust toolchain is initially absent. | Documented setup installs or locates the pinned toolchain, then runs fmt, Clippy, all tests, release builds, and the platform smoke suite from a clean checkout. Dependency or toolchain changes require explicit approval. |
-| P3 | Review AMSI, ETW, and AV/EDR prototype sources and decide whether to retain, remove, or redesign them under separately approved contracts. | Done: active Rust and PowerShell actions were replaced by compiled/tested status-only Rust gates and the shipped `windows-evasion-scaffolds` PowerShell module. Both require the distinct family ID, authorization, and confirmation and expose no execution/control-modification path. |
+| P3 | Review AMSI, ETW, and AV/EDR prototype sources and decide whether to retain, remove, or redesign them under separately approved contracts. | Done: `amsi-bypass`, `etw-unhook`, and `av-edr-service` are gated opt-in offensive capabilities (`--authorized` + `--allow-techniques` + `--confirm-evasion`). Rust emits `ExploitAttempt` / `technique-opted-in`; Windows kits ship `windows-evasion` (`status=ready`). Contributors may implement payloads behind the gates. |
 | P3 | Decide the product contract for scaffold-only high-impact families (`persistence`, `host-crash`, `potato`, `kernel-exploit`, `service-replace`, `msi`, and `credential-dump`). | Each family is either explicitly retained as a non-executing roadmap marker or receives a separate specification, ROE gate, reversibility policy where possible, failure handling, and end-to-end acceptance plan. None may be folded into `endpoint-bypass`. |
 
 Recommended execution order is P0 → P1 → P2. P3 is a governance and safety
 decision, not a prerequisite for certifying the supported enumerate-and-validate
 product surface.
 
-Implementation update: the three P0 items, all four P1 items, and the reviewed
-Windows evasion-scaffold contract are implemented in this revision. The P2
-verification work is enforced by CI and remains a continuing coverage program;
-the other governance items retain their acceptance gates above.
+Implementation update: the three P0 items, all four P1 items, and the gated
+Windows evasion contract (`windows-evasion`) are implemented in this revision.
+The P2 verification work is enforced by CI and remains a continuing coverage
+program; the other governance items retain their acceptance gates above.
 
 ## Phase 2 coverage (implemented)
 

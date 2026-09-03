@@ -26,7 +26,7 @@ The authors and distributors assume **no liability** for misuse.
 | --- | --- |
 | Mode | Enumeration + recommendations only |
 | Auto-exploit | Opt-in (`--auto-exploit`), low-noise reversible probes |
-| High-impact techniques | Opt-in (`--allow-techniques`); most scaffolded; `endpoint-bypass` = alternate-path + approved-fixture validation |
+| High-impact techniques | Opt-in (`--allow-techniques`); most scaffolded; `endpoint-bypass` = alternate-path + approved-fixture validation; AMSI/ETW/AV-EDR use evasion IDs + `--confirm-evasion` |
 | Disk writes | Off by default (encrypted in-memory results) |
 | Script fallbacks | Provided when a custom binary cannot run |
 
@@ -37,7 +37,7 @@ crates/stealthy/          Rust core (static-friendly release profile)
   src/core/               OS detect, identity, engine, isolated plugin workers, reporting, encrypted store
   src/plugins/linux/      Linux checks (16): sudo, SUID, cron/systemd/timers, containers, groups, polkit, mounts, ssh keys, PATH/LD, CVE hints, NFS, creds, services, wildcards, endpoint controls, app-control assessment
   src/plugins/windows/    Windows checks (12): privileges/Potato hint, services, tasks, AIE, UAC, DLL paths, creds, admins, PATH, autoruns, endpoint controls, app-control assessment
-  src/exploit/            Reversible probes + `--allow-techniques` scaffolding
+  src/exploit/            Reversible probes + `--allow-techniques` families
 scripts/linux/            Python + Bash + POSIX sh + Perl fallbacks (no custom binary; includes control checks)
 scripts/windows/          PowerShell + JScript + MSBuild host stubs (includes control checks)
 docs/                     Architecture, build, technique risk notes
@@ -142,9 +142,12 @@ bash ./drop/scripts/run.sh --authorized --profile balanced enum
 ./target/release/stealthy --authorized enum --auto-exploit
 
 # High-impact families (most are scaffold; endpoint-bypass = alternate-path +
-# approved-fixture validation — never AMSI/ETW/EDR disable; see docs/techniques.md)
+# approved-fixture validation only; AMSI/ETW/AV-EDR interference uses evasion
+# IDs with --confirm-evasion — see docs/techniques.md and docs/evasion.md)
 ./target/release/stealthy --authorized enum \
   --allow-techniques kernel-exploit,potato,msi
+./target/release/stealthy --authorized --confirm-evasion enum \
+  --allow-techniques amsi-bypass,etw-unhook,av-edr-service
 ```
 
 ### Script-only fallbacks
@@ -238,7 +241,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `artifacts` / `cleanup` | Inspect or remove ledger-recorded artifacts |
 | `stage` / `verify` / `one-liners` | Package and verify approved delivery bundles |
 | `enum --auto-exploit` | Opt-in reversible probes |
-| `enum --allow-techniques a,b` | Opt-in high-impact families (`endpoint-bypass` documented in `docs/techniques.md`) |
+| `enum --allow-techniques a,b` | Opt-in high-impact families (`endpoint-bypass` vs evasion IDs in `docs/techniques.md` / `docs/evasion.md`) |
 | `enum --plugins a,b` | Enable listed plugins |
 | `enum --skip a,b` | Skip listed plugins |
 

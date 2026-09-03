@@ -63,13 +63,13 @@ record alternate-path intent and wire What's next / `next_command` to
 `--artifact` trust prediction (`live-controls`) and benign fixture validation
 (`controls --execute`). Under today's `endpoint-bypass` contract they do not
 disable, unhook, or kill AppLocker, WDAC, SmartScreen, AMSI, ETW providers,
-AppArmor, antivirus, or EDR — those interference capabilities are planned as
-separate gated scaffold families. The separately shipped
-`windows-evasion-scaffolds` PowerShell module only returns gated
-planned/not-executed status and is not imported by the dispatcher. Its Rust
-companion modules are compiled and test-covered status gates with no control
-mutation APIs; allowlisting those families in the CLI records scaffold
-findings only. See `docs/techniques.md` and `docs/evasion.md`.
+AppArmor, antivirus, or EDR — that interference belongs under the gated
+evasion IDs `amsi-bypass`, `etw-unhook`, and `av-edr-service` (plus
+`--confirm-evasion`), not under `endpoint-bypass`. Windows kits ship the
+`windows-evasion` PowerShell module (`status=ready`); it is not imported by the
+dispatcher unless an operator opts in. After the three gates pass, Rust emits
+`FindingKind::ExploitAttempt` with `condition=technique-opted-in` (plugin
+`windows.evasion`). See `docs/techniques.md` and `docs/evasion.md`.
 
 ## Script fallbacks
 

@@ -787,7 +787,7 @@ fn allow_techniques_records_scaffold_findings() {
 
 #[cfg(not(feature = "enum-only"))]
 #[test]
-fn evasion_families_require_confirmation_and_emit_status_only_findings() {
+fn evasion_families_require_confirmation_and_emit_opted_in_findings() {
     let rejected = stealthy()
         .args([
             "--authorized",
@@ -825,16 +825,47 @@ fn evasion_families_require_confirmation_and_emit_status_only_findings() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let findings = report["findings"].as_array().unwrap();
-    for technique in ["amsi-bypass", "etw-unhook", "av-edr-service"] {
+    for technique in ["amsi-bypass", "etw-unhook"] {
         let finding = findings
             .iter()
             .find(|finding| finding["technique_id"] == technique)
-            .unwrap_or_else(|| panic!("missing {technique} scaffold"));
+            .unwrap_or_else(|| panic!("missing {technique} finding"));
         assert_eq!(finding["plugin"], "windows.evasion");
-        assert_eq!(finding["kind"], "scaffold");
+        assert_eq!(finding["kind"], "exploit_attempt");
         assert_eq!(finding["leaves_artifacts"], false);
-        assert_eq!(finding["condition"], "technique-scaffold-opted-in");
+        assert_eq!(finding["condition"], "technique-opted-in");
     }
+
+    let av_edr: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding["technique_id"] == "av-edr-service")
+        .collect();
+    assert!(
+        !av_edr.is_empty(),
+        "missing av-edr-service findings: {findings:?}"
+    );
+    assert!(av_edr.iter().all(|finding| finding["plugin"] == "windows.evasion"));
+    assert!(av_edr
+        .iter()
+        .all(|finding| finding["leaves_artifacts"] == false));
+    assert!(av_edr.iter().any(|finding| {
+        finding["condition"] == "av-edr-playbook-ready"
+            || finding["condition"] == "av-edr-product-observed"
+            || finding["condition"] == "av-edr-collection-limited"
+    }));
+    let playbook = av_edr
+        .iter()
+        .find(|finding| finding["condition"] == "av-edr-playbook-ready")
+        .expect("av-edr playbook finding");
+    let what_next = playbook["recommendation"]
+        .as_str()
+        .or_else(|| playbook["what_next"].as_str())
+        .unwrap_or_default();
+    assert!(what_next.contains("Re-confirm ROE"), "what_next={what_next}");
+    assert!(
+        what_next.contains("Hard stop conditions"),
+        "what_next={what_next}"
+    );
 }
 
 #[cfg(not(feature = "enum-only"))]
@@ -886,9 +917,10 @@ fn endpoint_bypass_wires_next_command_to_validation() {
     let what_next = bypass["what_next"].as_str().unwrap_or_default();
     assert!(what_next.contains("controls --execute"));
     assert!(
-        what_next.contains("Never disable")
-            || what_next.contains("never disable")
-            || what_next.contains("Never disable/unhook")
+        what_next.contains("amsi-bypass")
+            || what_next.contains("confirm-evasion")
+            || what_next.contains("evasion-family"),
+        "what_next={what_next}"
     );
 }
 
@@ -1271,7 +1303,7 @@ fn stage_windows_manifest_lists_script_hosts() {
     );
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
     assert!(manifest.contains("windows_fallbacks=powershell,jscript,msbuild"));
-    assert!(manifest.contains("shipped_features=windows-evasion-scaffolds"));
+    assert!(manifest.contains("shipped_features=windows-evasion"));
     assert!(out.join("scripts/run.ps1").is_file());
     assert!(out.join("scripts/enum.ps1").is_file());
     assert!(out.join("scripts/enum.js").is_file());

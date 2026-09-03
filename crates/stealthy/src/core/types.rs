@@ -41,8 +41,8 @@ pub enum FindingKind {
     Misconfiguration,
     Credential,
     Recommendation,
-    /// An allowlisted capability or workflow that is present but does not
-    /// execute a probe or payload in this build.
+    /// An allowlisted capability or workflow marker that has not executed a
+    /// probe or payload in this run.
     Scaffold,
     ExploitAttempt,
 }
@@ -145,6 +145,9 @@ impl Finding {
             let windows = self.plugin.contains("windows");
             return crate::exploit::endpoint_bypass_next_command(allowed, artifact, windows);
         }
+        if self.technique_id == "av-edr-service" || self.condition.starts_with("av-edr-") {
+            return crate::exploit::av_edr_service::av_edr_next_command().into();
+        }
         let command = match self.plugin.as_str() {
             "linux.sudo" => "sudo -n -l",
             "linux.suid" => {
@@ -209,6 +212,22 @@ impl Finding {
             }
             "windows.app_control" => {
                 "stealthy --authorized enum --plugins windows.app_control --artifact C:\\approved\\test\\artifact.exe"
+            }
+            "windows.evasion" => {
+                return if self.technique_id == "av-edr-service"
+                    || self.condition.starts_with("av-edr-")
+                {
+                    crate::exploit::av_edr_service::av_edr_next_command().into()
+                } else {
+                    format!(
+                        "stealthy --authorized --confirm-evasion --format json enum --allow-techniques {}",
+                        if self.technique_id.is_empty() {
+                            "amsi-bypass,etw-unhook,av-edr-service"
+                        } else {
+                            self.technique_id.as_str()
+                        }
+                    )
+                };
             }
             "allow_techniques" => {
                 if self.technique_id == "endpoint-bypass"

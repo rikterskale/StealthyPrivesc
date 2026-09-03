@@ -154,15 +154,19 @@ cannot be mistaken for a clean result.
   Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,
   `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`,
   `amsi-bypass`, `etw-unhook`, `av-edr-service`.
-  Most families record scaffold findings only in this revision.
+  Most non-evasion families record scaffold findings only in this revision.
   `endpoint-bypass` means alternate-path tracking + approved-fixture validation
-  (pair with `--artifact` and/or `controls --execute`).
+  (pair with `--artifact` and/or `controls --execute`); it does not cover
+  control interference.
   **Evasion techniques** (`amsi-bypass`, `etw-unhook`, `av-edr-service`) require
   `--confirm-evasion` (or `STEALTHY_EVASION_CONFIRMED=1`) in addition to
-  `--authorized` and `--allow-techniques`. Even with all gates, they emit
-  `scaffold` findings only. The corresponding Rust modules are compiled,
-  status-only gate implementations with tests; they contain no AMSI, ETW, or
-  AV/EDR interference path. See `docs/techniques.md` and `docs/evasion.md`.
+  `--authorized` and `--allow-techniques`. After gates pass, `amsi-bypass` /
+  `etw-unhook` emit `FindingKind::ExploitAttempt` with
+  `condition=technique-opted-in`. `av-edr-service` performs read-only product
+  observation and emits `av-edr-product-observed` /
+  `av-edr-collection-limited` plus `av-edr-playbook-ready` with a thorough
+  operator What's-next (no service stop or sensor tamper). See
+  `docs/techniques.md` and `docs/evasion.md`.
 - `--plugins`: runs the listed IDs; unknown IDs fail.
 - `--skip`: excludes the listed IDs; unknown IDs fail.
 - `--triage` / `--triage-out` / `--approve-file`: stepwise operator approval for probes.
@@ -331,10 +335,9 @@ The manifest is not authorization evidence: the dispatcher requires a fresh
 the current host, tries the primary executable, and walks only the
 manifest-approved fallback list after a launch failure (Windows default:
 `powershell,jscript,msbuild`; Linux default: `python,bash,sh,perl`).
-Windows bundles also declare the separately reviewed
-`windows-evasion-scaffolds` feature. It is not part of dispatcher fallback
-selection and reports planned/not-executed status only after all three evasion
-gates pass.
+Windows bundles also declare the `windows-evasion` feature. It is not part of
+dispatcher fallback selection; the evasion module runs only when an operator
+opts into an evasion family and all three gates pass (`status=ready`).
 
 On Windows, prefer staging outside `%TEMP%` — Defender often quarantines freshly
 copied unsigned PEs there. Org Authenticode signing (external to this tool)

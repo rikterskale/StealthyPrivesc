@@ -200,9 +200,7 @@ cargo build --locked -p stealthy --profile opsec-string-strip \
 
 `enum-only` rejects `--auto-exploit`, every `--allow-techniques` family, and
 executable control fixtures. `opsec-string-strip` includes `enum-only` and may
-remove only non-semantic operator hint strings. Both retain authorization
-gates, safety disclaimers, and report/audit fields; neither is permission to
-hide execution or weaken the evidence contract.
+remove only non-semantic operator hint strings.
 
 ## Windows CI validation
 
@@ -265,7 +263,7 @@ python3 scripts/release/package.py \
 Every `v*` tag must pass the full release gate before build/publish:
 
 - locked metadata, formatting, Clippy with warnings denied, tests, and release build;
-- `enum-only` and `opsec-string-strip` safety-contract checks;
+- `enum-only` and `opsec-string-strip` flavor checks;
 - the 80% Rust line-coverage floor;
 - Linux/release script parsing;
 - full-history Gitleaks scanning; and

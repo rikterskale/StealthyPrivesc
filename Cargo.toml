@@ -31,8 +31,8 @@ opt-level = "z"
 strip = true
 panic = "abort"
 
-# Named build profiles retain every release safety property. Feature markers are
-# declared by the stealthy crate and are validated independently in CI.
+# Named build profiles for constrained flavors. Feature markers are declared by
+# the stealthy crate and are validated independently in CI.
 [profile.enum-only]
 inherits = "release"
 
