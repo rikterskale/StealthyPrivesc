@@ -701,14 +701,15 @@ jobs:
           if (Test-Path -LiteralPath $stagedExe -PathType Leaf) {
             $sum = (Get-Content (Join-Path $stage 'SHA256SUMS')).Split()[0]
             & $bin verify --path $stagedExe --expect-sha256 $sum
-            $native = & (Join-Path $stage 'scripts\run.ps1') --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
-            if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
-            if ($native.authorized_use_ack -ne $true -or $native.mode -ne 'enumerate-only') { throw 'native Windows safety metadata mismatch' }
+          }
+          $stagedResult = & (Join-Path $stage 'scripts\run.ps1') --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
+          if ($stagedResult.authorized_use_ack -ne $true -or $stagedResult.mode -ne 'enumerate-only') { throw 'staged Windows safety metadata mismatch' }
+          if ($stagedResult.coverage_mode -eq 'native') {
+            if ($stagedResult.primary_launch -ne 'ok' -or $stagedResult.execution_path -ne 'binary') { throw 'staged native execution metadata mismatch' }
+          } elseif ($stagedResult.coverage_mode -eq 'script') {
+            if ($stagedResult.primary_launch -ne 'blocked' -or $stagedResult.execution_path -ne 'python-fallback') { throw 'staged quarantine recovery metadata mismatch' }
           } else {
-            $nativeFallback = & (Join-Path $stage 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
-            if ($nativeFallback.coverage_mode -ne 'script') { throw 'quarantined native bundle coverage mode mismatch' }
-            if ($nativeFallback.primary_launch -ne 'blocked') { throw "quarantined native primary_launch mismatch: $($nativeFallback.primary_launch)" }
-            if ($nativeFallback.execution_path -ne 'python-fallback') { throw "quarantined native execution_path mismatch: $($nativeFallback.execution_path)" }
+            throw "staged Windows coverage mode mismatch: $($stagedResult.coverage_mode)"
           }
           Assert-DispatcherEnvironmentRestored 'native'
           & $bin --ledger-dir $ledger cleanup --latest
