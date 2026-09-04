@@ -1059,22 +1059,29 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
-        let client = dir.path().join("curl-fixture");
-        let make_client = |script: &str| {
+        let make_client = |name: &str, script: &str| {
+            let client = dir.path().join(name);
             std::fs::write(&client, script).unwrap();
             std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
+            client
         };
-        make_client("#!/bin/sh\n[ \"$(cat)\" = 'sealed-secret' ] || exit 64\nprintf '204'\n");
+        let success_client = make_client(
+            "curl-success-fixture",
+            "#!/bin/sh\n[ \"$(cat)\" = 'sealed-secret' ] || exit 64\nprintf '204'\n",
+        );
         assert!(post_remote_with(
-            client.as_os_str(),
+            success_client.as_os_str(),
             "https://fixture.invalid",
             "sealed-secret"
         )
         .is_ok());
 
-        make_client("#!/bin/sh\ncat >/dev/null\nprintf '302'\n");
+        let redirect_client = make_client(
+            "curl-redirect-fixture",
+            "#!/bin/sh\ncat >/dev/null\nprintf '302'\n",
+        );
         let error = post_remote_with(
-            client.as_os_str(),
+            redirect_client.as_os_str(),
             "https://fixture.invalid",
             "sealed-secret",
         )
@@ -1082,9 +1089,12 @@ mod tests {
         .to_string();
         assert!(error.contains("HTTP status 302"));
 
-        make_client("#!/bin/sh\ncat >/dev/null\necho 'fixture transport rejected' >&2\nexit 22\n");
+        let rejected_client = make_client(
+            "curl-rejected-fixture",
+            "#!/bin/sh\ncat >/dev/null\necho 'fixture transport rejected' >&2\nexit 22\n",
+        );
         let error = post_remote_with(
-            client.as_os_str(),
+            rejected_client.as_os_str(),
             "https://fixture.invalid",
             "sealed-secret",
         )

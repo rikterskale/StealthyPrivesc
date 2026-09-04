@@ -1994,7 +1994,7 @@ fn one_liners_print_snippets() {
 }
 
 #[test]
-fn triage_out_writes_decisions_stub() {
+fn triage_out_writes_decisions_template() {
     let dir = tempfile::tempdir().unwrap();
     let decisions = dir.path().join("decisions.json");
     let output = stealthy()

@@ -32,7 +32,7 @@ pub fn load_approve_file(path: &Path) -> Result<TriageFile> {
     Ok(serde_json::from_str(&text)?)
 }
 
-pub fn write_triage_stub(path: &Path, run_id: &str, findings: &[Finding]) -> Result<()> {
+pub fn write_triage_template(path: &Path, run_id: &str, findings: &[Finding]) -> Result<()> {
     let mut file = TriageFile::empty(run_id);
     for finding in findings.iter().take(12) {
         if finding.severity.rank() < crate::core::types::Severity::Medium.rank() {
@@ -118,7 +118,7 @@ pub fn validate_probe_ids(
 
 #[cfg(test)]
 mod tests {
-    use super::{load_approve_file, probe_ids, validate_probe_ids, write_triage_stub};
+    use super::{load_approve_file, probe_ids, validate_probe_ids, write_triage_template};
     use crate::core::types::{Finding, FindingKind, Severity, TriageDecision};
 
     #[test]
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn triage_stub_round_trips_only_actionable_findings() {
+    fn triage_template_round_trips_only_actionable_findings() {
         let findings = vec![
             Finding {
                 finding_id: "low".into(),
@@ -157,7 +157,7 @@ mod tests {
         ];
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("approve.json");
-        write_triage_stub(&path, "run-1", &findings).unwrap();
+        write_triage_template(&path, "run-1", &findings).unwrap();
         let loaded = load_approve_file(&path).unwrap();
         assert_eq!(loaded.run_id, "run-1");
         assert_eq!(loaded.decisions.len(), 1);

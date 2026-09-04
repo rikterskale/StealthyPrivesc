@@ -430,11 +430,11 @@ pub enum Commands {
         #[arg(long, value_delimiter = ',')]
         skip: Option<Vec<String>>,
 
-        /// Enumerate then open triage (TTY prompts and/or --triage-out stub).
+        /// Enumerate then open triage (TTY prompts and/or --triage-out template).
         #[arg(long)]
         triage: bool,
 
-        /// Write a triage decisions stub JSON for offline editing.
+        /// Write a triage decisions template JSON for offline editing.
         #[arg(long)]
         triage_out: Option<std::path::PathBuf>,
 

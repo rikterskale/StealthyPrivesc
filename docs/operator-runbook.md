@@ -1535,7 +1535,7 @@ $env:STEALTHY_AUTHORIZED = '1'
 powershell -NoProfile -EncodedCommand $b64
 ```
 
-MSBuild stub (allowlisted toolchain path; documentation/host helper only):
+MSBuild helper (allowlisted toolchain path; documentation/host helper only):
 
 ```cmd
 where msbuild

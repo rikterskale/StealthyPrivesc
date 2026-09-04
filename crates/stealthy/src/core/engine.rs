@@ -745,14 +745,14 @@ impl Engine {
             store.note("Run cancelled by operator signal; partial results retained.");
         }
 
-        // Post-enum triage: write stub and/or prompt.
+        // Post-enum triage: write a decision template and/or prompt.
         if self.triage {
             let (findings_now, _) = store_into_parts(&store)?;
             if let Some(path) = &self.triage_out {
-                triage::write_triage_stub(path, &run_id, &findings_now)?;
+                triage::write_triage_template(path, &run_id, &findings_now)?;
                 if !self.quiet {
                     eprintln!(
-                        "{} wrote triage stub {}",
+                        "{} wrote triage template {}",
                         term::ok("[triage]"),
                         path.display()
                     );
