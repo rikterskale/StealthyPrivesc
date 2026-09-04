@@ -34,6 +34,8 @@ PLATFORM_FILES = {
     "windows": [
         "scripts/windows/run.ps1",
         "scripts/windows/enum.ps1",
+        "scripts/windows/enum.py",
+        "scripts/windows/enum-git.sh",
         "scripts/windows/enum.js",
         "scripts/windows/EnumTasks.csproj",
         "scripts/windows/evasion.ps1",
