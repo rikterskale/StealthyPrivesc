@@ -172,7 +172,7 @@ bash ./drop/scripts/run.sh --authorized --profile balanced enum
 On Windows:
 
 ```powershell
-# Windows default walk: powershell → jscript → msbuild
+# Windows default walk: python → pwsh → powershell → git → jscript → msbuild
 & .\drop\scripts\run.ps1 --authorized --profile balanced enum
 ```
 
@@ -190,8 +190,10 @@ bash scripts/linux/enum.sh --authorized
 sh scripts/linux/enum-posix.sh --authorized
 perl scripts/linux/enum.pl --authorized
 
-# Windows — prefer staged dispatcher (PE → powershell → jscript → msbuild)
+# Windows — prefer staged dispatcher (PE → python → pwsh → powershell → git → jscript → msbuild)
 # & .\drop\scripts\run.ps1 --authorized enum
+python.exe scripts\windows\enum.py --authorized
+pwsh -NoProfile -File scripts\windows\enum.ps1 -Authorized
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
 cscript //nologo scripts\windows\enum.js --authorized --json
 ```

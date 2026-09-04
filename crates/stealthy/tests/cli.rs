@@ -1443,7 +1443,9 @@ fn stage_windows_manifest_lists_script_hosts() {
         String::from_utf8_lossy(&output.stderr)
     );
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
-    assert!(manifest.contains("windows_fallbacks=powershell,jscript,msbuild"));
+    assert!(manifest.contains("windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild"));
+    assert!(out.join("scripts/enum.py").is_file());
+    assert!(out.join("scripts/enum-git.sh").is_file());
     assert!(manifest.contains("shipped_features=windows-evasion"));
     assert!(out.join("scripts/run.ps1").is_file());
     assert!(out.join("scripts/enum.ps1").is_file());
@@ -2086,4 +2088,41 @@ fn quiet_and_balanced_enum_run_plugins_in_process() {
         &report,
         "no per-plugin worker processes"
     ));
+}
+
+#[test]
+fn windows_python_fallback_compiles_and_requires_authorization() {
+    let script =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/windows/enum.py");
+    let compile = std::process::Command::new("python3")
+        .args(["-m", "py_compile", script.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let denied = std::process::Command::new("python3")
+        .arg(&script)
+        .env_remove("STEALTHY_AUTHORIZED")
+        .output()
+        .unwrap();
+    assert_eq!(denied.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&denied.stderr).contains("Authorization required"));
+}
+
+#[test]
+fn windows_git_fallback_shell_parses() {
+    let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scripts/windows/enum-git.sh");
+    let output = std::process::Command::new("bash")
+        .args(["-n", script.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

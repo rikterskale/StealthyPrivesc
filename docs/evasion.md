@@ -71,8 +71,9 @@ notes.
 
 ## Script fallbacks
 
-Windows PowerShell, JScript, and MSBuild-hosted enumeration fallbacks are
-reduced, enumerate-only collectors by default. Their JSON must report the data
+Windows Python, PowerShell 7, Windows PowerShell, Git-bash, JScript, and
+MSBuild-hosted enumeration fallbacks are reduced, enumerate-only collectors
+by default. Their JSON must report the data
 actually collected and make native coverage gaps explicit. Opt-in evasion
 modules remain separate from those collectors.
 

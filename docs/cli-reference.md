@@ -342,7 +342,7 @@ The manifest is not authorization evidence: the dispatcher requires a fresh
 `--authorized` flag or `STEALTHY_AUTHORIZED=1` at execution time. It binds to
 the current host, tries the primary executable, and walks only the
 manifest-approved fallback list after a launch failure (Windows default:
-`powershell,jscript,msbuild`; Linux default: `python,bash,sh,perl`).
+`python,pwsh,powershell,git,jscript,msbuild`; Linux default: `python,bash,sh,perl`).
 Windows bundles also declare the `windows-evasion` feature. It is not part of
 dispatcher fallback selection; the evasion module runs only when an operator
 opts into an evasion family and all three gates pass (`status=ready`).
@@ -351,7 +351,7 @@ On Windows, prefer staging outside `%TEMP%` — Defender often quarantines fresh
 copied unsigned PEs there. Org Authenticode signing (external to this tool)
 reduces SmartScreen/reputation friction; stage the signed binary with
 `--binary`. If the PE is missing or blocked (including signal death / vanished
-after launch), `run.ps1` walks `powershell → jscript → msbuild` and continues
+after launch), `run.ps1` walks `python → pwsh → powershell → git → jscript → msbuild` and continues
 when a tier is itself blocked. Linux `run.sh` walks `python → bash → sh → perl`
 the same way. Empty `drop_dir` (the staged default) runs the ELF or PE in
 place on both platforms; an explicit `drop_dir` still copies. Script tiers are reduced coverage: only auth and `--json` /

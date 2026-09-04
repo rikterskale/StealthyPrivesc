@@ -190,7 +190,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     copy_dir_recursive(&scripts_src, &scripts_dst, opts.os == "linux")?;
 
     let fallback_order = if opts.os == "windows" {
-        "powershell,jscript,msbuild"
+        "python,pwsh,powershell,git,jscript,msbuild"
     } else {
         "python,bash,sh,perl"
     };
@@ -262,7 +262,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              binary_sha256={}\n\n\
              {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
-             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: powershell,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
+             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: python,pwsh,powershell,git,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             opts.os, opts.arch, opts.name, bundle_mode, hash, verification

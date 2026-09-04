@@ -55,9 +55,10 @@ describe the behavior users can rely on today.
    default) isolates the plugin so a timeout can terminate that process.
 6. **Memory-first output** — findings stay in the encrypted in-memory store by
    default. File and remote modes require an explicit operator choice.
-7. **Script fallbacks** — approved Python, Bash, POSIX sh, Perl, PowerShell,
-   JScript, and MSBuild-hosted fallbacks cover restricted binary environments with reduced
-   coverage and a separate evidence contract.
+7. **Script fallbacks** — approved Python, Bash, POSIX sh, Perl, PowerShell 7,
+   Windows PowerShell, Git-bash, JScript, and MSBuild-hosted fallbacks cover
+   restricted binary environments with reduced coverage and a separate evidence
+   contract.
 
 ## Current architecture
 

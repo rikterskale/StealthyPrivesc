@@ -22,4 +22,4 @@ primary_binary=stealthy
 # Ordered hosts tried after a blocked primary. Script tiers are fixed
 # enumerate-only reduced coverage (only auth + --json are forwarded).
 linux_fallbacks=python,bash,sh,perl
-windows_fallbacks=powershell,jscript,msbuild
+windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild

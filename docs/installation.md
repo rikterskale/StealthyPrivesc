@@ -397,6 +397,8 @@ perl scripts/linux/enum.pl --authorized | tee enum-perl.txt
 & .\scripts\run.ps1 --authorized --profile balanced enum
 
 # Or invoke script hosts directly
+python.exe scripts\windows\enum.py --authorized
+pwsh -NoProfile -File scripts\windows\enum.ps1 -Authorized
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Authorized
 cscript //nologo scripts\windows\enum.js --authorized
 msbuild scripts\windows\EnumTasks.csproj

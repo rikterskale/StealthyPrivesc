@@ -69,7 +69,7 @@ Detailed procedures: [stage](../operator-runbook.md#17-stage-a-drop-bundle-prefe
 
 6. If SmartScreen, AppLocker, WDAC, or AV blocks the executable, do not retry
    that hash. Run `scripts\run.ps1` so the dispatcher walks
-   **powershell → jscript → msbuild**. Script coverage is reduced; only auth /
+   **python → pwsh → powershell → git → jscript → msbuild**. Script coverage is reduced; only auth /
    `--json` are forwarded. `--allow-techniques endpoint-bypass` records
    alternate-path tracking and approved-fixture validation only — this tool
    does not disable those controls (see `docs/techniques.md`).

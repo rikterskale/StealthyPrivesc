@@ -79,9 +79,11 @@ Operator deploy/runbook: [`docs/runbook/delivery.md`](runbook/delivery.md),
   finding-scoped or available under explicit blanket `--auto-exploit`.
 - PowerShell fallback JSON has per-plugin findings, coverage, error state, and
   capability delta, but explicitly omits service/task object DACLs and native
-  ACL parity. JScript collects only AIE, credential-file presence, and selected
-  endpoint-control registry signals; every other native plugin is marked
-  skipped. No Windows fallback contains AMSI/ETW/AV-EDR interference.
+  ACL parity. The Python fallback uses stdlib `winreg` and file reads with no
+  child processes. Git-bash collects credential-file presence only. JScript
+  collects only AIE, credential-file presence, and selected endpoint-control
+  registry signals; every other native plugin is marked skipped. No Windows
+  fallback contains AMSI/ETW/AV-EDR interference.
 
 ### Linux plugin IDs
 

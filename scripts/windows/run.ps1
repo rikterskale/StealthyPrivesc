@@ -126,7 +126,7 @@ if ($useInPlace) {
 }
 
 $scriptSourceDir = $PSScriptRoot
-foreach ($file in @('enum.ps1', 'enum.js', 'EnumTasks.csproj')) {
+foreach ($file in @('enum.ps1', 'enum.py', 'enum-git.sh', 'enum.js', 'EnumTasks.csproj')) {
   $source = Join-Path $scriptSourceDir $file
   if (-not (Test-Path -LiteralPath $source)) {
     $alt = Join-Path $bundleDir (Join-Path 'scripts\windows' $file)
@@ -152,7 +152,7 @@ $isJson = ($argsToRun -contains '--json') -or ($argsToRun -contains '--format=js
 $approvedFallbacks = if ($cfg.windows_fallbacks) {
   @($cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 } else {
-  @('powershell', 'jscript', 'msbuild')
+  @('python', 'pwsh', 'powershell', 'git', 'jscript', 'msbuild')
 }
 
 function Resolve-FallbackPath([string]$Name) {
@@ -167,11 +167,145 @@ function Resolve-FallbackPath([string]$Name) {
   return $null
 }
 
+function Resolve-PythonCommand {
+  $py = Get-Command py.exe -ErrorAction SilentlyContinue
+  if ($py) {
+    return @{ Exe = $py.Source; Prefix = @('-3') }
+  }
+  foreach ($name in @('python.exe', 'python3.exe')) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd) {
+      return @{ Exe = $cmd.Source; Prefix = @() }
+    }
+  }
+  return $null
+}
+
+function Resolve-GitBash {
+  $candidates = @()
+  if ($env:ProgramFiles) {
+    $candidates += (Join-Path $env:ProgramFiles 'Git\bin\bash.exe')
+  }
+  $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+  if ($programFilesX86) {
+    $candidates += (Join-Path $programFilesX86 'Git\bin\bash.exe')
+  }
+  if ($env:LOCALAPPDATA) {
+    $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe')
+  }
+  foreach ($path in $candidates) {
+    if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) { return $path }
+  }
+  return $null
+}
+
+function Write-FallbackBanner([string]$Label) {
+  if ($bundleMode -eq 'script-only') {
+    [Console]::Error.WriteLine("dispatcher: script-only bundle; trying approved $Label fallback")
+  } else {
+    [Console]::Error.WriteLine("dispatcher: primary executable blocked; trying approved $Label fallback")
+  }
+}
+
 function Invoke-ApprovedFallback {
   $env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'blocked' }
   $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
   foreach ($fallback in $approvedFallbacks) {
     switch ($fallback) {
+      'python' {
+        $script = Resolve-FallbackPath 'enum.py'
+        if (-not $script) {
+          [Console]::Error.WriteLine('dispatcher: skipping python fallback (enum.py missing)')
+          break
+        }
+        $python = Resolve-PythonCommand
+        if (-not $python) {
+          [Console]::Error.WriteLine('dispatcher: skipping python fallback (python.exe/py.exe unavailable)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'python-fallback'
+        Write-FallbackBanner 'python'
+        $pyArgs = @($python.Prefix + @($script, '--authorized'))
+        if ($isJson) { $pyArgs += '--json' }
+        try {
+          & $python.Exe @pyArgs
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: python fallback launch failed: $($_.Exception.Message)")
+          $status = 126
+        }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: python fallback blocked (exit $status); trying next host")
+          break
+        }
+        Restore-DispatcherEnvironment
+        exit $status
+      }
+      'pwsh' {
+        $script = Resolve-FallbackPath 'enum.ps1'
+        if (-not $script) {
+          [Console]::Error.WriteLine('dispatcher: skipping pwsh fallback (enum.ps1 missing)')
+          break
+        }
+        $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+        if (-not $pwsh) {
+          [Console]::Error.WriteLine('dispatcher: skipping pwsh fallback (pwsh.exe unavailable)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'pwsh-fallback'
+        Write-FallbackBanner 'pwsh'
+        # No -ExecutionPolicy Bypass: PowerShell 7 is often already allowed.
+        $psArgs = @('-NoProfile', '-File', $script, '-Authorized')
+        if ($isJson) { $psArgs += '-Json' }
+        try {
+          & pwsh.exe @psArgs
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: pwsh fallback launch failed: $($_.Exception.Message)")
+          $status = 126
+        }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: pwsh fallback blocked (exit $status); trying next host")
+          break
+        }
+        Restore-DispatcherEnvironment
+        exit $status
+      }
+      'git' {
+        $script = Resolve-FallbackPath 'enum-git.sh'
+        if (-not $script) {
+          [Console]::Error.WriteLine('dispatcher: skipping git fallback (enum-git.sh missing)')
+          break
+        }
+        $gitBash = Resolve-GitBash
+        if (-not $gitBash) {
+          [Console]::Error.WriteLine('dispatcher: skipping git fallback (Git bash unavailable)')
+          break
+        }
+        $env:STEALTHY_EXECUTION_PATH = 'git-fallback'
+        Write-FallbackBanner 'git'
+        $gitArgs = @('--noprofile', '--norc', $script, '--authorized')
+        if ($isJson) { $gitArgs += '--json' }
+        try {
+          & $gitBash @gitArgs
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { $status = 0 }
+        } catch {
+          [Console]::Error.WriteLine("dispatcher: git fallback launch failed: $($_.Exception.Message)")
+          $status = 126
+        }
+        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
+        if (Test-BlockStatus $status) {
+          [Console]::Error.WriteLine("dispatcher: git fallback blocked (exit $status); trying next host")
+          break
+        }
+        Restore-DispatcherEnvironment
+        exit $status
+      }
       'powershell' {
         $script = Resolve-FallbackPath 'enum.ps1'
         if (-not $script) {
@@ -238,6 +372,11 @@ function Invoke-ApprovedFallback {
         $msbuild = Get-Command msbuild.exe -ErrorAction SilentlyContinue
         if (-not $msbuild) {
           [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (msbuild.exe unavailable)')
+          break
+        }
+        $msbuildPath = [string]$msbuild.Source
+        if ($msbuildPath -notmatch '(?i)\\Program Files') {
+          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (msbuild.exe is not under Program Files)')
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'

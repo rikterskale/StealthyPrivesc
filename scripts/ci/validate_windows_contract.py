@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 EVASION = ROOT / "scripts/windows/evasion.ps1"
 DISPATCHER = ROOT / "scripts/windows/run.ps1"
 FALLBACK = ROOT / "scripts/windows/enum.ps1"
+PYTHON = ROOT / "scripts/windows/enum.py"
+GIT_SH = ROOT / "scripts/windows/enum-git.sh"
 JSCRIPT = ROOT / "scripts/windows/enum.js"
 MSBUILD = ROOT / "scripts/windows/EnumTasks.csproj"
 EXPLOIT_MOD = ROOT / "crates/stealthy/src/exploit/mod.rs"
@@ -29,6 +31,8 @@ def main() -> int:
     evasion = EVASION.read_text(encoding="utf-8")
     dispatcher = DISPATCHER.read_text(encoding="utf-8")
     fallback = FALLBACK.read_text(encoding="utf-8")
+    python = PYTHON.read_text(encoding="utf-8")
+    git_sh = GIT_SH.read_text(encoding="utf-8")
     jscript = JSCRIPT.read_text(encoding="utf-8")
     msbuild = MSBUILD.read_text(encoding="utf-8")
     exploit_mod = EXPLOIT_MOD.read_text(encoding="utf-8")
@@ -52,6 +56,22 @@ def main() -> int:
     require(dispatcher, "'script-only'", "dispatcher", failures)
     require(fallback, "$authorized = $Authorized -or ($env:STEALTHY_AUTHORIZED -eq '1')", "fallback", failures)
     require(fallback, "coverage_mode = 'script'", "fallback", failures)
+    require(dispatcher, "'python', 'pwsh', 'powershell', 'git', 'jscript', 'msbuild'", "dispatcher", failures)
+    require(dispatcher, "Resolve-PythonCommand", "dispatcher", failures)
+    require(dispatcher, "Resolve-GitBash", "dispatcher", failures)
+    require(dispatcher, "pwsh.exe", "dispatcher", failures)
+    require(dispatcher, "enum.py", "dispatcher", failures)
+    require(dispatcher, "enum-git.sh", "dispatcher", failures)
+    require(dispatcher, "Program Files", "dispatcher", failures)
+    require(python, "Authorization required", "python fallback", failures)
+    require(python, "winreg", "python fallback", failures)
+    require(python, '"coverage_mode"', "python fallback", failures)
+    require(python, "whoami", "python fallback", failures)
+    require(git_sh, "Authorization required", "git fallback", failures)
+    require(git_sh, "coverage_mode", "git fallback", failures)
+    compile(python, str(PYTHON), "exec")
+    if "pythonw.exe" in dispatcher:
+        failures.append("dispatcher: pythonw.exe loses stdout; use python.exe/py.exe")
     require(jscript, "WScript.Arguments.length", "jscript", failures)
     require(jscript, "function recordCoverageError", "jscript", failures)
     require(jscript, "function isMissingRegistryValue", "jscript", failures)

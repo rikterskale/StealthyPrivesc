@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Windows dispatcher default walk is now `python → pwsh → powershell → git →
+  jscript → msbuild`. New `enum.py` and `enum-git.sh` collectors; MSBuild is
+  skipped unless it lives under Program Files.
 - Linux `run.sh` runs the staged ELF in place when `drop_dir` is empty,
   matching Windows and avoiding a second write+exec under `.run-cache`.
 - Quiet and balanced profiles run plugins in-process by default (no

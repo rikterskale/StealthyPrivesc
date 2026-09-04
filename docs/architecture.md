@@ -80,7 +80,7 @@ Under AppLocker/WDAC/SmartScreen/AV/`noexec`/AppArmor or missing binary executio
 the staged dispatcher walks an ordered, manifest-approved host list:
 
 - Linux (`run.sh`): `python,bash,sh,perl` → `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl`
-- Windows (`run.ps1`): `powershell,jscript,msbuild` → `enum.ps1` / `enum.js` / `EnumTasks.csproj`
+- Windows (`run.ps1`): `python,pwsh,powershell,git,jscript,msbuild` → `enum.py` / `enum.ps1` / `enum-git.sh` / `enum.js` / `EnumTasks.csproj`
 
 Empty `drop_dir` (the staged default) runs the primary in place on Linux and
 Windows. An explicit `drop_dir` copies the binary and fallback scripts first.

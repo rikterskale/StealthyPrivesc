@@ -40,7 +40,7 @@ def validate_archive(path: Path, platform: str) -> None:
         for name in (
             ["run.sh", "enum.py", "enum.sh", "enum-posix.sh", "enum.pl"]
             if platform == "linux"
-            else ["run.ps1", "enum.ps1", "enum.js", "EnumTasks.csproj", "evasion.ps1"]
+            else ["run.ps1", "enum.ps1", "enum.py", "enum-git.sh", "enum.js", "EnumTasks.csproj", "evasion.ps1"]
         )
     )
     missing = required - names

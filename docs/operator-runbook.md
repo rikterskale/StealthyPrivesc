@@ -1062,7 +1062,7 @@ When Defender is on and the kit PE is unsigned or newly written:
 2. Optionally add a **lab** path exclusion for that kit directory (`Add-MpPreference -ExclusionPath …`) when ROE and local policy allow. Automated exclusion helpers are Planned as a separate technique family — do not fold them into `endpoint-bypass`.
 3. Prefer an **org-signed** PE from your normal Authenticode workflow before staging (`Get-AuthenticodeSignature` should be `Valid`). The tool does not create certificates.
 4. Use `stage --name` with a bland basename when ROE wants lower static-string noise.
-5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (PowerShell → JScript → MSBuild). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
+5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (python → pwsh → powershell → git → jscript → msbuild). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
 
 The operator-facing catalog of every method is [Get the kit onto a host](runbook/delivery.md). Prefer copying the **staged bundle** (section 1.7) rather than a lone `stealthy.exe`. Do not run `install.ps1` on the target.
 
@@ -1119,7 +1119,8 @@ From Linux/macOS:
 ```bash
 ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '$REMOTE_DIR_WIN' | Out-Null\""
 scp "$WIN_EXE_LOCAL" "$TARGET:$REMOTE_DIR/stealthy.exe"
-scp scripts/windows/enum.ps1 scripts/windows/enum.js scripts/windows/EnumTasks.csproj \
+scp scripts/windows/enum.py scripts/windows/enum.ps1 scripts/windows/enum-git.sh \
+  scripts/windows/enum.js scripts/windows/EnumTasks.csproj \
   "$TARGET:$REMOTE_DIR/"
 ssh "$TARGET" "powershell -NoProfile -Command \"& '$REMOTE_DIR_WIN\\stealthy.exe' --help\""
 ```
@@ -1493,8 +1494,9 @@ Gated AMSI/ETW/AV-EDR interference belongs under the evasion IDs (see
 ```powershell
 $Dir = 'C:\Users\Public\Documents\cache-update'
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-# After copying enum.ps1 / enum.js / EnumTasks.csproj into $Dir:
-powershell -NoProfile -ExecutionPolicy Bypass -File "$Dir\enum.ps1" -Authorized
+# After copying enum.py / enum.ps1 / enum-git.sh / enum.js / EnumTasks.csproj into $Dir:
+python.exe "$Dir\enum.py" --authorized
+powershell -NoProfile -File "$Dir\enum.ps1" -Authorized
 cscript //nologo "$Dir\enum.js" --authorized
 ```
 
@@ -1508,7 +1510,8 @@ From operator host over SSH:
 
 ```bash
 ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '$REMOTE_DIR_WIN' | Out-Null\""
-scp scripts/windows/enum.ps1 scripts/windows/enum.js scripts/windows/EnumTasks.csproj \
+scp scripts/windows/enum.py scripts/windows/enum.ps1 scripts/windows/enum-git.sh \
+  scripts/windows/enum.js scripts/windows/EnumTasks.csproj \
   "$TARGET:$REMOTE_DIR/"
 ssh "$TARGET" 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Public\Documents\cache-update\enum.ps1 -Authorized'
 ssh "$TARGET" 'cscript //nologo C:\Users\Public\Documents\cache-update\enum.js --authorized'
@@ -1562,7 +1565,7 @@ SmartScreen / AppLocker quick triage:
 ```powershell
 # If execution is blocked, capture the message and switch to 4.10 script-only
 & $Bin --help
-if (-not $?) { Write-Host 'PE blocked — use enum.ps1 / enum.js' }
+if (-not $?) { Write-Host 'PE blocked — use run.ps1 (python/pwsh/powershell/git/jscript/msbuild)' }
 ```
 
 ---
@@ -1618,7 +1621,7 @@ $env:STEALTHY_AUTHORIZED = '1'
 
 ### 5.5 Script fallbacks
 
-Prefer the staged dispatcher, which walks `powershell → jscript → msbuild` when
+Prefer the staged dispatcher, which walks `python → pwsh → powershell → git → jscript → msbuild` when
 the PE is blocked. Script tiers are reduced coverage; only auth and `--json` /
 `-Json` are forwarded from the binary CLI.
 
@@ -1629,7 +1632,9 @@ the PE is blocked. Script tiers are reduced coverage; only auth and `--json` /
 Direct scripts (troubleshooting only):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\enum.ps1 -Authorized | Tee-Object -FilePath .\enum-ps.txt
+python.exe .\enum.py --authorized --json
+pwsh -NoProfile -File .\enum.ps1 -Authorized | Tee-Object -FilePath .\enum-ps.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\enum.ps1 -Authorized | Tee-Object -FilePath .\enum-ps51.txt
 cscript //nologo .\enum.js --authorized > .\enum-js.txt
 msbuild .\EnumTasks.csproj /nologo /v:minimal
 ```

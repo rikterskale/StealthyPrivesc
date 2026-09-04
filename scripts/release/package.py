@@ -61,7 +61,7 @@ def copy_file(relative, stage):
 def write_dispatcher_example(stage, platform, binary_name):
     fallback_key = "linux_fallbacks" if platform == "linux" else "windows_fallbacks"
     fallback_value = (
-        "python,bash,sh,perl" if platform == "linux" else "powershell,jscript,msbuild"
+        "python,bash,sh,perl" if platform == "linux" else "python,pwsh,powershell,git,jscript,msbuild"
     )
     content = (
         "# Copy to stealthy-run.conf and set authorization_ack=true only for an approved target.\n"

@@ -171,7 +171,7 @@ Keep the PE out of `%TEMP%`. Full recipes: [runbook section 4](../operator-runbo
 | Linux operator, Windows target | Impacket / Evil-WinRM | [4.7](../operator-runbook.md#47-linux-operator-windows-tooling-impacket--evil-winrm) | `smbclient.py`, `evil-winrm upload`; `psexec.py` is 4.6.4 |
 | Text-only channel | Base64 / certutil / `FromBase64String` | [4.8](../operator-runbook.md#48-base64--certutil--powershell-decode) | Prefer scripts; `certutil -decode` is watched |
 | Existing FTP/WebDAV | `curl.exe` / mapped WebDAV | [4.9](../operator-runbook.md#49-ftp--webdav-only-if-already-approved-infrastructure) | Only if that infrastructure is already in ROE |
-| PE blocked (AppLocker/WDAC/AV) | Script-only deploy | [4.10](../operator-runbook.md#410-script-only-deploy-custom-exe-blocked) | Dispatcher `run.ps1`, or `enum.ps1` / `enum.js` / MSBuild |
+| PE blocked (AppLocker/WDAC/AV) | Script-only deploy | [4.10](../operator-runbook.md#410-script-only-deploy-custom-exe-blocked) | Dispatcher `run.ps1` (`python → pwsh → powershell → git → jscript → msbuild`) |
 | After any PE drop | `Get-FileHash` + `--help` | [4.11](../operator-runbook.md#411-post-deploy-verify-windows) | If the PE vanished, do not retry that hash; use 4.10 |
 
 Print a placeholder:

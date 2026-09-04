@@ -227,6 +227,8 @@ Linux fallback syntax:
 find scripts/linux -type f -name '*.sh' -print0 | \
   xargs -0 -r -n1 bash -n
 python3 -m py_compile scripts/linux/enum.py
+python3 -m py_compile scripts/windows/enum.py
+bash -n scripts/windows/enum-git.sh
 ```
 
 Windows PowerShell parsing, from PowerShell:
