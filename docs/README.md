@@ -32,7 +32,7 @@ authorization and remains enumeration-only unless `--auto-exploit` is chosen.
 | Need | Start here |
 | --- | --- |
 | Install or build | [Installation](installation.md), [Build](build.md) |
-| Learn the workflow | [User Guide](user-guide.md), [First User Journey](first-user-journey.md) |
+| Learn the workflow | [Verified User Journey](USER_JOURNEY.md), [User Guide](user-guide.md), [First User Journey](first-user-journey.md) |
 | Find a command or flag | [CLI Reference](cli-reference.md) |
 | Deploy to a target | [Operator Runbook](operator-runbook.md) |
 | Choose a focused runbook workflow | [Runbook Modules](runbook/README.md) |
