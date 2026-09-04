@@ -2402,13 +2402,22 @@ fn windows_python_fallback_compiles_and_requires_authorization() {
 fn windows_git_fallback_shell_parses() {
     let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../scripts/windows/enum-git.sh");
-    let output = std::process::Command::new("bash")
-        .args(["-n", script.to_str().unwrap()])
-        .output()
+    let source = std::fs::read(&script).unwrap();
+    let mut child = std::process::Command::new("bash")
+        .arg("-n")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .unwrap();
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(&source).unwrap();
+    let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
-        "stderr={}",
+        "script={} stdout={} stderr={}",
+        script.display(),
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 }

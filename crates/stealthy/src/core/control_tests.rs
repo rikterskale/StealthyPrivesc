@@ -1109,15 +1109,18 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 #[cfg(windows)]
 fn configure_windows_acl_fixtures(user_path: &Path, admin_path: &Path) -> Result<()> {
     let user_text = user_path.display().to_string();
-    let user_status = Command::new("icacls")
+    let user_output = Command::new("icacls")
         .args([user_text.as_str(), "/inheritance:e"])
-        .status()
+        .output()
         .context("run icacls for user-writable fixture")?;
-    if !user_status.success() {
-        anyhow::bail!("icacls rejected user-writable fixture ACL");
+    if !user_output.status.success() {
+        anyhow::bail!(
+            "icacls rejected user-writable fixture ACL: {}",
+            String::from_utf8_lossy(&user_output.stderr).trim()
+        );
     }
     let admin_text = admin_path.display().to_string();
-    let admin_status = Command::new("icacls")
+    let admin_output = Command::new("icacls")
         .args([
             admin_text.as_str(),
             "/inheritance:r",
@@ -1128,10 +1131,13 @@ fn configure_windows_acl_fixtures(user_path: &Path, admin_path: &Path) -> Result
             "/grant:r",
             "BUILTIN\\Users:(OI)(CI)RX",
         ])
-        .status()
+        .output()
         .context("run icacls for admin-only fixture")?;
-    if !admin_status.success() {
-        anyhow::bail!("icacls rejected admin-only fixture ACL");
+    if !admin_output.status.success() {
+        anyhow::bail!(
+            "icacls rejected admin-only fixture ACL: {}",
+            String::from_utf8_lossy(&admin_output.stderr).trim()
+        );
     }
     Ok(())
 }
