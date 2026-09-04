@@ -967,12 +967,29 @@ jobs:
             ./target/release/stealthy.exe --repo-root . --strict-warnings `
             --report user-readiness-${{ matrix.os }}.json
 
+      - name: Phase 5 user acceptance validation
+        if: runner.os != 'Windows'
+        run: |
+          python3 scripts/ci/validate_uat.py \
+            ./target/release/stealthy --repo-root . \
+            --report phase5-uat-${{ matrix.os }}.json
+
+      - name: Phase 5 user acceptance validation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python scripts/ci/validate_uat.py `
+            ./target/release/stealthy.exe --repo-root . `
+            --report phase5-uat-${{ matrix.os }}.json
+
       - name: Upload user-readiness evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: user-readiness-${{ matrix.os }}
-          path: user-readiness-${{ matrix.os }}.json
+          path: |
+            user-readiness-${{ matrix.os }}.json
+            phase5-uat-${{ matrix.os }}.json
           if-no-files-found: warn
           retention-days: 14
 

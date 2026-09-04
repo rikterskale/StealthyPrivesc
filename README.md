@@ -4,7 +4,7 @@ Modular, cross-platform privilege-escalation **enumeration** framework for **aut
 
 Documentation hub: [`docs/README.md`](docs/README.md).
 
-Start here: [Installation](docs/installation.md) · [Verified User Journey](docs/USER_JOURNEY.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Support Policy](docs/support-policy.md) · [Architecture Diagram](docs/architecture-diagram.md)
+Start here: [Installation](docs/installation.md) · [Verified User Journey](docs/USER_JOURNEY.md) · [UAT Plan](docs/UAT_PLAN.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Support Policy](docs/support-policy.md) · [Architecture Diagram](docs/architecture-diagram.md)
 
 ## Legal / ethical disclaimer
 
@@ -274,6 +274,7 @@ See [`docs/build.md`](docs/build.md).
 - [`docs/design.md`](docs/design.md) — design decisions
 - [`docs/capabilities.md`](docs/capabilities.md) — capability matrix
 - [`docs/first-user-journey.md`](docs/first-user-journey.md) — first-run contract
+- [`docs/UAT_PLAN.md`](docs/UAT_PLAN.md) — Phase 5 acceptance cases and captured results
 - [`docs/support-policy.md`](docs/support-policy.md) — supported versions,
   artifacts, schema compatibility, EOL, and security-fix windows
 
