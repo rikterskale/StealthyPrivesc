@@ -296,7 +296,7 @@ fn print_summary(report: &RunReport, findings: &[&Finding], total: usize) {
     };
     println!(
         "{} {}  {}",
-        term::bold("StealthyPrivesc"),
+        term::bold(crate::core::opsec::BRAND),
         term::dim("summary"),
         status
     );
@@ -403,7 +403,8 @@ pub fn render_html(report: &RunReport, findings: &[&Finding]) -> String {
         )
         .expect("writing HTML to a String cannot fail");
     }
-    format!("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>StealthyPrivesc report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033;background:#f8fafc}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;background:white;border-radius:10px;padding:1rem;margin:1rem 0;box-shadow:0 2px 8px #0f172a0a}}.toolbar{{position:sticky;top:0;z-index:2;background:#fffffff2;backdrop-filter:blur(8px)}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}button,input,select{{padding:.45rem;margin:.2rem;border:1px solid #cbd5e1;border-radius:6px;background:white}}button{{cursor:pointer}}.empty{{color:#64748b;padding:1rem}}</style><h1>StealthyPrivesc report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=\"card toolbar\"><h2>Findings</h2><input id=search placeholder=\"Search findings\" aria-label=\"Search findings\"><select id=severity aria-label=\"Filter by severity\"><option value=\"\">All severities</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>info</option></select><button id=expand onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=true)\">Expand all</button><button onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=false)\">Collapse all</button>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div><script>const apply=()=>{{const q=document.querySelector('#search').value.toLowerCase(),s=document.querySelector('#severity').value;document.querySelectorAll('.finding').forEach(x=>{{const text=x.textContent.toLowerCase(),sev=x.querySelector('em').textContent; x.style.display=(!q||text.includes(q))&&(!s||sev===s)?'':'none';}})}};document.querySelector('#search').oninput=apply;document.querySelector('#severity').onchange=apply;</script>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
+    let brand = crate::core::opsec::BRAND;
+    format!("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{brand} report</title><style>body{{font:15px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172033;background:#f8fafc}}h1{{color:#0f766e}}.card{{border:1px solid #dbe4ee;background:white;border-radius:10px;padding:1rem;margin:1rem 0;box-shadow:0 2px 8px #0f172a0a}}.toolbar{{position:sticky;top:0;z-index:2;background:#fffffff2;backdrop-filter:blur(8px)}}.bar{{display:flex;gap:.6rem;align-items:center;margin:.45rem 0}}.bar span{{width:75px}}.bar i{{height:14px;border-radius:5px;display:inline-block;max-width:70%}}.bar b{{margin-left:.4rem}}details{{border-top:1px solid #dbe4ee;padding:.8rem}}summary{{cursor:pointer}}em{{font-style:normal;text-transform:uppercase;font-size:.75rem;color:#b45309}}code{{background:#f1f5f9;padding:.15rem .3rem;border-radius:4px;white-space:pre-wrap}}small{{color:#64748b}}button,input,select{{padding:.45rem;margin:.2rem;border:1px solid #cbd5e1;border-radius:6px;background:white}}button{{cursor:pointer}}.empty{{color:#64748b;padding:1rem}}</style><h1>{brand} report</h1><div class=card><b>Host:</b> {} &nbsp; <b>User:</b> {} &nbsp; <b>OS:</b> {} / {}<br><b>Mode:</b> {} &nbsp; <b>Coverage:</b> {} &nbsp; <b>Plugins:</b> {}</div><div class=card><h2>Severity summary</h2>{bars}</div><div class=card><h2>Attack paths</h2><ul>{paths}</ul></div><div class=\"card toolbar\"><h2>Findings</h2><input id=search placeholder=\"Search findings\" aria-label=\"Search findings\"><select id=severity aria-label=\"Filter by severity\"><option value=\"\">All severities</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>info</option></select><button id=expand onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=true)\">Expand all</button><button onclick=\"document.querySelectorAll('.finding').forEach(x=>x.open=false)\">Collapse all</button>{body}</div><div class=card><h2>Coverage gaps</h2><p>{}</p></div><script>const apply=()=>{{const q=document.querySelector('#search').value.toLowerCase(),s=document.querySelector('#severity').value;document.querySelectorAll('.finding').forEach(x=>{{const text=x.textContent.toLowerCase(),sev=x.querySelector('em').textContent; x.style.display=(!q||text.includes(q))&&(!s||sev===s)?'':'none';}})}};document.querySelector('#search').oninput=apply;document.querySelector('#severity').onchange=apply;</script>", esc(&report.identity.hostname), esc(&report.identity.username), esc(&report.os.os), esc(&report.os.arch), esc(&report.mode), esc(&report.coverage_mode), report.plugins_run.len(), if report.capability_delta.is_empty() { "None reported".into() } else { report.capability_delta.iter().map(|x| format!("<code>{}</code>", esc(x))).collect::<Vec<_>>().join(", ") })
 }
 
 fn filter_findings(findings: &[Finding], min: Severity) -> Vec<&Finding> {
@@ -436,7 +437,7 @@ fn print_human(report: &RunReport, findings: &[&Finding], total: usize) {
     println!("{}", term::bold(&bar));
     println!(
         "{}  {}",
-        term::bold("StealthyPrivesc"),
+        term::bold(crate::core::opsec::BRAND),
         term::dim(&format!("v{}", report.version))
     );
     println!("{}", term::bold(&bar));
@@ -637,7 +638,7 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
     let counts = count_by_severity(findings);
     let mut out = String::new();
     out.push_str(&format!(
-        "# StealthyPrivesc report\n\n\
+        "# {} report\n\n\
          - **Version:** {}\n\
          - **Schema:** {}\n\
          - **Run ID:** `{}`\n\
@@ -652,6 +653,7 @@ pub fn render_markdown(report: &RunReport, findings: &[&Finding], total: usize) 
          - **Coverage mode:** {}\n\
          - **Plugins run:** {}\n\
          - **Findings:** {} total, {} shown\n\n",
+        crate::core::opsec::BRAND,
         report.version,
         report.schema_version,
         report.run_id,
@@ -871,7 +873,7 @@ pub fn render_sarif(report: &RunReport, findings: &[&Finding]) -> String {
             "tool": { "driver": {
                 "name": report.tool,
                 "version": report.version,
-                "informationUri": "https://github.com/rikterskale/StealthyPrivesc"
+                "informationUri": crate::core::opsec::REPO_URL
             }},
             "properties": {
                 "run_id": report.run_id,
@@ -1007,7 +1009,7 @@ mod tests {
         let report = report();
         let findings = report.findings.iter().collect::<Vec<_>>();
         let markdown = render_markdown(&report, &findings, findings.len());
-        assert!(markdown.contains("# StealthyPrivesc report"));
+        assert!(markdown.contains(&format!("# {} report", crate::core::opsec::BRAND)));
         assert!(markdown.contains("What's next"));
         let sarif: serde_json::Value =
             serde_json::from_str(&render_sarif(&report, &findings)).unwrap();

@@ -51,7 +51,7 @@ Operator deploy/runbook: [`docs/runbook/delivery.md`](runbook/delivery.md),
 | Published architectures | Linux x86-64 GNU, Linux aarch64 GNU, Windows x86-64 MSVC |
 | Tag release gate | Done (fmt, Clippy, tests, release/flavor builds, 80% coverage floor, script checks, Gitleaks, cargo-deny) |
 | Nightly safe fixture lab | Done (Linux/Windows local fixtures and enum-only authorization contract; no destructive exploit lab) |
-| Build flavors | Done (`full`, `enum-only`, `opsec-string-strip`; constrained flavors retain authorization/disclaimer/audit fields) |
+| Build flavors | Done (`full`, `enum-only`, `opsec-string-strip`; OPSEC flavor omits brand/catalog/vendor literals and retains authorization/audit fields) |
 
 ### Detection-depth status
 

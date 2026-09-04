@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::profile::EngagementProfile;
 
-/// StealthyPrivesc — modular privilege-escalation enumerator for authorized assessments.
+/// Authorized-assessment enumerator.
 ///
 /// Default posture: quiet enumeration + recommendations. High-impact techniques require
 /// explicit `--allow-techniques` opt-in when ROE permits.
 #[derive(Debug, Parser)]
 #[command(name = "stealthy")]
-#[command(version, about, long_about = LONG_ABOUT)]
+#[command(version, about = ABOUT, long_about = LONG_ABOUT)]
 #[command(propagate_version = true)]
 #[command(after_help = AFTER_HELP)]
 #[command(arg_required_else_help = false)]
@@ -519,6 +519,13 @@ impl MinSeverity {
     }
 }
 
+#[cfg(not(feature = "opsec-string-strip"))]
+const ABOUT: &str =
+    "StealthyPrivesc — modular privilege-escalation enumerator for authorized assessments.";
+#[cfg(feature = "opsec-string-strip")]
+const ABOUT: &str = "Host inventory enumerator for authorized assessments.";
+
+#[cfg(not(feature = "opsec-string-strip"))]
 const LONG_ABOUT: &str = "\
 StealthyPrivesc is a modular privilege-escalation enumerator for authorized \
 red team and internal assessments only.
@@ -529,6 +536,16 @@ MSI, credential dump, service replace, host-crash, endpoint-bypass) require \
 explicit --allow-techniques when ROE permits. endpoint-bypass means \
 alternate-path + approved-fixture validation only; AMSI/ETW/AV-EDR interference \
 uses amsi-bypass / etw-unhook / av-edr-service with --confirm-evasion.
+
+Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
+
+#[cfg(feature = "opsec-string-strip")]
+const LONG_ABOUT: &str = "\
+This enumerator is for authorized assessments only.
+
+Default mode enumerates and recommends. Auto-exploitation is opt-in for \
+reversible probes. High-impact families require explicit --allow-techniques \
+when ROE permits.
 
 Pass --authorized (or set STEALTHY_AUTHORIZED=1) before any host action.";
 

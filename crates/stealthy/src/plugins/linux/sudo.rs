@@ -136,13 +136,17 @@ impl Plugin for SudoPlugin {
                             severity: Severity::High,
                             title: "NOPASSWD sudo rule(s) present".into(),
                             detail: append_annotation(truncate(&combined, 2000), &gtfo),
-                            recommendation: "Review each NOPASSWD command for GTFOBins-style escalation paths. Do not auto-run them.".into(),
+                            recommendation: "Review each NOPASSWD command for documented local escalation paths. Do not auto-run them.".into(),
                             noisy: true,
                             leaves_artifacts: false,
                             object: "sudo:-n-l:nopasswd".into(),
                             condition: "sudo-nopasswd-rule-observed".into(),
                             mitre_techniques: vec!["T1548.003".into()],
-                            technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
+                            technique_id: if gtfo.is_empty() {
+                            "sudo".into()
+                        } else {
+                            crate::core::opsec::GTFO_TECHNIQUE.into()
+                        },
                             ..Default::default()
                         });
                     } else if out.status.success() {
@@ -158,7 +162,11 @@ impl Plugin for SudoPlugin {
                             object: "sudo:-n-l".into(),
                             condition: "sudo-rules-enumerated".into(),
                             mitre_techniques: vec!["T1548.003".into()],
-                            technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
+                            technique_id: if gtfo.is_empty() {
+                            "sudo".into()
+                        } else {
+                            crate::core::opsec::GTFO_TECHNIQUE.into()
+                        },
                             ..Default::default()
                         });
                     } else if !combined.trim().is_empty() {
@@ -268,13 +276,17 @@ fn scan_sudoers_text(
                 severity: Severity::High,
                 title: format!("Readable NOPASSWD rule in {path}"),
                 detail: append_annotation(trimmed.to_string(), &gtfo),
-                recommendation: "Validate whether the allowed binary can be abused (GTFOBins). Escalate only with approval.".into(),
+                recommendation: "Validate whether the allowed binary can be abused. Escalate only with approval.".into(),
                 noisy: false,
                 leaves_artifacts: false,
                 object: format!("{path}:{trimmed}"),
                 condition: "sudo-nopasswd-rule-readable".into(),
                 mitre_techniques: vec!["T1548.003".into()],
-                technique_id: if gtfo.is_empty() { "sudo" } else { "gtfobins" }.into(),
+                technique_id: if gtfo.is_empty() {
+                    "sudo".into()
+                } else {
+                    crate::core::opsec::GTFO_TECHNIQUE.into()
+                },
                 ..Default::default()
             });
         }
@@ -352,11 +364,7 @@ fn format_gtfobins_annotations(text: &str) -> String {
     }
     matches
         .into_iter()
-        .map(|(binary, functions)| {
-            format!(
-                "gtfobins.binary={binary} gtfobins.functions={functions} gtfobins.url=https://gtfobins.github.io/gtfobins/{binary}/ recommend_only=true"
-            )
-        })
+        .filter_map(|(binary, functions)| crate::core::opsec::gtfobins_detail(binary, functions))
         .collect::<Vec<_>>()
         .join("; ")
 }

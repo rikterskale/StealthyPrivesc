@@ -16,7 +16,7 @@ default = ["full"]
 full = []
 # Constrains reversible probes, technique opt-ins, and executable control fixtures.
 enum-only = []
-# May strip non-semantic diagnostic / operator-hint strings. Includes enum-only.
+# Omits brand, catalog URLs, and third-party vendor literals. Includes enum-only.
 opsec-string-strip = ["enum-only"]
 
 [package.metadata.stealthy.build-flavors.enum-only]
@@ -27,8 +27,8 @@ implementation = "runtime-gated"
 [package.metadata.stealthy.build-flavors.opsec-string-strip]
 profile = "opsec-string-strip"
 feature = "opsec-string-strip"
-implementation = "operator-hint-strings-stripped"
-allowed_scope = "non-semantic diagnostic strings only"
+implementation = "brand-catalog-vendor-strings-stripped"
+allowed_scope = "brand, catalog URLs, and third-party vendor literals; authorization and audit fields retained"
 
 [dependencies]
 anyhow.workspace = true

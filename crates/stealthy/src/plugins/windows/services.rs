@@ -46,7 +46,12 @@ impl Plugin for ServicesPlugin {
                     leaves_artifacts: false,
                     object: service_object.clone(),
                     condition: "unquoted-service-image-path".into(),
-                    technique_id: if lolbas.is_some() { "lolbas" } else { "service-path" }.into(),
+                    technique_id: if lolbas.is_some() {
+                        crate::core::opsec::LOLBAS_TECHNIQUE
+                    } else {
+                        "service-path"
+                    }
+                    .into(),
                     ..Default::default()
                 });
 
@@ -146,7 +151,12 @@ impl Plugin for ServicesPlugin {
                         leaves_artifacts: true,
                         object: format!("{service_object}|binary:{bin}"),
                         condition: "writable-service-binary-acl".into(),
-                        technique_id: if lolbas.is_some() { "lolbas" } else { "service-replace" }.into(),
+                        technique_id: if lolbas.is_some() {
+                            crate::core::opsec::LOLBAS_TECHNIQUE
+                        } else {
+                            "service-replace"
+                        }
+                        .into(),
                         ..Default::default()
                     });
                     let tech = crate::exploit::TechniqueFamily::ServiceReplace;

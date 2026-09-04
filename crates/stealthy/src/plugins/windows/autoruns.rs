@@ -68,7 +68,12 @@ impl Plugin for AutorunsPlugin {
                     "autorun-target-enumerated"
                 }
                 .into(),
-                technique_id: if lolbas.is_some() { "lolbas" } else { "autorun" }.into(),
+                technique_id: if lolbas.is_some() {
+                    crate::core::opsec::LOLBAS_TECHNIQUE
+                } else {
+                    "autorun"
+                }
+                .into(),
                 ..Default::default()
             });
         }

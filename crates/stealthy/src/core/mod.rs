@@ -11,6 +11,7 @@ pub mod evasion;
 pub mod finalize;
 pub mod identity;
 pub mod ingest;
+pub mod opsec;
 pub mod os;
 pub mod output;
 pub mod plugin;

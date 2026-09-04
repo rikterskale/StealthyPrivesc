@@ -2033,6 +2033,7 @@ fn process_named_present(name: &str) -> bool {
     })
 }
 
+#[cfg(not(feature = "opsec-string-strip"))]
 fn linux_sensor_processes() -> Vec<(&'static str, &'static str)> {
     vec![
         ("falcon-sensor", "CrowdStrike Falcon (Linux)"),
@@ -2061,6 +2062,38 @@ fn linux_sensor_processes() -> Vec<(&'static str, &'static str)> {
         ("tvmagent", "Tenable VM Agent (Linux)"),
         ("ir_agent", "Rapid7 Insight Agent (Linux)"),
         ("taniumclient", "Tanium Client (Linux)"),
+    ]
+}
+
+#[cfg(feature = "opsec-string-strip")]
+fn linux_sensor_processes() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("falcon-sensor", "endpoint-sensor"),
+        ("sentinelone-agent", "endpoint-sensor"),
+        ("s1-agent", "endpoint-sensor"),
+        ("cbagentd", "endpoint-sensor"),
+        ("cbdaemon", "endpoint-sensor"),
+        ("RepMgr", "endpoint-sensor"),
+        ("mfetpd", "endpoint-sensor"),
+        ("SophosHealth", "endpoint-sensor"),
+        ("savscand", "endpoint-sensor"),
+        ("symcfgd", "endpoint-sensor"),
+        ("rtvscand", "endpoint-sensor"),
+        ("tmdagent", "endpoint-sensor"),
+        ("ds_agent", "endpoint-sensor"),
+        ("kesl", "endpoint-sensor"),
+        ("ens", "endpoint-sensor"),
+        ("utl", "endpoint-sensor"),
+        ("bdagentd", "endpoint-sensor"),
+        ("cortex-xdr", "endpoint-sensor"),
+        ("traps_paned", "endpoint-sensor"),
+        ("cylancesvc", "endpoint-sensor"),
+        ("elastic-agent", "endpoint-sensor"),
+        ("osqueryd", "endpoint-sensor"),
+        ("qualys-cloud-agent", "endpoint-sensor"),
+        ("tvmagent", "endpoint-sensor"),
+        ("ir_agent", "endpoint-sensor"),
+        ("taniumclient", "endpoint-sensor"),
     ]
 }
 

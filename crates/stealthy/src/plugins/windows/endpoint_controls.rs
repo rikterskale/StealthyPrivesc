@@ -348,22 +348,9 @@ fn defender_av_findings(ctx: &PluginContext<'_>) -> Result<Vec<Finding>> {
             if let Some(name) = read_string(Hive::LocalMachine, &path, "DisplayName")? {
                 let lower = name.to_ascii_lowercase();
                 if lower.contains("defender")
-                    || lower.contains("crowdstrike")
-                    || lower.contains("falcon")
-                    || lower.contains("sentinel")
-                    || lower.contains("carbon black")
-                    || lower.contains("cylance")
-                    || lower.contains("symantec")
-                    || lower.contains("norton")
-                    || lower.contains("mcafee")
-                    || lower.contains("kaspersky")
-                    || lower.contains("eset")
-                    || lower.contains("trend micro")
-                    || lower.contains("sophos")
-                    || lower.contains("bitdefender")
-                    || lower.contains("cortex")
                     || lower.contains("xdr")
                     || lower.contains("edr")
+                    || crate::core::opsec::third_party_sensor_name(&name)
                 {
                     products.push(name);
                 }

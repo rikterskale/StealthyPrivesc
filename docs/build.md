@@ -199,8 +199,15 @@ cargo build --locked -p stealthy --profile opsec-string-strip \
 ```
 
 `enum-only` rejects `--auto-exploit`, every `--allow-techniques` family, and
-executable control fixtures. `opsec-string-strip` includes `enum-only` and may
-remove only non-semantic operator hint strings.
+executable control fixtures. `opsec-string-strip` includes `enum-only` and
+omits product brand, GTFOBins/LOLBAS URLs, the GitHub repository URL, and
+third-party vendor catalog text from the binary. Authorization, plugin IDs,
+and audit fields remain. After the flavor build:
+
+```bash
+python3 scripts/ci/validate_opsec_strings.py \
+  --binary target/opsec-string-strip/stealthy
+```
 
 ## Windows CI validation
 

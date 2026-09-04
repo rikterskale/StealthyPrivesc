@@ -121,12 +121,15 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     } else {
         "scripts/linux"
     };
-    let mut candidates = vec![
-        PathBuf::from(scripts_rel),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../")
-            .join(scripts_rel),
-    ];
+    let mut candidates = vec![PathBuf::from(scripts_rel)];
+    #[cfg(debug_assertions)]
+    {
+        candidates.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../")
+                .join(scripts_rel),
+        );
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join(scripts_rel));
@@ -257,7 +260,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
     };
     let operator = if opts.os == "windows" {
         format!(
-            "StealthyPrivesc stage bundle\n\
+            "{} stage bundle\n\
              os={} arch={} name={} mode={}\n\
              binary_sha256={}\n\n\
              {}\n\
@@ -265,11 +268,12 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: python,pwsh,powershell,git,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
+            crate::core::opsec::BRAND,
             opts.os, opts.arch, opts.name, bundle_mode, hash, verification
         )
     } else {
         format!(
-            "StealthyPrivesc stage bundle\n\
+            "{} stage bundle\n\
              os={} arch={} name={} mode={}\n\
              binary_sha256={}\n\n\
              {}\n\
@@ -277,6 +281,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              Empty drop_dir runs the ELF in place (no copy into .run-cache).\n\
              If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
+            crate::core::opsec::BRAND,
             opts.os, opts.arch, opts.name, bundle_mode, hash, verification
         )
     };

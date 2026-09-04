@@ -111,7 +111,10 @@ fn scan_cron_script(path: &str, text: &str, cancel: &Arc<AtomicBool>, findings: 
                 .find(|binary| lower.contains(&format!("{binary} ")));
             let annotation = gtfo_binary
                 .filter(|binary| *binary == "tar")
-                .map(|binary| format!("; gtfobins.binary={binary} gtfobins.functions=shell,file-read,file-write,sudo gtfobins.url=https://gtfobins.github.io/gtfobins/{binary}/ recommend_only=true"))
+                .and_then(|binary| {
+                    crate::core::opsec::gtfobins_detail(binary, "shell,file-read,file-write,sudo")
+                        .map(|line| format!("; {line}"))
+                })
                 .unwrap_or_default();
             findings.push(Finding {
                 plugin: "linux.wildcard_cron".into(),
@@ -128,7 +131,7 @@ fn scan_cron_script(path: &str, text: &str, cancel: &Arc<AtomicBool>, findings: 
                 technique_id: if annotation.is_empty() {
                     "cron-wildcard-injection"
                 } else {
-                    "gtfobins"
+                    crate::core::opsec::GTFO_TECHNIQUE
                 }
                 .into(),
                 ..Default::default()

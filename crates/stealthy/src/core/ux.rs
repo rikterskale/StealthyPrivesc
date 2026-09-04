@@ -10,7 +10,7 @@ use crate::core::{ingest, output};
 use crate::plugins;
 
 pub fn quickstart(cli: &Cli, overrides: &CliOverrides) -> Result<()> {
-    println!("StealthyPrivesc quickstart\n");
+    println!("{} quickstart\n", crate::core::opsec::BRAND);
     println!("1. Doctor checks local readiness (no host enumeration).\n");
     let _ = crate::core::os::detect();
     println!("2. Authorization: only assess systems covered by written ROE. Use --authorized or STEALTHY_AUTHORIZED=1.");
@@ -305,7 +305,8 @@ mod tests {
     fn offline_helpers_cover_all_formats_and_files() {
         let report = demo_report().unwrap();
         let refs: Vec<&Finding> = report.findings.iter().collect();
-        assert!(output::render_html(&report, &refs).contains("StealthyPrivesc report"));
+        assert!(output::render_html(&report, &refs)
+            .contains(&format!("{} report", crate::core::opsec::BRAND)));
         assert!(output::render_markdown(&report, &refs, refs.len()).contains("## Findings"));
 
         let path =

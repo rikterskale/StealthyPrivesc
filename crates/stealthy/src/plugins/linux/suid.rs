@@ -253,6 +253,7 @@ fn inspect_file(
     let gtfo = gtfobins_annotation(name);
 
     if (suid || sgid) && (!policy.quiet || gtfo.is_some()) {
+        #[cfg(not(feature = "opsec-string-strip"))]
         let condition = match (suid, sgid, gtfo.is_some()) {
             (true, true, true) => "suid-sgid-gtfobins-candidate",
             (true, false, true) => "suid-gtfobins-candidate",
@@ -262,12 +263,19 @@ fn inspect_file(
             (false, true, false) => "sgid-set",
             _ => "special-mode-set",
         };
+        #[cfg(feature = "opsec-string-strip")]
+        let condition = match (suid, sgid) {
+            (true, true) => "suid-sgid-set",
+            (true, false) => "suid-set",
+            (false, true) => "sgid-set",
+            _ => "special-mode-set",
+        };
         let mut detail = format!("mode={mode:o} uid={} gid={}", meta.uid(), meta.gid());
         if let Some(annotation) = gtfo {
-            detail.push_str(&format!(
-                "; gtfobins.binary={name} gtfobins.functions={} gtfobins.url=https://gtfobins.github.io/gtfobins/{name}/ recommend_only=true",
-                annotation.functions
-            ));
+            if let Some(line) = crate::core::opsec::gtfobins_detail(name, annotation.functions) {
+                detail.push_str("; ");
+                detail.push_str(&line);
+            }
         }
         findings.push(Finding {
             plugin: "linux.suid".into(),
@@ -284,14 +292,17 @@ fn inspect_file(
                 path.display()
             ),
             detail,
+            #[cfg(not(feature = "opsec-string-strip"))]
             recommendation: "Review the documented GTFOBins technique manually; this annotation is recommend-only and never executes a payload.".into(),
+            #[cfg(feature = "opsec-string-strip")]
+            recommendation: "Review the binary's special mode and documented abuse potential offline. This tool does not execute a payload.".into(),
             noisy: false,
             leaves_artifacts: false,
             object: path.display().to_string(),
             condition: condition.into(),
             mitre_techniques: vec!["T1548.001".into()],
             technique_id: if gtfo.is_some() {
-                "gtfobins"
+                crate::core::opsec::GTFO_TECHNIQUE
             } else {
                 "set-id"
             }

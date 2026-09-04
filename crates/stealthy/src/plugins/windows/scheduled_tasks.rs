@@ -207,7 +207,12 @@ fn walk_tasks(
                         leaves_artifacts: true,
                         object: format!("task:{}|action:{bin}", path.display()),
                         condition: "writable-task-action-file-acl".into(),
-                        technique_id: if lolbas.is_some() { "lolbas" } else { "task-action" }.into(),
+                        technique_id: if lolbas.is_some() {
+                            crate::core::opsec::LOLBAS_TECHNIQUE
+                        } else {
+                            "task-action"
+                        }
+                        .into(),
                         ..Default::default()
                     });
                 }

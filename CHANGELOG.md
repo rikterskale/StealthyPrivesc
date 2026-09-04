@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `opsec-string-strip` omits product brand, GTFOBins/LOLBAS URLs, the GitHub
+  repository URL, and third-party vendor catalog text from the binary.
 - Windows dispatcher default walk is now `python → pwsh → powershell → git →
   jscript → msbuild`. New `enum.py` and `enum-git.sh` collectors; MSBuild is
   skipped unless it lives under Program Files.

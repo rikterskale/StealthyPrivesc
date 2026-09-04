@@ -413,7 +413,10 @@ fn print_control_validation(
 }
 
 fn print_control_validation_markdown(report: &crate::core::types::ControlValidationReport) {
-    println!("# StealthyPrivesc application-control validation\n");
+    println!(
+        "# {} application-control validation\n",
+        crate::core::opsec::BRAND
+    );
     println!("- Platform: `{}`", report.platform);
     println!("- Cases: `{}`", report.case_filter);
     println!("- Execute requested: `{}`", report.execute_requested);
@@ -449,7 +452,7 @@ fn print_live_controls(cli: &Cli) -> Result<()> {
     match cli.format {
         ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&assessment)?),
         ReportFormat::Markdown | ReportFormat::Human => {
-            println!("# StealthyPrivesc live control collection\n");
+            println!("# {} live control collection\n", crate::core::opsec::BRAND);
             println!("- Platform: {}", assessment.platform);
             println!("- Collection mode: {}", assessment.collection_mode);
             println!(
@@ -691,7 +694,10 @@ fn print_doctor(json: bool) -> Result<()> {
             })
         );
     } else {
-        println!("{}", term::bold("StealthyPrivesc doctor"));
+        println!(
+            "{}",
+            term::bold(&format!("{} doctor", crate::core::opsec::BRAND))
+        );
         println!("  {} OS: {} ({})", check(supported), os.os, os.arch);
         println!(
             "  {} Plugins compiled: {}",
@@ -811,7 +817,7 @@ fn print_diff(
     match format {
         ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&diff)?),
         ReportFormat::Markdown | ReportFormat::Human => {
-            println!("# StealthyPrivesc report diff\n");
+            println!("# {} report diff\n", crate::core::opsec::BRAND);
             println!("- Baseline: {}", diff.baseline_run_id);
             println!("- Current: {}\n", diff.current_run_id);
             println!(
@@ -943,7 +949,10 @@ fn print_plugins(tsv: bool) {
 }
 
 fn print_guide() {
-    println!("{}", term::bold("StealthyPrivesc — operator guide"));
+    println!(
+        "{}",
+        term::bold(&format!("{} — operator guide", crate::core::opsec::BRAND))
+    );
     println!();
     println!("{}", term::bold("1. Legal boundary"));
     println!("   Authorized engagements only. Read: stealthy disclaimer");
@@ -1024,10 +1033,13 @@ fn print_guide() {
 
 fn print_disclaimer() {
     println!(
-        r#"================================================================
-StealthyPrivesc — AUTHORIZED USE ONLY
-================================================================
-
+        "================================================================\n\
+         {} — AUTHORIZED USE ONLY\n\
+         ================================================================",
+        crate::core::opsec::BRAND
+    );
+    println!(
+        r#"
 This software is intended exclusively for:
   • Authorized red team engagements
   • Internal security assessments

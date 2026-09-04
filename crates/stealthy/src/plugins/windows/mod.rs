@@ -61,9 +61,7 @@ pub(super) fn lolbas_annotation(command: &str) -> Option<String> {
         "wscript.exe" => ("Wscript", "execute"),
         _ => return None,
     };
-    Some(format!(
-        "lolbas.binary={binary} lolbas.functions={functions} lolbas.url=https://lolbas-project.github.io/lolbas/Binaries/{page}/ recommend_only=true"
-    ))
+    crate::core::opsec::lolbas_detail(&binary, page, functions)
 }
 
 pub fn plugins() -> Vec<&'static dyn Plugin> {
