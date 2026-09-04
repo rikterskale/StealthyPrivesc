@@ -2403,7 +2403,16 @@ fn windows_git_fallback_shell_parses() {
     let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../scripts/windows/enum-git.sh");
     let source = std::fs::read(&script).unwrap();
-    let mut child = std::process::Command::new("bash")
+    let bash = if cfg!(windows) {
+        std::env::var_os("ProgramFiles")
+            .map(std::path::PathBuf::from)
+            .map(|root| root.join("Git/bin/bash.exe"))
+            .filter(|candidate| candidate.is_file())
+            .expect("Git for Windows bash.exe must be installed under Program Files")
+    } else {
+        std::path::PathBuf::from("bash")
+    };
+    let mut child = std::process::Command::new(&bash)
         .arg("-n")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -2415,7 +2424,8 @@ fn windows_git_fallback_shell_parses() {
     let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
-        "script={} stdout={} stderr={}",
+        "shell={} script={} stdout={} stderr={}",
+        bash.display(),
         script.display(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
