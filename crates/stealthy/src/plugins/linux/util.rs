@@ -151,6 +151,14 @@ fn acl_text_allows_write(text: &str, username: &str, groups: &[String]) -> bool 
     false
 }
 
+pub fn euid() -> u32 {
+    unsafe { geteuid() }
+}
+
+unsafe extern "C" {
+    fn geteuid() -> u32;
+}
+
 #[cfg(test)]
 mod tests {
     use super::{acl_text_allows_write, is_effectively_writable_opts, is_writable_by_euid};
@@ -176,17 +184,20 @@ mod tests {
         std::fs::write(&path, b"x").unwrap();
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o600);
+        perms.set_mode(0o602);
         std::fs::set_permissions(&path, perms).unwrap();
         let meta = std::fs::metadata(&path).unwrap();
-        let expected = if super::euid() == 0 {
-            Some(false)
-        } else {
-            Some(true)
-        };
         assert_eq!(
-            is_effectively_writable_opts(&path, meta.uid(), &[], true),
-            expected
+            is_effectively_writable_opts(&path, meta.uid().saturating_add(1), &[], true),
+            Some(true)
+        );
+
+        perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&path, perms).unwrap();
+        assert_eq!(
+            is_effectively_writable_opts(&path, meta.uid().saturating_add(1), &[], false),
+            None
         );
     }
 
@@ -197,12 +208,4 @@ mod tests {
         let acl = acl.replace("mask::r-x", "mask::rwx");
         assert!(acl_text_allows_write(&acl, "alice", &["deploy".into()]));
     }
-}
-
-pub fn euid() -> u32 {
-    unsafe { geteuid() }
-}
-
-unsafe extern "C" {
-    fn geteuid() -> u32;
 }

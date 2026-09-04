@@ -44,6 +44,17 @@ fn version_hint() -> String {
         .to_string()
 }
 
+#[cfg(target_os = "windows")]
+fn version_hint() -> String {
+    // Avoid cmd.exe / ver. Use env as a quiet hint; plugins deepen this later.
+    std::env::var("OS").unwrap_or_else(|_| "Windows".into())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn version_hint() -> String {
+    "unsupported".into()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -54,15 +65,4 @@ mod tests {
         assert_eq!(info.arch, std::env::consts::ARCH);
         assert!(!info.version_hint.trim().is_empty());
     }
-}
-
-#[cfg(target_os = "windows")]
-fn version_hint() -> String {
-    // Avoid cmd.exe / ver. Use env as a quiet hint; plugins deepen this later.
-    std::env::var("OS").unwrap_or_else(|_| "Windows".into())
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn version_hint() -> String {
-    "unsupported".into()
 }
