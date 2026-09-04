@@ -37,9 +37,12 @@ impl EngagementProfile {
         }
     }
 
+    /// Per-plugin worker timeout. `0` runs plugins in-process (no
+    /// `__plugin-worker` child). Quiet and balanced default to in-process so a
+    /// normal enum does not spawn one extra process per plugin.
     pub fn default_plugin_timeout_ms(self) -> u64 {
         match self {
-            Self::Quiet | Self::Balanced => 120_000,
+            Self::Quiet | Self::Balanced => 0,
             Self::Thorough | Self::Ci => 60_000,
         }
     }
@@ -88,13 +91,36 @@ impl EngagementProfile {
     pub fn description(self) -> &'static str {
         match self {
             Self::Quiet => {
-                "Low-noise reads; skip sudo helpers/getcap/getfacl; slim control collect; higher delay"
+                "Low-noise reads; skip sudo helpers/getcap/getfacl; slim control collect; higher delay; in-process plugins"
             }
             Self::Balanced => {
-                "High-signal read-only checks; external helper scans require the thorough profile"
+                "High-signal read-only checks; in-process plugins; external helper scans require the thorough profile"
             }
-            Self::Thorough => "Full plugin set, no delay, verbose progress",
-            Self::Ci => "Quiet JSON automation posture",
+            Self::Thorough => {
+                "Full plugin set, no delay, verbose progress; isolated plugin workers"
+            }
+            Self::Ci => "Quiet JSON automation posture; isolated plugin workers",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EngagementProfile;
+
+    #[test]
+    fn quiet_and_balanced_default_to_in_process_plugins() {
+        assert_eq!(EngagementProfile::Quiet.default_plugin_timeout_ms(), 0);
+        assert_eq!(EngagementProfile::Balanced.default_plugin_timeout_ms(), 0);
+        assert_eq!(EngagementProfile::default().default_plugin_timeout_ms(), 0);
+    }
+
+    #[test]
+    fn thorough_and_ci_keep_isolated_workers() {
+        assert_eq!(
+            EngagementProfile::Thorough.default_plugin_timeout_ms(),
+            60_000
+        );
+        assert_eq!(EngagementProfile::Ci.default_plugin_timeout_ms(), 60_000);
     }
 }

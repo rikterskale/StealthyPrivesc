@@ -58,8 +58,8 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = 50)]
     pub delay_ms: u64,
 
-    /// Per-plugin timeout in milliseconds (0 = disabled).
-    #[arg(long, global = true, default_value_t = 120_000)]
+    /// Per-plugin isolated-worker timeout in milliseconds (`0` = in-process).
+    #[arg(long, global = true, default_value_t = 0)]
     pub plugin_timeout_ms: u64,
 
     /// Maximum total scan duration in seconds (0 = disabled).

@@ -49,7 +49,7 @@ flowchart TD
 | --- | --- |
 | CLI parser | Flags, subcommands, defaults, and authorization gate inputs |
 | Engine | OS selection, plugin validation, scheduling, checkpoint/triage orchestration |
-| Plugin worker | Isolated execution, cancellation/timeout, and finding/note/error return |
+| Plugin worker | In-process by default for quiet/balanced; isolated execution when a plugin timeout is set; cancellation/timeout; finding/note/error return |
 | Reporting | Assessment, attack-path, and final report assembly |
 | Identity/OS modules | Minimal local platform and execution-context evidence |
 | Plugins | Independent Linux or Windows enumeration checks |

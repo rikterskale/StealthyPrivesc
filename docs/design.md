@@ -49,9 +49,10 @@ describe the behavior users can rely on today.
    supported reversible, low-noise checks. High-impact families require a
    separate `--allow-techniques` opt-in when ROE permits (scaffolded in the
    current revision).
-5. **Plugin isolation** — each plugin worker reports findings, notes, and errors
-   through a common contract. Notes are merged into the main store, while
-   timeouts can terminate the isolated process.
+5. **Plugin isolation** — each plugin reports findings, notes, and errors
+   through a common contract. Quiet and balanced run plugins in-process (no
+   per-plugin child process). A positive `--plugin-timeout-ms` (the thorough/ci
+   default) isolates the plugin so a timeout can terminate that process.
 6. **Memory-first output** — findings stay in the encrypted in-memory store by
    default. File and remote modes require an explicit operator choice.
 7. **Script fallbacks** — approved Python, Bash, POSIX sh, Perl, PowerShell,
@@ -78,7 +79,7 @@ The runtime flow is:
 | `core::identity` | Host, user, groups, and elevation context |
 | `core::plugin` | Plugin trait, registry filtering, and execution context |
 | `core::engine` | Authorization-aware orchestration, selection, checkpoints, and triage |
-| `core::plugin_worker` | Isolated plugin execution, timeout handling, and finding/note/error transport |
+| `core::plugin_worker` | In-process or isolated plugin execution, timeout handling, and finding/note/error transport |
 | `core::reporting` | Report assembly, assessments, attack paths, and next-step normalization |
 | `core::types` | Findings, assessments, reports, severities, and provenance fields |
 | `core::store` | ChaCha20-Poly1305 sealed export and zeroizing report key |

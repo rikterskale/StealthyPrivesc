@@ -183,12 +183,16 @@ Optional:
 - Script fallbacks when binaries are blocked
 - `control_assessment` during `enum` only when `*.app_control` is selected (`live-controls` always collects)
 - `--profile quiet` disables external helpers and applies the smallest walk and
-  helper-record budgets; balanced/CI remain bounded, while thorough permits
+  helper-record budgets; quiet and balanced run plugins in-process; thorough
+  and `ci` isolate plugins with a 60s worker timeout; thorough also permits
   external helpers and larger caps
 - Findings sealed at rest in the in-memory store; memory-only runs do not create
   a ledger. Explicit checkpoints, file outputs, and staged bundles are tracked
   under the selected ledger directory (default `.cache-run`).
-- Plugin timeouts cooperatively cancel Rust-side walks (helper child processes may still finish)
+- Plugin timeouts of `0` (quiet/balanced default) keep plugins in-process;
+  a positive `--plugin-timeout-ms` isolates each plugin so the timeout can
+  kill that worker. Cooperative cancel still stops in-process walks (helper
+  child processes may still finish)
 - Residual static signature risk remains (cleartext brand/plugin strings); rename via `stage --name` when ROE requires
 - `doctor` returns exit code `3` when readiness checks fail; `2` remains the
   missing-authorization code and `4` remains the `--fail-on` code.

@@ -13,11 +13,14 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 3. Core detects OS and enumerates identity with minimal process spawning
 4. Plugin IDs are validated, then the registry is filtered by OS, `--plugins`, and `--skip`
 5. If `linux.app_control` / `windows.app_control` is selected, run live control collection (slim under `--profile quiet`); otherwise skip it
-6. Each isolated worker returns findings, notes, and any error; worker notes are
-   merged into the main encrypted store with the plugin ID preserved
+6. Plugins run in-process under `quiet`/`balanced` (and whenever
+   `--plugin-timeout-ms` is `0`). `thorough`/`ci` and a positive
+   `--plugin-timeout-ms` spawn an isolated `__plugin-worker` per plugin.
+   Findings, notes, and errors return through the same worker envelope.
 7. Findings are sealed at rest in an encrypted in-memory store
 8. Output mode emits a human report and optionally JSON, Markdown, SARIF, a sealed blob, or remote instructions
-9. Plugin timeouts set a cooperative cancel flag so walks stop (in-flight helper processes may still finish)
+9. Cooperative cancel stops in-process walks; isolated workers can be killed
+   when a positive plugin timeout expires (in-flight helper processes may still finish)
 
 ## Core modules
 
@@ -31,7 +34,7 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 | `core::controls` | Live policy/EDR inventory; gated during enum to `*.app_control` |
 | `core::output` | memory / file / remote emission and protected report-key files |
 | `core::engine` | Authorization-aware orchestration, selection, checkpoints, and triage |
-| `core::plugin_worker` | Isolated plugin execution, timeout termination, and finding/note/error transport |
+| `core::plugin_worker` | In-process or isolated plugin execution, timeout termination, and finding/note/error transport |
 | `core::reporting` | Report assembly, finding assessments, attack paths, and operator next-step defaults |
 | `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
 

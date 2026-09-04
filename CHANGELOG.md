@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Quiet and balanced profiles run plugins in-process by default (no
+  `__plugin-worker` child per plugin). Pass `--plugin-timeout-ms N` to isolate.
 - Documented the operator delivery catalog: stage-first drop bundles and every
   Linux/Windows host-copy method in `docs/runbook/delivery.md`.
 - Added concise `--summary` output and machine-readable `--progress-json` events.

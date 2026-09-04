@@ -51,6 +51,8 @@ are available through `--auto-exploit`, and high-impact families through
 - Stable semantic finding identities from `plugin` + `object` + `condition`
   and a distinct `scaffold` finding kind.
 - Finding-scoped approve-file probes and preserved isolated-worker notes.
+- Quiet and balanced profiles run plugins in-process by default; isolated
+  workers remain opt-in via `--plugin-timeout-ms` and the thorough/ci profiles.
 - Profile noise budgets and bounded/cancellable Linux SUID/SGID/capability
   traversal, with structured recommend-only GTFOBins annotations.
 - Distro/package-aware kernel CVE hints with backport uncertainty.

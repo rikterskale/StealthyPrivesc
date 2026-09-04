@@ -1014,11 +1014,11 @@ fn print_guide() {
     println!("   · Enumerate + recommend");
     println!("   · --auto-exploit = reversible probes");
     println!("   · --allow-techniques = high-impact families (ROE opt-in)");
-    println!("   · --profile quiet|balanced|thorough|ci (quiet skips sudo/getcap helpers)");
+    println!("   · --profile quiet|balanced|thorough|ci (quiet/balanced run plugins in-process)");
     println!();
     println!(
         "{}",
-        term::dim("Full deploy steps: docs/operator-runbook.md")
+        term::dim("Full deploy steps: docs/runbook/delivery.md and docs/operator-runbook.md")
     );
 }
 

@@ -1906,3 +1906,69 @@ fn resource_limits_bound_findings_and_report_size() {
     assert!(!oversized.status.success());
     assert!(String::from_utf8_lossy(&oversized.stderr).contains("max-report-bytes"));
 }
+
+fn report_notes_contain(report: &serde_json::Value, needle: &str) -> bool {
+    report["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().is_some_and(|text| text.contains(needle)))
+}
+
+#[test]
+fn quiet_and_balanced_enum_run_plugins_in_process() {
+    for profile in ["quiet", "balanced"] {
+        let output = stealthy()
+            .args([
+                "--authorized",
+                "--quiet",
+                "--format",
+                "json",
+                "--profile",
+                profile,
+                "enum",
+                "--plugins",
+                smoke_plugin(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "profile={profile} stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            report_notes_contain(&report, "in-process"),
+            "profile={profile} notes={}",
+            report["notes"]
+        );
+        assert!(!report_notes_contain(&report, "isolated workers"));
+    }
+
+    let isolated = stealthy()
+        .args([
+            "--authorized",
+            "--quiet",
+            "--format",
+            "json",
+            "--plugin-timeout-ms",
+            "60000",
+            "enum",
+            "--plugins",
+            smoke_plugin(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        isolated.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&isolated.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&isolated.stdout).unwrap();
+    assert!(report_notes_contain(&report, "isolated workers"));
+    assert!(!report_notes_contain(
+        &report,
+        "no per-plugin worker processes"
+    ));
+}

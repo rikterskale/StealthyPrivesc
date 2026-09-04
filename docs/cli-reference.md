@@ -27,7 +27,7 @@ the subcommand. Host-enumerating commands—including `list-plugins`, `enum`,
 | `--also-markdown` | Write `PATH.md` beside a file output | Off |
 | `--exfil-url URL` | Absolute HTTPS destination for encrypted remote output | None |
 | `--profile quiet\|balanced\|thorough\|ci` | Named OPSEC / engagement posture (explicit flags override) | `balanced` |
-| `--plugin-timeout-ms N` | Per-plugin timeout; `0` disables | Profile default |
+| `--plugin-timeout-ms N` | Per-plugin isolated-worker timeout; `0` = in-process | Profile default (`0` for quiet/balanced) |
 | `--max-scan-seconds N` | Total scan duration limit; `0` disables | `1800` |
 | `--max-findings N` | Maximum findings retained in one run | `10000` |
 | `--max-report-bytes N` | Maximum serialized report size; `0` disables | `67108864` |
@@ -46,10 +46,15 @@ Profiles apply centralized noise budgets:
 
 | Profile | External helpers | Walk entries | Helper records | Other behavior |
 | --- | ---: | ---: | ---: | --- |
-| `quiet` | No | 2,000 | 50 | 250 ms delay; slim control collection |
-| `balanced` | No | 10,000 | 200 | 50 ms delay; high-signal read-only checks |
-| `thorough` | Yes | 100,000 | 2,000 | No delay; verbose |
-| `ci` | No | 5,000 | 100 | Quiet JSON |
+| `quiet` | No | 2,000 | 50 | 250 ms delay; slim control collection; in-process plugins |
+| `balanced` | No | 10,000 | 200 | 50 ms delay; high-signal read-only checks; in-process plugins |
+| `thorough` | Yes | 100,000 | 2,000 | No delay; verbose; isolated plugin workers (60s) |
+| `ci` | No | 5,000 | 100 | Quiet JSON; isolated plugin workers (60s) |
+
+Quiet and balanced do not spawn a `__plugin-worker` child per plugin. Pass
+`--plugin-timeout-ms N` (N > 0) to restore isolated workers and a hard
+timeout. `--max-scan-seconds` still cancels the run cooperatively when plugins
+are in-process; it does not force worker isolation.
 
 Explicit profile overrides work with both `--option value` and
 `--option=value` forms.

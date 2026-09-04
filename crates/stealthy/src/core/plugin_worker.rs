@@ -59,6 +59,24 @@ pub(crate) fn run_plugin_worker(request: PluginWorkerRequest) -> Result<PluginWo
     ))
 }
 
+/// Resolve the timeout passed to [`run_with_timeout`].
+///
+/// `0` means in-process (no `__plugin-worker` spawn). A remaining scan-duration
+/// budget must not promote `0` into a positive timeout, or quiet/balanced runs
+/// would spawn workers again under `--max-scan-seconds`.
+pub(crate) fn worker_timeout_ms(
+    configured_plugin_timeout_ms: u64,
+    remaining_scan_ms: Option<u64>,
+) -> u64 {
+    if configured_plugin_timeout_ms == 0 {
+        return 0;
+    }
+    match remaining_scan_ms {
+        None => configured_plugin_timeout_ms,
+        Some(remaining) => configured_plugin_timeout_ms.min(remaining.max(1)),
+    }
+}
+
 pub(crate) fn run_with_timeout(
     request: PluginWorkerRequest,
     timeout_ms: u64,
@@ -263,7 +281,7 @@ unsafe extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::{run_plugin_instance, PluginWorkerResult};
+    use super::{run_plugin_instance, worker_timeout_ms, PluginWorkerResult};
     use crate::core::plugin::{Plugin, PluginContext};
     use crate::core::profile::NoiseBudget;
     use crate::core::types::Finding;
@@ -291,6 +309,20 @@ mod tests {
             context.store.note("worker-owned note");
             Ok(Vec::new())
         }
+    }
+
+    #[test]
+    fn zero_plugin_timeout_stays_in_process_even_with_scan_deadline() {
+        assert_eq!(worker_timeout_ms(0, None), 0);
+        assert_eq!(worker_timeout_ms(0, Some(5_000)), 0);
+        assert_eq!(worker_timeout_ms(0, Some(0)), 0);
+    }
+
+    #[test]
+    fn positive_plugin_timeout_is_capped_by_remaining_scan() {
+        assert_eq!(worker_timeout_ms(120_000, None), 120_000);
+        assert_eq!(worker_timeout_ms(120_000, Some(1_500)), 1_500);
+        assert_eq!(worker_timeout_ms(50, Some(0)), 1);
     }
 
     #[test]

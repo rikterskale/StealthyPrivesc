@@ -251,6 +251,16 @@ impl Engine {
             self.profile.as_str(),
             self.profile.description()
         ));
+        if self.plugin_timeout_ms == 0 {
+            store.note(
+                "Plugins run in-process (no per-plugin worker processes). Pass --plugin-timeout-ms N to isolate and enforce a hard timeout.",
+            );
+        } else {
+            store.note(format!(
+                "Plugins run in isolated workers with a {}ms timeout.",
+                self.plugin_timeout_ms
+            ));
+        }
 
         if ident.is_elevated {
             store.note(
@@ -565,17 +575,14 @@ impl Engine {
             }
             low_and_slow(self.delay_ms);
 
-            let plugin_timeout_ms = scan_deadline
-                .map(|deadline| {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
-                    let remaining_ms = remaining.as_millis().min(u64::MAX as u128) as u64;
-                    if self.plugin_timeout_ms == 0 {
-                        remaining_ms.max(1)
-                    } else {
-                        self.plugin_timeout_ms.min(remaining_ms.max(1))
-                    }
-                })
-                .unwrap_or(self.plugin_timeout_ms);
+            let remaining_scan_ms = scan_deadline.map(|deadline| {
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis()
+                    .min(u64::MAX as u128) as u64
+            });
+            let plugin_timeout_ms =
+                plugin_worker::worker_timeout_ms(self.plugin_timeout_ms, remaining_scan_ms);
 
             let outcome = self.run_one_plugin(
                 plugin.id(),

@@ -216,7 +216,7 @@ For the complete command and option reference, see [`docs/cli-reference.md`](doc
 | `--fail-on <severity>` | Exit `4` if max finding severity reaches threshold |
 | `--delay-ms N` | Low-and-slow jitter between plugins (default 50) |
 | `--profile quiet\|balanced\|thorough\|ci` | Named engagement/OPSEC profile |
-| `--plugin-timeout-ms N` | Per-plugin isolated-process timeout; `0` disables |
+| `--plugin-timeout-ms N` | Per-plugin isolated-worker timeout; `0` = in-process (quiet/balanced default) |
 | `--max-scan-seconds N` | Total scan duration limit; `0` disables |
 | `--max-findings N` | Maximum findings retained in one run |
 | `--max-report-bytes N` | Maximum serialized report size; `0` disables |
