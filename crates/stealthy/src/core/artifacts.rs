@@ -89,7 +89,8 @@ pub fn save_ledger(dir: &Path, ledger: &ArtifactLedger) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Write sensitive JSON with restrictive permissions and crash-safe replacement.
+/// Write sensitive JSON with restrictive permissions and atomic replacement on
+/// platforms whose rename operation replaces an existing destination.
 pub fn write_private_atomic(path: &Path, body: &[u8]) -> Result<()> {
     let parent = path
         .parent()
@@ -97,9 +98,13 @@ pub fn write_private_atomic(path: &Path, body: &[u8]) -> Result<()> {
         .unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     let suffix = rand::random::<u64>();
+    let file_name = path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("private output path must name a file"))?;
     let temp = parent.join(format!(
         ".{}.tmp-{suffix:016x}",
-        path.file_name().unwrap().to_string_lossy()
+        file_name.to_string_lossy()
     ));
     let mut file = OpenOptions::new()
         .write(true)
@@ -216,14 +221,9 @@ pub fn cleanup(
     }
 
     if remove_self {
-        if let Ok(exe) = std::env::current_exe() {
-            if secure_delete {
-                let _ = output::secure_delete_hint(&exe);
-            } else {
-                let _ = fs::remove_file(&exe);
-            }
-            removed.push(exe.display().to_string());
-        }
+        let exe = std::env::current_exe().context("locate current executable for removal")?;
+        remove_self_path(&exe, secure_delete)?;
+        removed.push(exe.display().to_string());
     }
     Ok(removed)
 }
@@ -302,9 +302,13 @@ fn atomic_private_write(path: &Path, body: &[u8]) -> Result<()> {
         .parent()
         .ok_or_else(|| anyhow::anyhow!("ledger path has no parent"))?;
     let suffix = rand::random::<u64>();
+    let file_name = path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("ledger path must name a file"))?;
     let temp = parent.join(format!(
         ".{}.tmp-{suffix:016x}",
-        path.file_name().unwrap().to_string_lossy()
+        file_name.to_string_lossy()
     ));
     let mut file = OpenOptions::new()
         .write(true)
@@ -436,6 +440,14 @@ fn remove_recorded_path(path: &Path, secure_delete: bool) -> Result<()> {
     remove_detached_tree(&detached, secure_delete)
 }
 
+fn remove_self_path(path: &Path, secure_delete: bool) -> Result<()> {
+    if secure_delete {
+        output::secure_delete_hint(path)
+    } else {
+        fs::remove_file(path).with_context(|| format!("remove executable {}", path.display()))
+    }
+}
+
 fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
     for entry in fs::read_dir(path)? {
         let child = entry?.path();
@@ -458,7 +470,7 @@ fn remove_detached_tree(path: &Path, secure_delete: bool) -> Result<()> {
 mod tests {
     #[cfg(unix)]
     use super::write_private_atomic;
-    use super::{cleanup, load_ledger, save_ledger, ArtifactLedger};
+    use super::{cleanup, load_ledger, remove_self_path, save_ledger, ArtifactLedger};
 
     #[test]
     fn ledgers_are_private_and_tamper_evident() {
@@ -489,6 +501,22 @@ mod tests {
     #[test]
     fn ledger_path_rejects_traversal_ids() {
         assert!(super::ledger_path(std::path::Path::new("/tmp"), "../outside").is_err());
+    }
+
+    #[test]
+    fn private_writer_rejects_paths_without_a_filename() {
+        assert!(super::write_private_atomic(std::path::Path::new(""), b"x").is_err());
+    }
+
+    #[test]
+    fn self_removal_helper_reports_failure_and_success_accurately() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        assert!(remove_self_path(&missing, false).is_err());
+        let disposable = dir.path().join("disposable");
+        std::fs::write(&disposable, b"fixture").unwrap();
+        remove_self_path(&disposable, false).unwrap();
+        assert!(!disposable.exists());
     }
 
     #[test]

@@ -113,9 +113,9 @@ The extra confirmation records that the family is inside the ROE. See
 | Mounts / writable passwd | `linux.mounts` | Low | None | Never modify passwd |
 | SSH private keys / authorized_keys | `linux.ssh_keys` | Low | None | Never print key bytes |
 | Writable PATH / LD_* | `linux.path_ld` | Low | Probe marker if auto | Reversible probe only |
-| Distro/package-aware kernel CVE hints | `linux.kernel_cve` | Low | None | Version-range hint with distro-backport uncertainty; kernel execution remains scaffolded |
+| Distro/package-aware kernel CVE hints | `linux.kernel_cve` | Low | None | Version-range hint with distro-backport uncertainty; opt-in produces a bounded kernel-evidence handoff |
 | NFS `no_root_squash` | `linux.nfs` | Low | None | Recommend only |
-| Readable shadow/backups | `linux.credentials` | Low | None | Presence/readability evidence only; `credential-dump` is scaffold-only |
+| Readable shadow/backups | `linux.credentials` | Low | None | Presence/readability evidence only; `credential-dump` produces a bounded evidence handoff without exposing contents |
 | Writable service configs | `linux.services` | Low | None | Recommend only |
 | Cron wildcard hints | `linux.wildcard_cron` | Low | None | Recommend only |
 | AppArmor / SELinux / noexec / audit signals | `linux.endpoint_controls` | Low–Medium | None | Script fallbacks; `endpoint-bypass` = alternate-path + approved-fixture validation |
@@ -124,13 +124,13 @@ The extra confirmation records that the family is inside the ROE. See
 
 | Technique | Plugin / script | Noise | Artifacts | Auto-exploit |
 | --- | --- | --- | --- | --- |
-| Token privileges / Potato hint | `windows.privileges` | Low | None | Opt-in via `--allow-techniques potato` (scaffold) |
+| Token privileges / Potato hint | `windows.privileges` | Low | None | Opt-in produces a bounded prerequisite-validation handoff via `--allow-techniques potato` |
 | Unquoted / writable services + parent dirs | `windows.services` | Low–Medium | Probe marker if auto | Parent-dir probe; replace via `service-replace` |
 | Scheduled task XML / writable actions | `windows.scheduled_tasks` | Low | None | Recommend only |
-| AlwaysInstallElevated | `windows.always_install_elevated` | Low | MSI would be high | Opt-in via `--allow-techniques msi` (scaffold) |
+| AlwaysInstallElevated | `windows.always_install_elevated` | Low | MSI would be high | Opt-in produces a policy-validation handoff via `--allow-techniques msi` |
 | UAC policy | `windows.uac` | Low | None | Recommend only |
 | DLL search/app-directory ACL candidates | `windows.dll_hijack` | Low read-only; medium if probing | None by default; temporary marker only when approved | Read-only enumeration is default; write confirmation is finding-scoped via approval or explicit `--auto-exploit` |
-| Unattend / SAM backups | `windows.credentials` | Low | None | Presence evidence only; `credential-dump` is scaffold-only |
+| Unattend / SAM backups | `windows.credentials` | Low | None | Presence/ACL evidence only; `credential-dump` produces a bounded evidence handoff without reading secret contents |
 | Local admins / sessions | `windows.admin_sessions` | Low | None | Recommend only |
 | PATH hijack candidates | `windows.env_path` | Low–Medium | Probe marker if auto | Reversible probe only |
 | Autoruns / Startup | `windows.autoruns` | Low–Medium | Probe marker if auto | Startup dir probe; persistence via `persistence` |
@@ -145,8 +145,10 @@ set `recommend_only=true`, and never execute a catalog technique.
 ## High-impact opt-in (`--allow-techniques`)
 
 These families are off by default and require an explicit CLI opt-in when ROE
-permits. Several non-evasion families still record scaffold findings only in
-this revision; payload execution for those families lands in follow-up work.
+permits. Every family produces a machine-readable operator handoff with a
+copyable validation command, expected evidence, stop conditions, cleanup, and
+disposition guidance. A handoff does not supply or execute an elevation,
+persistence, destructive, or credential-access payload.
 
 **`endpoint-bypass`:** detect + alternate-path + approved-fixture validation
 only. Control interference is not part of this ID — use the evasion-family IDs
@@ -160,13 +162,13 @@ emits read-only product observation findings plus `av-edr-playbook-ready`
 
 | ID | Family | Contract in this build |
 | --- | --- | --- |
-| `persistence` | Persistence without separate consent prompts | Scaffold findings only |
-| `host-crash` | Host-crash testing | Scaffold findings only |
-| `potato` | Automatic Potato / named-pipe abuse | Scaffold findings only |
-| `kernel-exploit` | Kernel exploit execution | Scaffold findings only |
-| `service-replace` | Service binary replacement | Scaffold findings only |
-| `msi` | MSI payload construction/execution | Scaffold findings only |
-| `credential-dump` | Credential dumping/exfiltration | Scaffold findings only |
+| `persistence` | Persistence assessment | Enumerates autorun, task, and scheduler prerequisites; no persistence is installed |
+| `host-crash` | Host-resilience assessment | Captures live control state and hands off to the separately approved resilience procedure; no crash is triggered |
+| `potato` | Potato / named-pipe prerequisite assessment | Re-runs token-privilege collection and records applicability evidence; no elevated token or shell is created |
+| `kernel-exploit` | Kernel exposure assessment | Re-runs kernel/build/package evidence collection; no exploit is supplied or executed |
+| `service-replace` | Service replacement prerequisite assessment | Re-runs service image and ACL collection; no service configuration or binary is changed |
+| `msi` | AlwaysInstallElevated assessment | Re-reads both policy hives and records applicability; no MSI is built or installed |
+| `credential-dump` | Credential-store exposure assessment | Records file presence/readability and evidence-handling instructions without reading or exporting secret contents |
 | `endpoint-bypass` | Endpoint alternate-path + approved-fixture validation | Opt-in tracking during enum; use `--artifact` and/or `controls --execute` for benign validation. Does not include AMSI/ETW/EDR interference (use evasion IDs) or AppLocker/WDAC/quarantine helpers (planned separate families) |
 | `amsi-bypass` | AMSI interference | Gated opt-in offensive capability; requires `--confirm-evasion` |
 | `etw-unhook` | ETW interference | Gated opt-in offensive capability; requires `--confirm-evasion` |
@@ -179,3 +181,9 @@ stealthy --authorized enum --allow-techniques kernel-exploit,potato,msi
 stealthy --authorized enum --allow-techniques endpoint-bypass --artifact /approved/test/artifact
 stealthy --authorized --confirm-evasion enum --allow-techniques amsi-bypass,etw-unhook,av-edr-service
 ```
+
+For each resulting high-impact finding, consume `what_next` for the complete
+handoff and `next_command` for the primary copyable validation command. Stop on
+access denial, a control alert, unexpected service impact, or any scope
+mismatch. Record artifacts with `stealthy artifacts --latest` and clean only
+recorded artifacts with `stealthy cleanup --latest`.

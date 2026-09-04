@@ -43,6 +43,12 @@ pub fn ingest_path(path: &Path) -> Result<RunReport> {
 pub fn ingest_json(text: &str) -> Result<RunReport> {
     let mut report: RunReport =
         serde_json::from_str(text).context("parse script/binary report JSON")?;
+    if !report.schema_version.is_empty() && !matches!(report.schema_version.as_str(), "1" | "2") {
+        anyhow::bail!(
+            "unsupported report schema_version {}; supported versions are 1 and 2",
+            report.schema_version
+        );
+    }
     report.schema_version = "2".into();
     if report.coverage_mode.is_empty()
         || (report.coverage_mode == "native"
@@ -98,5 +104,17 @@ mod tests {
         assert_eq!(report.capability_delta, script_capability_delta("windows"));
         assert_eq!(report.tool, "stealthy-script");
         assert_eq!(report.notes, vec!["legacy fixture"]);
+    }
+
+    #[test]
+    fn rejects_unknown_future_schema_instead_of_relabeling_it() {
+        let mut report: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/script_report_min.json"))
+                .unwrap();
+        report["schema_version"] = serde_json::Value::String("999".into());
+        let error = ingest_json(&serde_json::to_string(&report).unwrap()).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("unsupported report schema_version 999"));
     }
 }

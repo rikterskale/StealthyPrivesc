@@ -408,9 +408,15 @@ mod tests {
         );
         assert!(findings
             .iter()
-            .any(|finding| finding.condition == "sudo-nopasswd-rule-readable"
-                && finding.detail.contains("gtfobins.binary=find")
-                && finding.technique_id == "gtfobins"));
+            .any(|finding| finding.condition == "sudo-nopasswd-rule-readable"));
+        #[cfg(not(feature = "opsec-string-strip"))]
+        assert!(findings.iter().any(|finding| {
+            finding.detail.contains("gtfobins.binary=find") && finding.technique_id == "gtfobins"
+        }));
+        #[cfg(feature = "opsec-string-strip")]
+        assert!(findings.iter().all(|finding| {
+            !finding.detail.contains("gtfobins") && finding.technique_id != "gtfobins"
+        }));
         assert!(!findings
             .iter()
             .any(|finding| finding.detail.contains("bob ")));
@@ -472,12 +478,15 @@ mod tests {
     fn gtfobins_allowlist_covers_known_safe_annotations() {
         let text = "awk bash sh env find make nmap perl python python3 ruby systemctl cp mv tar zip vi vim less more man";
         let annotations = format_gtfobins_annotations(text);
+        #[cfg(not(feature = "opsec-string-strip"))]
         for binary in text.split_whitespace() {
             assert!(
                 annotations.contains(&format!("gtfobins.binary={binary}")),
                 "missing {binary}"
             );
         }
+        #[cfg(feature = "opsec-string-strip")]
+        assert!(annotations.is_empty());
         assert_eq!(format_gtfobins_annotations("'unknown'"), "");
     }
 }

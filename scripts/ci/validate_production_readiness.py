@@ -53,6 +53,10 @@ def main() -> int:
         "throw \"JScript coverage_mode mismatch:",
         "evasion feature/status mismatch",
         "MSBuild fallback JSON contract mismatch",
+        "test_windows_enum.py",
+        "native staged binary unavailable after write",
+        "expected 3 high-impact handoffs",
+        "incomplete operator handoff",
     ):
         if token not in ci:
             failures.append(f"CI missing production check {token}")

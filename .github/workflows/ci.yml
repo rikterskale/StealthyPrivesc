@@ -615,6 +615,9 @@ jobs:
       - name: Native Windows ACL validation
         run: cargo test --locked --workspace native_acl_check_reports_missing_paths_as_unknown -- --nocapture
 
+      - name: Windows Python fallback registry error states
+        run: python scripts/ci/test_windows_enum.py
+
       - name: Windows CLI, PowerShell fallback, and bundle smoke
         shell: pwsh
         run: |
@@ -699,7 +702,7 @@ jobs:
             if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
             if ($native.authorized_use_ack -ne $true -or $native.mode -ne 'enumerate-only') { throw 'native Windows safety metadata mismatch' }
           } else {
-            Write-Warning 'Staged binary unavailable after write; deterministic script-only and quarantine fallback gates follow'
+            throw 'native staged binary unavailable after write'
           }
           Assert-DispatcherEnvironmentRestored 'native'
           & $bin --ledger-dir $ledger cleanup --latest
@@ -771,6 +774,15 @@ jobs:
           if ($js.coverage_mode -ne 'script') { throw "JScript coverage_mode mismatch: $($js.coverage_mode)" }
           if ($js.authorized_use_ack -ne $true -or $js.mode -ne 'enumerate-only') { throw 'JScript safety metadata mismatch' }
           if ($js.identity.elevation_source -ne 'jscript') { throw "JScript elevation_source mismatch: $($js.identity.elevation_source)" }
+
+          $handoff = & $bin --authorized --quiet --format json enum --plugins windows.privileges --allow-techniques potato,msi,credential-dump | ConvertFrom-Json
+          $handoffFindings = @($handoff.findings | Where-Object { $_.plugin -eq 'allow_techniques' })
+          if ($handoffFindings.Count -ne 3) { throw "expected 3 high-impact handoffs, got $($handoffFindings.Count)" }
+          foreach ($finding in $handoffFindings) {
+            if ($finding.kind -eq 'scaffold') { throw "high-impact family remained scaffolded: $($finding.technique_id)" }
+            if (-not $finding.next_command -or $finding.next_command -notmatch '^stealthy --authorized') { throw "missing next command: $($finding.technique_id)" }
+            if ($finding.what_next -notmatch 'stop' -or $finding.what_next -notmatch 'cleanup') { throw "incomplete operator handoff: $($finding.technique_id)" }
+          }
 
           $evasion = & powershell.exe -NoProfile -File .\scripts\windows\evasion.ps1 -Technique amsi-bypass -Authorized -ConfirmEvasion -AllowTechniques amsi-bypass -Json | ConvertFrom-Json
           if ($evasion.feature -ne 'windows-evasion' -or $evasion.status -ne 'ready') { throw 'evasion feature/status mismatch' }

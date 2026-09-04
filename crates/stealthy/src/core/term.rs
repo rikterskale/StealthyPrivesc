@@ -73,3 +73,28 @@ pub fn warn(text: &str) -> String {
 pub fn err(text: &str) -> String {
     red(text)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::core::types::Severity;
+
+    #[test]
+    fn forced_no_color_keeps_all_helpers_plain() {
+        super::init(true);
+        assert!(!super::enabled());
+        for rendered in [
+            super::bold("x"),
+            super::dim("x"),
+            super::red("x"),
+            super::green("x"),
+            super::yellow("x"),
+            super::cyan("x"),
+            super::ok("x"),
+            super::warn("x"),
+            super::err("x"),
+        ] {
+            assert_eq!(rendered, "x");
+        }
+        assert_eq!(super::severity_tag(Severity::High), "    HIGH");
+    }
+}

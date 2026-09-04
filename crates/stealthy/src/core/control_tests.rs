@@ -431,7 +431,7 @@ fn prepare_fixtures(root: &Path, source: Option<&Path>) -> Result<Fixtures> {
     fs::create_dir_all(&admin_path)?;
     set_mode(&user_path, 0o700)?;
     set_mode(&admin_path, 0o755)?;
-    configure_windows_acl_fixtures(&user_path, &admin_path);
+    configure_windows_acl_fixtures(&user_path, &admin_path)?;
 
     Ok(Fixtures {
         root: root.to_path_buf(),
@@ -1107,13 +1107,17 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn configure_windows_acl_fixtures(user_path: &Path, admin_path: &Path) {
+fn configure_windows_acl_fixtures(user_path: &Path, admin_path: &Path) -> Result<()> {
     let user_text = user_path.display().to_string();
-    let _ = Command::new("icacls")
+    let user_status = Command::new("icacls")
         .args([user_text.as_str(), "/inheritance:e"])
-        .output();
+        .status()
+        .context("run icacls for user-writable fixture")?;
+    if !user_status.success() {
+        anyhow::bail!("icacls rejected user-writable fixture ACL");
+    }
     let admin_text = admin_path.display().to_string();
-    let _ = Command::new("icacls")
+    let admin_status = Command::new("icacls")
         .args([
             admin_text.as_str(),
             "/inheritance:r",
@@ -1124,11 +1128,18 @@ fn configure_windows_acl_fixtures(user_path: &Path, admin_path: &Path) {
             "/grant:r",
             "BUILTIN\\Users:(OI)(CI)RX",
         ])
-        .output();
+        .status()
+        .context("run icacls for admin-only fixture")?;
+    if !admin_status.success() {
+        anyhow::bail!("icacls rejected admin-only fixture ACL");
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
-fn configure_windows_acl_fixtures(_user_path: &Path, _admin_path: &Path) {}
+fn configure_windows_acl_fixtures(_user_path: &Path, _admin_path: &Path) -> Result<()> {
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

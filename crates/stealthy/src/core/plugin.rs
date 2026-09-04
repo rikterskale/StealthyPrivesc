@@ -95,3 +95,85 @@ pub fn filter_plugins<'a>(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{filter_plugins, Plugin, PluginContext};
+    use crate::core::profile::NoiseBudget;
+    use crate::core::store::EncryptedStore;
+    use crate::core::types::Finding;
+    use crate::exploit::TechniqueAllowlist;
+    use anyhow::Result;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    struct FixturePlugin(&'static str, &'static [&'static str]);
+    impl Plugin for FixturePlugin {
+        fn id(&self) -> &'static str {
+            self.0
+        }
+        fn name(&self) -> &'static str {
+            self.0
+        }
+        fn description(&self) -> &'static str {
+            "fixture"
+        }
+        fn platforms(&self) -> &'static [&'static str] {
+            self.1
+        }
+        fn run(&self, _ctx: &mut PluginContext<'_>) -> Result<Vec<Finding>> {
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn filtering_honors_platform_only_and_skip() {
+        let linux = FixturePlugin("linux.one", &["linux"]);
+        let windows = FixturePlugin("windows.one", &["windows"]);
+        let all: [&dyn Plugin; 2] = [&linux, &windows];
+        let only = vec!["linux.one".into(), "windows.one".into()];
+        let skip = vec!["linux.one".into()];
+        assert!(filter_plugins(&all, Some(&only), Some(&skip), "linux").is_empty());
+        assert_eq!(
+            filter_plugins(&all, None, None, "windows")[0].id(),
+            "windows.one"
+        );
+    }
+
+    #[test]
+    fn probe_approval_is_exact_and_cancellation_is_observable() {
+        let finding = crate::core::finalize::finalize_finding(Finding {
+            plugin: "fixture".into(),
+            object: "object".into(),
+            condition: "condition".into(),
+            ..Default::default()
+        });
+        let allow = TechniqueAllowlist::default();
+        let mut store = EncryptedStore::new();
+        let approved = vec![finding.finding_id.clone()];
+        let cancel = Arc::new(AtomicBool::new(false));
+        let context = PluginContext {
+            verbose: false,
+            auto_exploit: true,
+            prefer_quiet: true,
+            noise_budget: NoiseBudget {
+                allow_external_helpers: false,
+                max_walk_entries: 1,
+                max_helper_records: 1,
+            },
+            allow_techniques: &allow,
+            store: &mut store,
+            approved_probe_ids: &approved,
+            artifact_path: None,
+            control_assessment: None,
+            cancel: cancel.clone(),
+        };
+        assert!(context.probe_allowed_for(&finding));
+        assert!(!context.probe_allowed_for(&Finding {
+            plugin: "other".into(),
+            ..Default::default()
+        }));
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(context.cancelled());
+    }
+}

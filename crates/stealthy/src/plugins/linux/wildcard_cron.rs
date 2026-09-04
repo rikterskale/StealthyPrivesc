@@ -156,7 +156,10 @@ mod tests {
             &mut findings,
         );
         assert_eq!(findings.len(), 3);
+        #[cfg(not(feature = "opsec-string-strip"))]
         assert!(findings.iter().any(|f| f.technique_id == "gtfobins"));
+        #[cfg(feature = "opsec-string-strip")]
+        assert!(findings.iter().all(|f| f.technique_id != "gtfobins"));
         assert!(findings
             .iter()
             .any(|f| f.technique_id == "cron-wildcard-injection"));

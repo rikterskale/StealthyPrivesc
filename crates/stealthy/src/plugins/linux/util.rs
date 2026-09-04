@@ -77,9 +77,9 @@ pub fn is_writable_by_euid(meta: &fs::Metadata, euid: u32, gids: &[u32]) -> bool
 /// Conservative effective-write check for an existing path.
 ///
 /// This follows the target metadata and evaluates owner/group/other mode bits.
-/// POSIX ACLs are intentionally reported as unknown until an ACL-aware backend
-/// is available; callers should not treat a false result as proof of safety.
-/// Effective-write check. When `allow_getfacl` is false (quiet profile), skip the helper spawn.
+/// When mode bits do not grant access, POSIX ACLs must be checked before a
+/// definitive false result is returned. If policy forbids the helper or the
+/// helper cannot run, return `None` so callers preserve the unknown state.
 pub fn is_effectively_writable_opts(
     path: &Path,
     euid: u32,
@@ -91,7 +91,7 @@ pub fn is_effectively_writable_opts(
         return Some(true);
     }
     if !allow_getfacl {
-        return Some(false);
+        return None;
     }
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
@@ -103,7 +103,7 @@ pub fn is_effectively_writable_opts(
             &current_group_names(),
         ));
     }
-    Some(false)
+    None
 }
 
 fn read_acl(path: &Path) -> Option<String> {

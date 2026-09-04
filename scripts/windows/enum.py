@@ -372,8 +372,16 @@ def collect_endpoint_controls() -> None:
             )
             winreg.CloseKey(key)
             signals.append("CI.PolicyKey=present")
-        except OSError:
-            pass
+        except OSError as error:
+            # Missing policy is a valid observation; access denial or another
+            # registry failure must not be misreported as absence.
+            if getattr(error, "winerror", None) in (2, 3):
+                signals.append("CI.PolicyKey=absent")
+            else:
+                signals.append(
+                    "CI.PolicyKey=unavailable:"
+                    + str(getattr(error, "winerror", "unknown"))
+                )
         vbs = read_reg_dword(
             winreg.HKEY_LOCAL_MACHINE,
             r"SYSTEM\CurrentControlSet\Control\DeviceGuard",

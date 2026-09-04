@@ -617,7 +617,7 @@ impl Engine {
                             .map(with_operator_next_step)
                             .map(finalize_finding)
                             .collect::<Vec<_>>();
-                        let remaining = self.max_findings.saturating_sub(store.findings().len());
+                        let remaining = self.max_findings.saturating_sub(store.findings()?.len());
                         if findings.len() > remaining {
                             findings.truncate(remaining);
                             store.note(format!(
@@ -705,7 +705,7 @@ impl Engine {
             }
 
             if let Some(path) = &self.checkpoint {
-                let (findings, notes) = store_into_parts(&store);
+                let (findings, notes) = store_into_parts(&store)?;
                 let partial = build_report(
                     &run_id,
                     started_at_unix,
@@ -747,7 +747,7 @@ impl Engine {
 
         // Post-enum triage: write stub and/or prompt.
         if self.triage {
-            let (findings_now, _) = store_into_parts(&store);
+            let (findings_now, _) = store_into_parts(&store)?;
             if let Some(path) = &self.triage_out {
                 triage::write_triage_stub(path, &run_id, &findings_now)?;
                 if !self.quiet {
@@ -778,7 +778,7 @@ impl Engine {
             self.allow_techniques.is_empty(),
             self.triage,
         );
-        let (mut findings, notes) = store_into_parts(&store);
+        let (mut findings, notes) = store_into_parts(&store)?;
         let attack_paths = build_attack_paths(&findings);
         assign_path_ranks(&mut findings, &attack_paths);
         let assessments = findings

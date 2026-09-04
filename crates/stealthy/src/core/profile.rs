@@ -123,4 +123,27 @@ mod tests {
         );
         assert_eq!(EngagementProfile::Ci.default_plugin_timeout_ms(), 60_000);
     }
+
+    #[test]
+    fn every_profile_exposes_consistent_operator_controls() {
+        let profiles = [
+            EngagementProfile::Quiet,
+            EngagementProfile::Balanced,
+            EngagementProfile::Thorough,
+            EngagementProfile::Ci,
+        ];
+        for profile in profiles {
+            assert!(!profile.as_str().is_empty());
+            assert!(!profile.description().is_empty());
+            assert!(profile.noise_budget().max_walk_entries > 0);
+            assert!(profile.noise_budget().max_helper_records > 0);
+        }
+        assert!(EngagementProfile::Quiet.prefer_quiet());
+        assert!(!EngagementProfile::Thorough.prefer_quiet());
+        assert!(EngagementProfile::Ci.force_json());
+        assert!(EngagementProfile::Ci.force_quiet_console());
+        assert!(EngagementProfile::Thorough.force_verbose());
+        assert!(EngagementProfile::Quiet.default_delay_ms() > 0);
+        assert_eq!(EngagementProfile::Ci.default_delay_ms(), 0);
+    }
 }

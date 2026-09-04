@@ -10,6 +10,7 @@ Use this page as the navigation hub for the project.
   the kit on a host, start at [Delivery](runbook/delivery.md).
 - Fast runbook navigation: use the [Runbook Modules](runbook/README.md).
 - Developer: read [Build](build.md), [Architecture](architecture.md), and [Design](design.md).
+- GUI contributor: follow the planned [GUI Frontend Roadmap](gui-roadmap.md).
 - Release owner: follow the [Operations and release runbook](operations.md).
 - System overview: view the [Architecture Diagram](architecture-diagram.md).
 - Defender or reviewer: read [Capabilities](capabilities.md) and [Technique Risk Notes](techniques.md).
@@ -38,6 +39,7 @@ authorization and remains enumeration-only unless `--auto-exploit` is chosen.
 | Deploy to a target | [Delivery](runbook/delivery.md), [Operator Runbook](operator-runbook.md) |
 | Choose a focused runbook workflow | [Runbook Modules](runbook/README.md) |
 | Understand the design | [Architecture](architecture.md), [Architecture Diagram](architecture-diagram.md), [Design](design.md) |
+| Plan or implement the operator GUI | [GUI Frontend Roadmap](gui-roadmap.md), [Phase Coverage](phases.md) |
 | Review coverage and risk | [Capabilities](capabilities.md), [Technique Risk Notes](techniques.md) |
 | Check supported releases and schemas | [Support Policy](support-policy.md) |
 

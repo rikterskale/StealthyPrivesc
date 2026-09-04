@@ -321,10 +321,10 @@ fn hardening_signals() -> Vec<Finding> {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        format!("{}…", s.chars().take(max).collect::<String>())
     }
 }
 
@@ -335,5 +335,10 @@ mod tests {
     #[test]
     fn truncate_short_unchanged() {
         assert_eq!(truncate("abc", 10), "abc");
+    }
+
+    #[test]
+    fn truncate_preserves_utf8_boundaries() {
+        assert_eq!(truncate("é漢字", 2), "é漢…");
     }
 }

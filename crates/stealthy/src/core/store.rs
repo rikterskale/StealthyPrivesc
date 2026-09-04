@@ -47,11 +47,17 @@ impl EncryptedStore {
     }
 
     /// Decrypt a temporary owned snapshot of sealed findings.
-    pub fn findings(&self) -> Vec<Finding> {
+    pub fn findings(&self) -> Result<Vec<Finding>> {
         self.sealed_findings
             .iter()
-            .filter_map(|sealed| self.open_bytes(sealed).ok())
-            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .enumerate()
+            .map(|(index, sealed)| {
+                let bytes = self
+                    .open_bytes(sealed)
+                    .with_context(|| format!("decrypt finding at index {index}"))?;
+                serde_json::from_slice(&bytes)
+                    .with_context(|| format!("parse finding at index {index}"))
+            })
             .collect()
     }
 
@@ -249,9 +255,27 @@ mod tests {
             leaves_artifacts: false,
             ..Default::default()
         });
-        assert_eq!(store.findings().len(), 1);
-        assert_eq!(store.findings()[0].title, "t");
+        let findings = store.findings().unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].title, "t");
         assert_eq!(store.sealed_findings.len(), 1);
         assert!(!store.sealed_findings[0].contains("\"title\":\"t\""));
+    }
+
+    #[test]
+    fn corrupt_findings_are_reported_instead_of_silently_dropped() {
+        let mut store = EncryptedStore::new();
+        store.sealed_findings.push("not-base64".into());
+        let error = store.findings().unwrap_err().to_string();
+        assert!(error.contains("decrypt finding at index 0"));
+    }
+
+    #[test]
+    fn sealed_report_rejects_invalid_keys_and_payloads() {
+        assert!(EncryptedStore::open_sealed_report("invalid", "00").is_err());
+        assert!(EncryptedStore::open_sealed_report("invalid", &"00".repeat(32)).is_err());
+        let too_short =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0u8; 11]);
+        assert!(EncryptedStore::open_sealed_report(&too_short, &"00".repeat(32)).is_err());
     }
 }

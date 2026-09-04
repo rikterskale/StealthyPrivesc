@@ -44,6 +44,18 @@ fn version_hint() -> String {
         .to_string()
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn detection_matches_compile_time_platform_and_is_nonempty() {
+        let info = super::detect();
+        assert_eq!(info.family, std::env::consts::FAMILY);
+        assert_eq!(info.os, std::env::consts::OS);
+        assert_eq!(info.arch, std::env::consts::ARCH);
+        assert!(!info.version_hint.trim().is_empty());
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn version_hint() -> String {
     // Avoid cmd.exe / ver. Use env as a quiet hint; plugins deepen this later.

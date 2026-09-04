@@ -169,9 +169,20 @@ fn mountinfo_target(line: &str) -> &str {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        format!("{}…", s.chars().take(max).collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate;
+
+    #[test]
+    fn truncate_preserves_utf8_boundaries() {
+        assert_eq!(truncate("é漢字", 2), "é漢…");
+        assert_eq!(truncate("abc", 3), "abc");
     }
 }

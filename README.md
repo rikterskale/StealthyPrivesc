@@ -4,7 +4,7 @@ Modular, cross-platform privilege-escalation **enumeration** framework for **aut
 
 Documentation hub: [`docs/README.md`](docs/README.md).
 
-Start here: [Installation](docs/installation.md) · [Verified User Journey](docs/USER_JOURNEY.md) · [UAT Plan](docs/UAT_PLAN.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [Support Policy](docs/support-policy.md) · [Architecture Diagram](docs/architecture-diagram.md)
+Start here: [Installation](docs/installation.md) · [Verified User Journey](docs/USER_JOURNEY.md) · [UAT Plan](docs/UAT_PLAN.md) · [User Guide](docs/user-guide.md) · [CLI Reference](docs/cli-reference.md) · [GUI Roadmap](docs/gui-roadmap.md) · [Support Policy](docs/support-policy.md) · [Architecture Diagram](docs/architecture-diagram.md)
 
 ## Legal / ethical disclaimer
 

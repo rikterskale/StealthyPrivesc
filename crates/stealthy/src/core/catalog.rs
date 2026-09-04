@@ -21,6 +21,7 @@ pub fn mitre_for_plugin(plugin: &str) -> &'static [&'static str] {
         "linux.services" => &["T1543.002"],
         "linux.wildcard_cron" => &["T1053.003"],
         "linux.endpoint_controls" => &["T1562"],
+        "linux.app_control" => &["T1480.001"],
         "windows.privileges" => &["T1134"],
         "windows.services" => &["T1543.003"],
         "windows.scheduled_tasks" => &["T1053.005"],
@@ -32,6 +33,7 @@ pub fn mitre_for_plugin(plugin: &str) -> &'static [&'static str] {
         "windows.env_path" => &["T1574.007"],
         "windows.autoruns" => &["T1547.001"],
         "windows.endpoint_controls" => &["T1562"],
+        "windows.app_control" => &["T1480.001"],
         "allow_techniques" | "auto_exploit" => &["T1068"],
         _ => &[],
     }
@@ -101,4 +103,40 @@ pub fn derive_object_condition(finding: &Finding) -> (String, String) {
         finding.condition.clone()
     };
     (object, condition)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        derive_object_condition, exploitability_for, mitre_for_plugin, technique_id_for,
+        time_to_impact_for,
+    };
+    use crate::core::types::{Finding, FindingKind, Severity};
+
+    #[test]
+    fn every_registered_plugin_has_a_catalog_mapping() {
+        for plugin in crate::plugins::registry() {
+            assert!(!mitre_for_plugin(plugin.id()).is_empty(), "{}", plugin.id());
+        }
+    }
+
+    #[test]
+    fn derived_catalog_fields_are_stable_and_bounded() {
+        let finding = Finding {
+            plugin: "linux.sudo".into(),
+            kind: FindingKind::Misconfiguration,
+            severity: Severity::Critical,
+            noisy: true,
+            title: "title".into(),
+            detail: "detail".into(),
+            ..Default::default()
+        };
+        assert!(technique_id_for(&finding).starts_with("linux.sudo."));
+        assert!(exploitability_for(&finding) <= 100);
+        assert!(!time_to_impact_for(&finding).is_empty());
+        let first = derive_object_condition(&finding);
+        let second = derive_object_condition(&finding);
+        assert_eq!(first, second);
+        assert!(first.0.starts_with("legacy:"));
+    }
 }

@@ -64,13 +64,26 @@ pub fn compare(baseline: &RunReport, current: &RunReport) -> Result<ReportDiff> 
         added,
         removed,
         changed,
-        coverage_changed: baseline.coverage != current.coverage
+        coverage_changed: !coverage_equivalent(&baseline.coverage, &current.coverage)
             || baseline.capability_delta != current.capability_delta,
         identity_changed: baseline.identity != current.identity || baseline.os != current.os,
         plugin_set_changed: baseline.plugins_run != current.plugins_run,
         profile_changed: baseline.profile != current.profile,
         severity_filter_changed: baseline.min_severity != current.min_severity,
     })
+}
+
+fn coverage_equivalent(
+    baseline: &[crate::core::types::PluginCoverage],
+    current: &[crate::core::types::PluginCoverage],
+) -> bool {
+    baseline.len() == current.len()
+        && baseline.iter().zip(current).all(|(before, after)| {
+            before.id == after.id
+                && before.status == after.status
+                && before.findings == after.findings
+                && before.error == after.error
+        })
 }
 
 fn index(findings: &[Finding]) -> Result<BTreeMap<String, &Finding>> {
@@ -192,5 +205,28 @@ mod tests {
         let legacy: RunReport = serde_json::from_value(value).unwrap();
         assert_eq!(legacy.min_severity, "");
         assert!(compare(&legacy, &legacy).is_ok());
+    }
+
+    #[test]
+    fn ignores_volatile_duration_but_reports_material_metadata_changes() {
+        let mut baseline = report(vec![], "before");
+        baseline.coverage.push(crate::core::types::PluginCoverage {
+            id: "plugin".into(),
+            status: "ok".into(),
+            findings: 1,
+            error: None,
+            duration_ms: 1,
+        });
+        let mut current = baseline.clone();
+        current.run_id = "after".into();
+        current.coverage[0].duration_ms = 999;
+        assert!(!compare(&baseline, &current).unwrap().coverage_changed);
+        current.coverage[0].status = "error".into();
+        current.profile = "thorough".into();
+        current.min_severity = "high".into();
+        let diff = compare(&baseline, &current).unwrap();
+        assert!(diff.coverage_changed);
+        assert!(diff.profile_changed);
+        assert!(diff.severity_filter_changed);
     }
 }

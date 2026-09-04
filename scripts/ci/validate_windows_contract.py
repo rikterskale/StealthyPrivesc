@@ -76,6 +76,8 @@ def main() -> int:
     require(python, "winreg", "python fallback", failures)
     require(python, '"coverage_mode"', "python fallback", failures)
     require(python, "whoami", "python fallback", failures)
+    require(python, "CI.PolicyKey=absent", "python fallback", failures)
+    require(python, "CI.PolicyKey=unavailable:", "python fallback", failures)
     require(git_sh, "Authorization required", "git fallback", failures)
     require(git_sh, "coverage_mode", "git fallback", failures)
     compile(python, str(PYTHON), "exec")

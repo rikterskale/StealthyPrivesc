@@ -341,7 +341,11 @@ fn summary_and_progress_json_are_automation_friendly() {
         .output()
         .unwrap();
     assert!(summary.status.success());
-    assert!(String::from_utf8_lossy(&summary.stdout).contains("StealthyPrivesc summary"));
+    let summary_text = String::from_utf8_lossy(&summary.stdout);
+    #[cfg(not(feature = "opsec-string-strip"))]
+    assert!(summary_text.contains("StealthyPrivesc summary"));
+    #[cfg(feature = "opsec-string-strip")]
+    assert!(summary_text.contains("host-inventory summary"));
 
     let progress = stealthy()
         .args([
@@ -751,7 +755,7 @@ fn live_controls_collects_host_state_without_fixtures() {
 
 #[cfg(not(feature = "enum-only"))]
 #[test]
-fn allow_techniques_records_scaffold_findings() {
+fn allow_techniques_records_operator_handoffs() {
     let output = stealthy()
         .args([
             "--authorized",
@@ -777,11 +781,19 @@ fn allow_techniques_records_scaffold_findings() {
     let findings = value["findings"].as_array().unwrap();
     assert!(findings.iter().any(|f| {
         f["plugin"] == "allow_techniques"
-            && f["kind"] == "scaffold"
+            && f["kind"] == "recommendation"
             && f["title"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("Kernel exploit execution opted in")
+                .contains("Kernel exploit execution operator handoff ready")
+            && f["what_next"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Operator next steps")
+            && f["next_command"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("linux.kernel_cve")
     }));
 }
 
@@ -976,7 +988,10 @@ fn equals_form_global_overrides_are_honored() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    #[cfg(not(feature = "opsec-string-strip"))]
     assert!(stdout.starts_with("# StealthyPrivesc report"));
+    #[cfg(feature = "opsec-string-strip")]
+    assert!(stdout.starts_with("# host-inventory report"));
     assert!(stdout.contains("Profile:** ci"));
 }
 

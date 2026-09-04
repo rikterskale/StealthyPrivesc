@@ -37,7 +37,7 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 | `core::engine` | Authorization-aware orchestration, selection, checkpoints, and triage |
 | `core::plugin_worker` | In-process or isolated plugin execution, timeout termination, and finding/note/error transport |
 | `core::reporting` | Report assembly, finding assessments, attack paths, and operator next-step defaults |
-| `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
+| `exploit` | Reversible probes plus gated, command-bearing `--allow-techniques` operator handoffs |
 
 ## Plugin contract
 

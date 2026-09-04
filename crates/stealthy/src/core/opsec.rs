@@ -15,8 +15,10 @@ pub const REPO_URL: &str = "https://github.com/rikterskale/StealthyPrivesc";
 pub const REPO_URL: &str = "urn:local:inventory";
 
 #[cfg(not(feature = "opsec-string-strip"))]
+#[cfg_attr(windows, allow(dead_code))]
 pub const GTFO_TECHNIQUE: &str = "gtfobins";
 #[cfg(feature = "opsec-string-strip")]
+#[cfg_attr(windows, allow(dead_code))]
 pub const GTFO_TECHNIQUE: &str = "set-id";
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -27,6 +29,7 @@ pub const LOLBAS_TECHNIQUE: &str = "lolbas";
 pub const LOLBAS_TECHNIQUE: &str = "binary-path";
 
 #[cfg(not(feature = "opsec-string-strip"))]
+#[cfg_attr(windows, allow(dead_code))]
 pub fn gtfobins_detail(binary: &str, functions: &str) -> Option<String> {
     Some(format!(
         "gtfobins.binary={binary} gtfobins.functions={functions} gtfobins.url=https://gtfobins.github.io/gtfobins/{binary}/ recommend_only=true"
@@ -34,6 +37,7 @@ pub fn gtfobins_detail(binary: &str, functions: &str) -> Option<String> {
 }
 
 #[cfg(feature = "opsec-string-strip")]
+#[cfg_attr(windows, allow(dead_code))]
 pub fn gtfobins_detail(_binary: &str, _functions: &str) -> Option<String> {
     None
 }

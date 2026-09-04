@@ -30,3 +30,19 @@ pub fn evasion_notes() -> Vec<String> {
             .into(),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{evasion_notes, low_and_slow};
+
+    #[test]
+    fn zero_budget_returns_immediately_and_notes_are_actionable() {
+        let started = std::time::Instant::now();
+        low_and_slow(0);
+        assert!(started.elapsed() < std::time::Duration::from_millis(50));
+        let notes = evasion_notes();
+        assert!(!notes.is_empty());
+        assert!(notes.iter().all(|note| !note.trim().is_empty()));
+        assert!(notes.iter().any(|note| note.contains("--profile quiet")));
+    }
+}

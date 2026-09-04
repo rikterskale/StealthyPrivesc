@@ -159,7 +159,9 @@ cannot be mistaken for a clean result.
   Known IDs: `persistence`, `host-crash`, `potato`, `kernel-exploit`,
   `service-replace`, `msi`, `credential-dump`, `endpoint-bypass`,
   `amsi-bypass`, `etw-unhook`, `av-edr-service`.
-  Most non-evasion families record scaffold findings only in this revision.
+  Every family records a bounded operator handoff with a validation command,
+  evidence requirements, stop conditions, cleanup, and disposition guidance.
+  Non-evasion handoffs do not supply or execute payloads.
   `endpoint-bypass` means alternate-path tracking + approved-fixture validation
   (pair with `--artifact` and/or `controls --execute`); it does not cover
   control interference.

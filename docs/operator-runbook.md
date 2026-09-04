@@ -883,8 +883,9 @@ STEALTHY_AUTHORIZED=1 "$BIN" enum --auto-exploit \
   --allow-techniques kernel-exploit,service-replace,persistence
 ```
 
-In this revision most non-evasion IDs are scaffolded (flag accepted + findings
-recorded); payload execution for those families lands in follow-up work.
+In this revision non-evasion IDs produce bounded operator handoffs (flag
+accepted, findings recorded, and a validation command emitted). Payload
+execution is outside this product contract.
 `endpoint-bypass` is alternate-path + approved-fixture validation only.
 AMSI/ETW/AV-EDR interference uses `amsi-bypass` / `etw-unhook` /
 `av-edr-service` with `--confirm-evasion` (see `docs/techniques.md` and

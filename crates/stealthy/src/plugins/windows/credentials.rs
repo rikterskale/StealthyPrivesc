@@ -53,12 +53,12 @@ impl Plugin for CredentialsPlugin {
                     },
                     title: format!("Credential-related file present: {p}"),
                     detail: if dump_allowed {
-                        format!("readable={readable} (credential-dump opted in; dump scaffold not executed yet)")
+                        format!("readable={readable} (credential-dump handoff opted in; contents were not read or exported)")
                     } else {
                         format!("readable={readable} (contents not dumped; use --allow-techniques credential-dump when ROE permits)")
                     },
                     recommendation:
-                        "Unattend/SAM backups often contain secrets. Handle under evidence rules; dump/exfil via --allow-techniques credential-dump when approved."
+                        "Treat this as sensitive evidence. Confirm ROE, preserve metadata, and use the credential-dump operator handoff for bounded validation; this tool does not expose secret contents."
                             .into(),
                     noisy: false,
                     leaves_artifacts: false,

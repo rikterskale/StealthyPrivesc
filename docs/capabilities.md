@@ -15,6 +15,8 @@ Source design: [`docs/design.md`](design.md)
 
 Implemented phase scope: [`docs/phases.md`](phases.md)
 
+Planned GUI slices: [`docs/gui-roadmap.md`](gui-roadmap.md)
+
 First-user journey contract: [`docs/first-user-journey.md`](first-user-journey.md)
 
 Report contract: [`docs/report-schema.md`](report-schema.md)
@@ -35,7 +37,7 @@ Operator deploy/runbook: [`docs/runbook/delivery.md`](runbook/delivery.md),
 | Application-control / EDR assessment | Done (`linux.app_control`, `windows.app_control`; read-only policy, provenance, sensor, audit, fixture validation, baseline drift, and detection-exposure inventory) |
 | Script fallbacks | Done (includes endpoint-control checks) |
 | Limited `--auto-exploit` probes | Done (PATH/polkit/timer/unquoted-parent) |
-| `--allow-techniques` scaffolding | Done (most families: flags + findings; `endpoint-bypass`: alternate-path + approved-fixture validation; `amsi-bypass` / `etw-unhook` / `av-edr-service`: gated opt-in offensive capabilities with `--confirm-evasion`) |
+| `--allow-techniques` operator handoffs | Done (every family: copyable validation command plus ROE, evidence, stop, cleanup, and disposition steps; `endpoint-bypass`: alternate-path + approved-fixture validation; evasion families additionally require `--confirm-evasion`) |
 | Windows service/task ACL context | Native service-object DACL evaluation, registry-backed Task Scheduler descriptor checks for `WRITE_DAC`/`WRITE_OWNER`/`DELETE`, token-aware service/task file ACL checks, and read-only `icacls` fallback |
 | Encrypted remote HTTPS output | Done (bounded external `curl` client, TLS 1.2 minimum, 2xx required, protected key retained on ambiguous delivery) |
 | Engagement profiles | Done (`quiet`, `balanced`, `thorough`, `ci`) |
@@ -105,7 +107,7 @@ Note: `linux.docker` was renamed to **`linux.containers`** (docker/podman/contai
 | `stealthy list-plugins` | List compiled plugin IDs (table or `--tsv`) |
 | `stealthy enum` / `stealthy scan` | Run enumeration (default mode) |
 | `stealthy enum --auto-exploit` | Add reversible probes |
-| `stealthy enum --allow-techniques ...` | Opt into high-impact families (`endpoint-bypass` = alternate-path + approved-fixture validation; evasion IDs gated with `--confirm-evasion`; other families mostly scaffold) |
+| `stealthy enum --allow-techniques ...` | Opt into high-impact family handoffs (`endpoint-bypass` = alternate-path + approved-fixture validation; evasion IDs gated with `--confirm-evasion`; all findings include bounded next steps and commands) |
 | `stealthy enum --plugins ...` | Select plugins |
 | `stealthy enum --skip ...` | Skip plugins |
 | `stealthy controls` / `validate-controls` | Run disposable control-validation cases; authorization required |
@@ -227,7 +229,8 @@ is never selected by the enumeration dispatcher unless the operator opts in.
 | Automated path-exclusion helpers | Planned (contract change required) | New family; kit-path exclusions ≠ disable realtime |
 | Generic control-disable / "hide from sensor" payloads | Planned (contract change required) | New family; ROE-gated product decision |
 | Auto-chain enum → `live-controls --artifact` / `controls --execute` when `endpoint-bypass` is allowlisted | Planned (UX) | Builds on current `next_command` wiring; still alternate-path only under `endpoint-bypass` |
-| Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Scaffold today | Existing allowlist IDs; follow-up revisions |
+| Additional high-impact family payload execution (`kernel-exploit`, `potato`, …) | Out of product scope; bounded validation handoffs are implemented | Existing allowlist IDs provide commands, evidence requirements, stop conditions, cleanup, and disposition without supplying payloads |
+| Optional operator-workstation GUI | Planned in slices GUI-0 through GUI-9 | Separate native GUI; shared policy-enforcing core; no GUI dependencies in target kits; see `docs/gui-roadmap.md` |
 
 ### Audit-derived production-readiness roadmap
 
@@ -250,7 +253,7 @@ is not evidence that the work is implemented or production-ready.
 | P2 | Add per-file Windows coverage and close native plugin test gaps, especially `admin_sessions`, `app_control`, `autoruns`, `credentials`, `endpoint_controls`, `env_path`, `privileges`, and `uac`. | Windows coverage identifies unexecuted functions and lines; each public plugin behavior and unavailable/error state has a deterministic fixture test. |
 | P2 | Make clean-workstation verification reproducible where a Rust toolchain is initially absent. | Documented setup installs or locates the pinned toolchain, then runs fmt, Clippy, all tests, release builds, and the platform smoke suite from a clean checkout. Dependency or toolchain changes require explicit approval. |
 | P3 | Review AMSI, ETW, and AV/EDR prototype sources and decide whether to retain, remove, or redesign them under separately approved contracts. | Done: `amsi-bypass`, `etw-unhook`, and `av-edr-service` are gated opt-in offensive capabilities (`--authorized` + `--allow-techniques` + `--confirm-evasion`). Rust emits `ExploitAttempt` / `technique-opted-in`; Windows kits ship `windows-evasion` (`status=ready`). Contributors may implement payloads behind the gates. |
-| P3 | Decide the product contract for scaffold-only high-impact families (`persistence`, `host-crash`, `potato`, `kernel-exploit`, `service-replace`, `msi`, and `credential-dump`). | Each family is either explicitly retained as a non-executing roadmap marker or receives a separate specification, ROE gate, reversibility policy where possible, failure handling, and end-to-end acceptance plan. None may be folded into `endpoint-bypass`. |
+| P3 | Decide the product contract for high-impact families (`persistence`, `host-crash`, `potato`, `kernel-exploit`, `service-replace`, `msi`, and `credential-dump`). | Done: each family has a separate ROE-gated, command-bearing validation handoff with evidence, stop, cleanup, and disposition instructions. Payload execution remains outside the product contract. None is folded into `endpoint-bypass`. |
 
 Recommended execution order is P0 → P1 → P2. P3 is a governance and safety
 decision, not a prerequisite for certifying the supported enumerate-and-validate

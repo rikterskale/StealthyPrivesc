@@ -62,3 +62,25 @@ are available through `--auto-exploit`, and high-impact families through
 - Full release kits, SPDX SBOMs, GitHub attestations, Linux aarch64 GNU,
   full tag gates, cargo-deny/Gitleaks, an 80% coverage floor, constrained build
   flavors, and a nightly safe fixture matrix.
+
+## Phase 5 (planned operator GUI)
+
+Phase 5 adds an optional operator-workstation GUI while preserving the CLI and
+script kits as the complete, minimal target-side interface. It is divided into
+implementation slices so shared safety and diagnostic contracts land before
+host-enumerating UI:
+
+- GUI-0: product contract, threat model, and packaging spike.
+- GUI-1: shared library and centralized authorization/safety boundary.
+- GUI-2: typed diagnostics, progress events, cancellation, errors, and paths.
+- GUI-3: read-only desktop MVP for readiness, demo, and report workflows.
+- GUI-4: preset-led authorized scan workflow with advanced options separated.
+- GUI-5: coverage-first findings, evidence export, dispositions, and cleanup.
+- GUI-6: operator-side native/script-only target-kit staging and verification.
+- GUI-7: signed one-package install, upgrade, repair, rollback, and uninstall.
+- GUI-8: troubleshooting center and redacted support bundles.
+- GUI-9: cross-platform parity, accessibility, packaging, and release gates.
+
+The detailed scope, dependencies, and acceptance gates are in the
+[GUI Frontend Roadmap](gui-roadmap.md). None of Phase 5 is implemented merely
+by appearing in this roadmap.

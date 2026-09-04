@@ -148,6 +148,9 @@ impl Finding {
         if self.technique_id == "av-edr-service" || self.condition.starts_with("av-edr-") {
             return crate::exploit::av_edr_service::av_edr_next_command().into();
         }
+        if let Some(technique) = crate::exploit::TechniqueFamily::parse(&self.technique_id) {
+            return crate::exploit::operator_validation_command(technique).into();
+        }
         let command = match self.plugin.as_str() {
             "linux.sudo" => "sudo -n -l",
             "linux.suid" => {
@@ -240,19 +243,7 @@ impl Finding {
                         .then_some(self.object.as_str());
                     return crate::exploit::endpoint_bypass_next_command(allowed, artifact, false);
                 }
-                return self
-                    .recommendation
-                    .split("--allow-techniques")
-                    .nth(1)
-                    .and_then(|rest| rest.split_whitespace().next())
-                    .map(|id| {
-                        format!(
-                            "stealthy --authorized --format json enum --allow-techniques {id}"
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        "Review the approved technique in the ROE; no payload command is available in this build.".into()
-                    });
+                return "stealthy --authorized --format json enum".into();
             }
             _ => {
                 return format!(

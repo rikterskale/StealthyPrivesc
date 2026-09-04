@@ -84,7 +84,7 @@ impl Plugin for PrivilegesPlugin {
                         title: "Potato-family token impersonation opportunity".into(),
                         detail: "SeImpersonate and/or SeAssignPrimaryToken is enabled on this token."
                             .into(),
-                        recommendation: "High EDR visibility. Opt in with --allow-techniques potato when ROE permits (scaffold in this revision)."
+                        recommendation: "High EDR visibility. When ROE permits, opt in with --allow-techniques potato and follow the generated prerequisite-validation, evidence, stop, and cleanup handoff."
                             .into(),
                         noisy: false,
                         leaves_artifacts: false,

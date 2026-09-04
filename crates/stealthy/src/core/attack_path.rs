@@ -58,8 +58,14 @@ pub fn build_attack_paths(findings: &[Finding]) -> Vec<AttackPath> {
         let group = &by_plugin[plugin];
         let ids: Vec<String> = group
             .iter()
-            .filter(|f| used.insert(f.finding_id.clone()))
-            .map(|f| f.finding_id.clone())
+            .map(|finding| {
+                if finding.finding_id.is_empty() {
+                    crate::core::finalize::finalize_finding((*finding).clone()).finding_id
+                } else {
+                    finding.finding_id.clone()
+                }
+            })
+            .filter(|id| used.insert(id.clone()))
             .collect();
         if ids.is_empty() {
             continue;
@@ -100,8 +106,66 @@ pub fn assign_path_ranks(findings: &mut [Finding], paths: &[AttackPath]) {
         }
     }
     for finding in findings {
-        if let Some(rank) = map.get(&finding.finding_id) {
+        let id = if finding.finding_id.is_empty() {
+            crate::core::finalize::finalize_finding(finding.clone()).finding_id
+        } else {
+            finding.finding_id.clone()
+        };
+        if let Some(rank) = map.get(&id) {
             finding.attack_path_rank = Some(*rank);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{assign_path_ranks, build_attack_paths};
+    use crate::core::types::{Finding, FindingKind, Severity};
+
+    fn finding(plugin: &str, object: &str, severity: Severity) -> Finding {
+        Finding {
+            plugin: plugin.into(),
+            object: object.into(),
+            condition: "writable".into(),
+            kind: FindingKind::Misconfiguration,
+            severity,
+            exploitability: severity.rank() * 10,
+            title: object.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ranks_groups_and_assigns_ids_for_unfinalized_findings() {
+        let mut findings = vec![
+            finding("plugin.low", "one", Severity::Medium),
+            finding("plugin.high", "two", Severity::Critical),
+            finding("plugin.low", "three", Severity::High),
+        ];
+        let paths = build_attack_paths(&findings);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].title, "via plugin.high");
+        assert_eq!(paths[1].finding_ids.len(), 2);
+        assert!(paths
+            .iter()
+            .all(|path| !path.finding_ids.contains(&String::new())));
+        assign_path_ranks(&mut findings, &paths);
+        assert!(findings
+            .iter()
+            .all(|finding| finding.attack_path_rank.is_some()));
+    }
+
+    #[test]
+    fn excludes_non_actionable_findings_and_limits_paths() {
+        let mut findings = (0..10)
+            .map(|index| finding(&format!("plugin.{index}"), "target", Severity::High))
+            .collect::<Vec<_>>();
+        findings.push(Finding {
+            plugin: "info".into(),
+            kind: FindingKind::Enumeration,
+            severity: Severity::Info,
+            ..Default::default()
+        });
+        assert_eq!(build_attack_paths(&findings).len(), 8);
     }
 }

@@ -12,3 +12,20 @@ pub fn trusted_command(program: &str) -> Command {
     command.env("PATH", TRUSTED_PATH);
     command
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{trusted_command, TRUSTED_PATH};
+
+    #[test]
+    fn command_uses_fixed_system_path() {
+        let command = trusted_command("fixture-program");
+        assert_eq!(command.get_program(), "fixture-program");
+        let path = command
+            .get_envs()
+            .find(|(name, _)| *name == "PATH")
+            .and_then(|(_, value)| value)
+            .unwrap();
+        assert_eq!(path, TRUSTED_PATH);
+    }
+}

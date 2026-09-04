@@ -47,8 +47,9 @@ describe the behavior users can rely on today.
    a manifest is not authorization evidence.
 4. **Opt-in probes and high-impact families** — `--auto-exploit` enables
    supported reversible, low-noise checks. High-impact families require a
-   separate `--allow-techniques` opt-in when ROE permits (scaffolded in the
-   current revision).
+   separate `--allow-techniques` opt-in when ROE permits. Each family emits a
+   bounded validation handoff with evidence, stop, cleanup, and disposition
+   steps; the handoff does not execute a payload.
 5. **Plugin isolation** — each plugin reports findings, notes, and errors
    through a common contract. Quiet and balanced run plugins in-process (no
    per-plugin child process). A positive `--plugin-timeout-ms` (the thorough/ci
@@ -87,7 +88,7 @@ The runtime flow is:
 | `core::output` | Human, JSON, Markdown, SARIF, memory, file, and remote rendering |
 | `core::diff` | Offline comparison of plaintext JSON reports |
 | `core::evasion` | Low-and-slow pacing and operator-facing notes |
-| `exploit` | Reversible probes plus `--allow-techniques` scaffolding |
+| `exploit` | Reversible probes plus gated `--allow-techniques` operator handoffs |
 | `plugins::linux/windows` | Platform-specific enumeration checks, including endpoint-control inventory |
 
 The command surface is deliberately small:
