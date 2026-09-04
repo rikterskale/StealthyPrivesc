@@ -54,7 +54,8 @@ def main() -> int:
         "evasion feature/status mismatch",
         "MSBuild fallback JSON contract mismatch",
         "test_windows_enum.py",
-        "native staged binary unavailable after write",
+        "direct native Windows coverage mode mismatch",
+        "quarantined native execution_path mismatch",
         "expected 3 high-impact handoffs",
         "incomplete operator handoff",
     ):

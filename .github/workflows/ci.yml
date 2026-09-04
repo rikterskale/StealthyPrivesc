@@ -626,6 +626,9 @@ jobs:
           $bin = (Resolve-Path .\target\release\stealthy.exe).Path
           $doctor = & $bin doctor --json | ConvertFrom-Json
           if ($doctor.schema_version -ne '1' -or -not $doctor.healthy) { throw 'doctor smoke failed' }
+          $directNative = & $bin --authorized --quiet --format=json enum --plugins windows.privileges | ConvertFrom-Json
+          if ($directNative.coverage_mode -ne 'native') { throw 'direct native Windows coverage mode mismatch' }
+          if ($directNative.authorized_use_ack -ne $true -or $directNative.mode -ne 'enumerate-only') { throw 'direct native Windows safety metadata mismatch' }
 
           $unauthorized = Start-Process -FilePath $bin -ArgumentList @('enum') -Wait -PassThru -NoNewWindow
           if ($unauthorized.ExitCode -ne 2) { throw "expected auth exit 2, got $($unauthorized.ExitCode)" }
@@ -702,7 +705,10 @@ jobs:
             if ($native.coverage_mode -ne 'native') { throw 'native Windows bundle coverage mode mismatch' }
             if ($native.authorized_use_ack -ne $true -or $native.mode -ne 'enumerate-only') { throw 'native Windows safety metadata mismatch' }
           } else {
-            throw 'native staged binary unavailable after write'
+            $nativeFallback = & (Join-Path $stage 'scripts\run.ps1') --authorized --format=json enum | ConvertFrom-Json
+            if ($nativeFallback.coverage_mode -ne 'script') { throw 'quarantined native bundle coverage mode mismatch' }
+            if ($nativeFallback.primary_launch -ne 'blocked') { throw "quarantined native primary_launch mismatch: $($nativeFallback.primary_launch)" }
+            if ($nativeFallback.execution_path -ne 'python-fallback') { throw "quarantined native execution_path mismatch: $($nativeFallback.execution_path)" }
           }
           Assert-DispatcherEnvironmentRestored 'native'
           & $bin --ledger-dir $ledger cleanup --latest
@@ -747,8 +753,8 @@ jobs:
           if ($quarantined.primary_launch -ne 'blocked') {
             throw "quarantine-sim primary_launch: expected 'blocked', got '$($quarantined.primary_launch)'"
           }
-          if ($quarantined.execution_path -ne 'powershell-fallback') {
-            throw "quarantine-sim execution_path: expected 'powershell-fallback', got '$($quarantined.execution_path)'"
+          if ($quarantined.execution_path -ne 'python-fallback') {
+            throw "quarantine-sim execution_path: expected 'python-fallback', got '$($quarantined.execution_path)'"
           }
           Assert-DispatcherEnvironmentRestored 'quarantine'
           & $bin --ledger-dir $qLedger cleanup --latest
