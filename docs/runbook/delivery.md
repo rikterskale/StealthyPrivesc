@@ -121,11 +121,10 @@ be scanned in `%TEMP%`, do not force a binary; use a script-only bundle.
 | Windows | `C:\Users\Public\Documents\<name>` or `%LOCALAPPDATA%\<name>` | `%TEMP%` / Downloads (Defender often quarantines a freshly written unsigned PE) |
 | Windows admin share | `\\HOST\C$\Users\Public\Documents\<name>` | Dropping under `C:\Windows` or `ADMIN$` unless ROE requires it |
 
-Linux `run.sh` copies the ELF into `.run-cache` when `drop_dir` is unset in the
-manifest. Staged manifests ship `drop_dir=` empty so Windows runs the PE in
-place. On Linux, prefer running the staged ELF from the copied directory, or
-set `drop_dir` to that same directory, rather than introducing a second
-writable cache.
+Staged manifests ship `drop_dir=` empty. Both `run.sh` and `run.ps1` then run
+the primary **in place** (no copy into `.run-cache` or a second scan path).
+Set `drop_dir` to an explicit directory only when the dispatcher should copy
+the binary and fallback scripts there.
 
 ## Linux method catalog
 

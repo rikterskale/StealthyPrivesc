@@ -274,6 +274,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              binary_sha256={}\n\n\
              {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  bash ./scripts/run.sh --authorized --profile balanced enum\n\n\
+             Empty drop_dir runs the ELF in place (no copy into .run-cache).\n\
              If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             opts.os, opts.arch, opts.name, bundle_mode, hash, verification

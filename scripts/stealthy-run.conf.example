@@ -15,6 +15,8 @@ execution_mode=enumerate-only
 bundle_mode=native-with-fallbacks
 target_hostname=SET_TARGET_HOSTNAME
 target_username=
+# Empty: run the primary in place (Linux and Windows). Set a path only when
+# the dispatcher should copy the binary and scripts to a separate directory.
 drop_dir=
 primary_binary=stealthy
 # Ordered hosts tried after a blocked primary. Script tiers are fixed

@@ -353,7 +353,8 @@ reduces SmartScreen/reputation friction; stage the signed binary with
 `--binary`. If the PE is missing or blocked (including signal death / vanished
 after launch), `run.ps1` walks `powershell → jscript → msbuild` and continues
 when a tier is itself blocked. Linux `run.sh` walks `python → bash → sh → perl`
-the same way. Script tiers are reduced coverage: only auth and `--json` /
+the same way. Empty `drop_dir` (the staged default) runs the ELF or PE in
+place on both platforms; an explicit `drop_dir` still copies. Script tiers are reduced coverage: only auth and `--json` /
 `-Json` are forwarded; binary flags such as `--profile` / `--plugins` are not
 applied. The dispatcher does not itself approve AppLocker, WDAC, SmartScreen,
 AppArmor, SELinux, or `noexec`; if the selected interpreter is not already

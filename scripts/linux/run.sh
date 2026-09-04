@@ -81,8 +81,19 @@ if [[ "$authorized_arg" == false ]]; then
 fi
 export STEALTHY_AUTHORIZED=1
 
-drop_dir="${cfg[drop_dir]:-$bundle_dir/.run-cache}"
-mkdir -p "$drop_dir"
+# Empty drop_dir (staged default) -> run the ELF in place, matching Windows.
+# Avoids a second write+exec from $bundle_dir/.run-cache.
+drop_dir_raw="${cfg[drop_dir]:-}"
+drop_dir_raw="${drop_dir_raw#"${drop_dir_raw%%[![:space:]]*}"}"
+drop_dir_raw="${drop_dir_raw%"${drop_dir_raw##*[![:space:]]}"}"
+if [[ -z "$drop_dir_raw" ]]; then
+  use_in_place=true
+  drop_dir="$bundle_dir"
+else
+  use_in_place=false
+  drop_dir="$drop_dir_raw"
+  mkdir -p "$drop_dir"
+fi
 if [[ "$bundle_mode" == "script-only" ]]; then
   primary_name=""
   primary_src=""
@@ -90,16 +101,36 @@ if [[ "$bundle_mode" == "script-only" ]]; then
 else
   primary_name="${cfg[primary_binary]:-stealthy}"
   primary_src="$bundle_dir/$primary_name"
-  primary="$drop_dir/$primary_name"
+  if [[ "$use_in_place" == true ]]; then
+    primary="$primary_src"
+  else
+    primary="$drop_dir/$primary_name"
+  fi
 fi
-if [[ -n "$primary_src" && -f "$primary_src" && "$primary_src" != "$primary" ]]; then
+if [[ "$use_in_place" != true && -n "$primary_src" && -f "$primary_src" && "$primary_src" != "$primary" ]]; then
+  set +e
   install -m 0750 "$primary_src" "$primary"
+  copy_status=$?
+  set -e
+  if [[ "$copy_status" -ne 0 ]]; then
+    echo "dispatcher: primary copy failed (possible AV block): $primary" >&2
+    primary=""
+  elif [[ ! -f "$primary" ]]; then
+    echo "dispatcher: primary copy vanished after write (possible AV quarantine): $primary" >&2
+    primary=""
+  fi
 fi
-for file in enum.py enum.sh enum-posix.sh enum.pl; do
-  source="$script_dir/$file"
-  [[ -f "$source" ]] || source="$bundle_dir/scripts/linux/$file"
-  [[ -f "$source" ]] && install -m 0750 "$source" "$drop_dir/$file"
-done
+if [[ "$use_in_place" != true ]]; then
+  for file in enum.py enum.sh enum-posix.sh enum.pl; do
+    source="$script_dir/$file"
+    [[ -f "$source" ]] || source="$bundle_dir/scripts/linux/$file"
+    if [[ -f "$source" && "$source" != "$drop_dir/$file" ]]; then
+      set +e
+      install -m 0750 "$source" "$drop_dir/$file"
+      set -e
+    fi
+  done
+fi
 
 args=("$@")
 if [[ ${#args[@]} -eq 0 ]]; then
@@ -139,6 +170,24 @@ is_block_status() {
   if [[ "$status" -gt 128 ]]; then
     return 0
   fi
+  return 1
+}
+
+# Prefer an explicit drop copy, then the staged scripts directory, then repo layout.
+resolve_fallback_path() {
+  local name="$1"
+  local candidate
+  for candidate in \
+    "$drop_dir/$name" \
+    "$script_dir/$name" \
+    "$bundle_dir/scripts/linux/$name" \
+    "$bundle_dir/scripts/$name"
+  do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
   return 1
 }
 
@@ -219,44 +268,48 @@ for fallback in "${fallbacks[@]}"; do
         echo "dispatcher: skipping python fallback (python3 unavailable)" >&2
         continue
       fi
-      if [[ ! -f "$drop_dir/enum.py" ]]; then
+      script="$(resolve_fallback_path enum.py || true)"
+      if [[ -z "$script" ]]; then
         echo "dispatcher: skipping python fallback (enum.py missing)" >&2
         continue
       fi
-      try_fallback python python3 "$drop_dir/enum.py"
+      try_fallback python python3 "$script"
       ;;
     bash)
       if ! command -v bash >/dev/null 2>&1; then
         echo "dispatcher: skipping bash fallback (bash unavailable)" >&2
         continue
       fi
-      if [[ ! -f "$drop_dir/enum.sh" ]]; then
+      script="$(resolve_fallback_path enum.sh || true)"
+      if [[ -z "$script" ]]; then
         echo "dispatcher: skipping bash fallback (enum.sh missing)" >&2
         continue
       fi
-      try_fallback bash bash "$drop_dir/enum.sh"
+      try_fallback bash bash "$script"
       ;;
     sh)
       if ! command -v sh >/dev/null 2>&1; then
         echo "dispatcher: skipping sh fallback (sh unavailable)" >&2
         continue
       fi
-      if [[ ! -f "$drop_dir/enum-posix.sh" ]]; then
+      script="$(resolve_fallback_path enum-posix.sh || true)"
+      if [[ -z "$script" ]]; then
         echo "dispatcher: skipping sh fallback (enum-posix.sh missing)" >&2
         continue
       fi
-      try_fallback sh sh "$drop_dir/enum-posix.sh"
+      try_fallback sh sh "$script"
       ;;
     perl)
       if ! command -v perl >/dev/null 2>&1; then
         echo "dispatcher: skipping perl fallback (perl unavailable)" >&2
         continue
       fi
-      if [[ ! -f "$drop_dir/enum.pl" ]]; then
+      script="$(resolve_fallback_path enum.pl || true)"
+      if [[ -z "$script" ]]; then
         echo "dispatcher: skipping perl fallback (enum.pl missing)" >&2
         continue
       fi
-      try_fallback perl perl "$drop_dir/enum.pl"
+      try_fallback perl perl "$script"
       ;;
     *)
       echo "dispatcher: ignoring unknown fallback '$fallback'" >&2

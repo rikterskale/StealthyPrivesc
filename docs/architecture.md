@@ -82,6 +82,8 @@ the staged dispatcher walks an ordered, manifest-approved host list:
 - Linux (`run.sh`): `python,bash,sh,perl` → `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl`
 - Windows (`run.ps1`): `powershell,jscript,msbuild` → `enum.ps1` / `enum.js` / `EnumTasks.csproj`
 
+Empty `drop_dir` (the staged default) runs the primary in place on Linux and
+Windows. An explicit `drop_dir` copies the binary and fallback scripts first.
 When the primary is blocked (missing, not executable, exit 126/127, signal
 death, or vanished after launch), the dispatcher walks the list and continues
 to the next host if a tier is itself blocked. Script tiers are fixed

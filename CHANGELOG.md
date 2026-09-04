@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Linux `run.sh` runs the staged ELF in place when `drop_dir` is empty,
+  matching Windows and avoiding a second write+exec under `.run-cache`.
 - Quiet and balanced profiles run plugins in-process by default (no
   `__plugin-worker` child per plugin). Pass `--plugin-timeout-ms N` to isolate.
 - Documented the operator delivery catalog: stage-first drop bundles and every

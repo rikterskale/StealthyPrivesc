@@ -1297,6 +1297,121 @@ fn staged_dispatcher_requires_fresh_authorization() {
 
 #[cfg(unix)]
 #[test]
+fn linux_dispatcher_runs_primary_in_place_when_drop_dir_empty() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 0\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        stage.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&stage.stderr)
+    );
+    let operator = std::fs::read_to_string(out.join("OPERATOR.txt")).unwrap();
+    assert!(operator.contains("in place"));
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized"])
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!out.join(".run-cache").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn linux_dispatcher_copies_when_drop_dir_is_set() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 0\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+
+    let copy_dir = out.join("exec-copy");
+    let conf = out.join("scripts/stealthy-run.conf");
+    let mut manifest = std::fs::read_to_string(&conf).unwrap();
+    manifest = manifest
+        .lines()
+        .map(|line| {
+            if line.starts_with("drop_dir=") {
+                format!("drop_dir={}", copy_dir.display())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !manifest.ends_with('\n') {
+        manifest.push('\n');
+    }
+    std::fs::write(&conf, manifest).unwrap();
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized"])
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(copy_dir.join("cache-update").is_file());
+    assert!(copy_dir.join("enum.py").is_file() || copy_dir.join("enum.sh").is_file());
+    assert!(!out.join(".run-cache").exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn stage_windows_manifest_lists_script_hosts() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("drop");
