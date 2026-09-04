@@ -294,5 +294,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\enum.ps1 -Au
 cscript //nologo scripts\windows\enum.js --authorized
 ```
 
-Use the [Operator Runbook](operator-runbook.md) for target deployment, hash
-verification, evidence custody, cleanup, and reduced-coverage reporting.
+Use [Delivery](runbook/delivery.md) to stage a bundle and copy it to a target,
+then the [Operator Runbook](operator-runbook.md) for hash verification,
+evidence custody, cleanup, and reduced-coverage reporting.

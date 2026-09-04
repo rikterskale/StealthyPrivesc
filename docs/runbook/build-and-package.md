@@ -63,7 +63,8 @@ not place reports, keys, or target data in the package. See the
 - Confirm the transport is in scope.
 - Keep the report key separate from the artifact and report path.
 
-Continue with [Target operations](targets.md).
+Continue with [Delivery](delivery.md) to stage the bundle and copy it, then
+[Target operations](targets.md) to run it.
 
 Before treating a locally built kit as production-eligible, complete the
 [production-readiness acceptance criteria](../production-readiness.md) and

@@ -2,7 +2,7 @@
 
 Copy-paste deployment and execution guide for **authorized** assessments only.
 
-Related docs: [`README.md`](../README.md) · [`build.md`](build.md) · [`techniques.md`](techniques.md) · [`first-user-journey.md`](first-user-journey.md)
+Related docs: [`README.md`](../README.md) · [`build.md`](build.md) · [`techniques.md`](techniques.md) · [`first-user-journey.md`](first-user-journey.md) · [Delivery](runbook/delivery.md)
 
 ---
 
@@ -15,6 +15,7 @@ point:
 | --- | --- |
 | Confirm ROE, identity, scope, and stop conditions | [Pre-flight](runbook/preflight.md) |
 | Build, verify, and package one artifact | [Build and package](runbook/build-and-package.md) |
+| Get the kit onto a Linux or Windows host | [Delivery](runbook/delivery.md) |
 | Deploy and run on a Linux or Windows target | [Target operations](runbook/targets.md) |
 | Handle evidence, cleanup, interruption, or recovery | [Evidence and recovery](runbook/evidence-and-recovery.md) |
 
@@ -321,6 +322,56 @@ Tagged releases additionally publish SPDX JSON SBOMs, a top-level checksum
 manifest, and GitHub artifact attestations after the full tag gate. See
 [Build](build.md) and the [Support Policy](support-policy.md).
 
+### 1.7 Stage a drop bundle (preferred unit of copy)
+
+Do this on the operator workstation. The staged directory is what you copy to
+the target — not a lone binary and not a GitHub installer. The published
+installers in `scripts/install.sh` and `scripts/install.ps1` are for the
+operator box only.
+
+Operator catalog (method chooser, drop paths, after-drop verify):
+[Get the kit onto a host](runbook/delivery.md).
+
+Native kit (binary + dispatcher + fallbacks):
+
+```bash
+./target/release/stealthy stage \
+  --os linux --arch x86_64 \
+  --target-hostname TARGET_HOSTNAME \
+  --name cache-update \
+  --out ./drop-linux \
+  --binary ./target/release/stealthy
+
+./target/release/stealthy stage \
+  --os windows --arch x86_64 \
+  --target-hostname TARGET_HOSTNAME \
+  --name cache-update \
+  --out ./drop-windows \
+  --binary ./target/x86_64-pc-windows-gnu/release/stealthy.exe
+```
+
+Script-only kit (omit `--binary` when the PE/ELF is expected to be blocked):
+
+```bash
+./target/release/stealthy stage --os linux --target-hostname TARGET_HOSTNAME --out ./drop-linux
+./target/release/stealthy stage --os windows --target-hostname TARGET_HOSTNAME --out ./drop-windows
+```
+
+`--target-hostname` must be the real target hostname; the dispatcher refuses
+`AUTO`. Optional `--target-username` binds the run to that account. Default
+`--name` is `cache-update`. Sign a Windows PE with the org Authenticode
+workflow before `--binary`; this tool does not create certificates.
+
+Print transport placeholders after staging (replace host and path per ROE):
+
+```bash
+./target/release/stealthy one-liners --os linux --transport ssh
+./target/release/stealthy one-liners --os windows --transport winrm
+```
+
+Supported `one-liners` transports: Linux `ssh` / `scp` / `http` / `smb`;
+Windows `ssh` / `scp` / `winrm` / `smb` / `http`.
+
 ---
 
 ## 2. Deploy to a Linux target
@@ -332,8 +383,9 @@ TARGET='user@10.0.0.20'          # or user@host
 SSH_PORT=22
 IDENTITY="$HOME/.ssh/id_ed25519" # optional
 JUMP='bastion.example'           # optional ProxyJump
-REMOTE_DIR='/tmp/.cache-update'  # change per ROE
+REMOTE_DIR='$HOME/.cache/cache-update'  # change per ROE; /tmp is often noexec
 BIN_LOCAL='target/release/stealthy'
+STAGE_DIR='./drop-linux'               # output of `stealthy stage --os linux ...`
 EXPECTED_SHA256='REPLACE_WITH_sha256sum_OUTPUT'
 ```
 
@@ -344,20 +396,33 @@ EXPECTED_SHA256='REPLACE_WITH_sha256sum_OUTPUT'
 | `$HOME/.cache/...` | Looks more “user-like” | Survives longer if you forget cleanup |
 | Existing tool dir already in ROE | Least surprising | Must already be approved |
 
-Always prefer a path allowed by ROE. If the mount is `noexec`, use **script-only** deploy (section 2.12) instead of forcing a binary.
+Always prefer a path allowed by ROE. If the mount is `noexec`, use **script-only** deploy (section 2.12) instead of forcing a binary. The operator-facing catalog of every method is [Get the kit onto a host](runbook/delivery.md).
+
+**Preferred: copy the staged bundle** (section 1.7), not a lone ELF:
+
+```bash
+ssh -p "$SSH_PORT" ${IDENTITY:+-i "$IDENTITY"} "$TARGET" "mkdir -p '$REMOTE_DIR'"
+scp -P "$SSH_PORT" ${IDENTITY:+-i "$IDENTITY"} -r "$STAGE_DIR"/. "$TARGET:$REMOTE_DIR/"
+ssh -p "$SSH_PORT" ${IDENTITY:+-i "$IDENTITY"} "$TARGET" \
+  "chmod 750 '$REMOTE_DIR/cache-update' && sha256sum '$REMOTE_DIR/cache-update'"
+```
+
+Then run **2.13 verify**. If the ELF cannot start, use `bash $REMOTE_DIR/scripts/run.sh --authorized enum` (section 2.12 / 3.7). Do not rerun `install.sh` on the target.
 
 **Method chooser**
 
 | Situation | Prefer |
 | --- | --- |
-| Normal SSH file copy | 2.1 SCP / 2.2 rsync / 2.3 SFTP |
+| Staged bundle over SSH (default) | Copy `$STAGE_DIR/.` as above, then 2.13 |
+| Normal SSH file copy of one ELF | 2.1 SCP / 2.2 rsync / 2.3 SFTP |
 | Jump host / bastion | 2.4 ProxyJump |
-| No SCP but SSH shell works | 2.5 SSH stdin pipe |
+| No SCP but SSH shell works | 2.5 SSH stdin pipe (ELF or `tar` stream of `$STAGE_DIR`) |
 | Egress to operator HTTP allowed | 2.6 HTTP(S) pull |
 | Broken SCP, raw TCP allowed briefly | 2.7 netcat / socat |
 | Shared NFS/SMB mount | 2.8 mount copy |
 | Container / adjacent host access | 2.9 docker cp / kubectl cp |
 | Interactive only / tiny channel | 2.10 base64 paste / split |
+| Many hosts or a release tarball | 2.11 |
 | Custom ELF blocked or `noexec` | 2.12 script-only |
 
 After every binary drop, run **2.13 verify**.
@@ -978,6 +1043,7 @@ TARGET='user@10.0.0.30'
 WIN_EXE_LOCAL='target/x86_64-pc-windows-gnu/release/stealthy.exe'
 REMOTE_DIR='C:/Users/Public/Documents/cache-update'   # SCP/OpenSSH style
 REMOTE_DIR_WIN='C:\Users\Public\Documents\cache-update' # native Windows style
+STAGE_DIR='./drop-windows'  # output of `stealthy stage --os windows ...`
 EXPECTED_SHA256='REPLACE_WITH_sha256sum_OUTPUT'
 ```
 
@@ -998,19 +1064,52 @@ When Defender is on and the kit PE is unsigned or newly written:
 4. Use `stage --name` with a bland basename when ROE wants lower static-string noise.
 5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (PowerShell → JScript → MSBuild). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
 
+The operator-facing catalog of every method is [Get the kit onto a host](runbook/delivery.md). Prefer copying the **staged bundle** (section 1.7) rather than a lone `stealthy.exe`. Do not run `install.ps1` on the target.
+
+**Preferred: OpenSSH copy of the staged bundle** (from Linux/macOS):
+
+```bash
+ssh "$TARGET" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '$REMOTE_DIR_WIN' | Out-Null\""
+scp -r "$STAGE_DIR"/. "$TARGET:$REMOTE_DIR/"
+ssh "$TARGET" "powershell -NoProfile -Command \"Get-FileHash '$REMOTE_DIR_WIN\\cache-update.exe' -Algorithm SHA256\""
+```
+
+**Preferred: WinRM session copy of the staged bundle** (from a Windows operator box; no `C$` required):
+
+```powershell
+$RemoteDir = 'C:\Users\Public\Documents\cache-update'
+$s = New-PSSession -ComputerName TARGET -Credential (Get-Credential)
+Invoke-Command -Session $s -ScriptBlock {
+  param($Dir)
+  New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+} -ArgumentList $RemoteDir
+Copy-Item -ToSession $s -Path .\drop-windows\* -Destination $RemoteDir -Recurse -Force
+Invoke-Command -Session $s -ScriptBlock {
+  param($Dir)
+  Get-FileHash (Join-Path $Dir 'cache-update.exe') -Algorithm SHA256
+} -ArgumentList $RemoteDir
+Remove-PSSession $s
+```
+
+If the PE is quarantined or blocked after copy, do not retry that hash. Use
+`scripts\run.ps1` (section 4.10 / 5.5).
+
 **Method chooser**
 
 | Situation | Prefer |
 | --- | --- |
-| Windows OpenSSH available | 4.1 SCP / SSH pipe |
+| Staged bundle over OpenSSH (default from Linux) | Copy `$STAGE_DIR/.` as above, then 4.11 |
+| Staged bundle over WinRM (default from Windows) | `Copy-Item -ToSession` as above, then 4.11 |
+| Windows OpenSSH, single PE | 4.1 SCP / SSH pipe |
 | Domain admin workstation + admin share | 4.2 SMB / `Copy-Item` / `net use` |
-| WinRM enabled | 4.3 PowerShell remoting |
+| WinRM, single PE or `-FilePath` script | 4.3 PowerShell remoting |
 | Target can reach operator HTTP | 4.4 `Invoke-WebRequest` / `curl.exe` / BITS |
 | RDP session | 4.5 drive redirect / clipboard / TS client share |
 | Need remote service create / interactive cmd (high noise) | 4.6 PsExec-style |
 | Impacket / remote Windows tooling on Linux | 4.7 smbclient.py / evil-winrm / psexec.py |
 | Text-only channel | 4.8 certutil / FromBase64String |
-| Custom `.exe` blocked (AppLocker/WDAC) | 4.10 script-only |
+| Existing FTP / WebDAV | 4.9 |
+| Custom `.exe` blocked (AppLocker/WDAC/AV) | 4.10 script-only |
 | Need integrity check | 4.11 verify |
 
 ### 4.1 SCP / OpenSSH on Windows

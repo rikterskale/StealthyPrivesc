@@ -27,6 +27,12 @@ commands until the authorization step is complete.
 
 ## Choose one installation path
 
+These paths install or build the tool on the **operator / build workstation**.
+They are not a target-drop procedure. Do not run `scripts/install.sh` or
+`scripts/install.ps1` on an assessment host — that hits GitHub and writes a
+well-known path. To put a reviewed kit on Linux or Windows, stage a bundle and
+copy it: [Get the kit onto a host](runbook/delivery.md).
+
 ### Path A — published release (recommended)
 
 Use this when you want the quickest operator setup and do not need to modify
@@ -65,8 +71,8 @@ kits are release-supported; see the [Support Policy](support-policy.md).
 
 If `curl` is unavailable, download the installer with an approved alternative
 and still review it before execution. If the release installer cannot be used,
-use Path B or the script fallback described in the
-[Operator Runbook](operator-runbook.md).
+use Path B or the script fallback described in
+[Delivery](runbook/delivery.md) and the [Operator Runbook](operator-runbook.md).
 
 #### Windows PowerShell
 
@@ -132,7 +138,8 @@ $Stealthy = (Resolve-Path .\target\release\stealthy.exe).Path
 ```
 
 For cross-compilation, release packaging, and script-only fallbacks, see
-[Build Instructions](build.md) and the [Operator Runbook](operator-runbook.md).
+[Build Instructions](build.md). To put a kit on a target, see
+[Delivery](runbook/delivery.md) and the [Operator Runbook](operator-runbook.md).
 
 ## Verify before the first host action
 
@@ -169,8 +176,8 @@ Do not invent the next command. Continue to the
 authorization, plugin discovery, first scan, output, and recovery sequence.
 
 For a shorter explanation of the same workflow, use the
-[User Guide](user-guide.md). For deployment to another Linux or Windows host,
-use the [Operator Runbook](operator-runbook.md).
+[User Guide](user-guide.md). For deployment to another Linux or Windows host, start with
+[Delivery](runbook/delivery.md) and the [Operator Runbook](operator-runbook.md).
 
 ## Guided troubleshooting
 
@@ -397,8 +404,8 @@ msbuild scripts\windows\EnumTasks.csproj
 
 On Defender-on lab laptops, keep the kit out of `%TEMP%`, prefer an org-signed
 PE when available, and use a lab path exclusion for the kit directory when ROE
-allows. See the Windows drop-path section in the
-[Operator Runbook](operator-runbook.md).
+allows. See the Windows drop-path section in
+[Delivery](runbook/delivery.md) and the [Operator Runbook](operator-runbook.md).
 
 After a successful PE run on Windows/Linux, still collect control inventory:
 

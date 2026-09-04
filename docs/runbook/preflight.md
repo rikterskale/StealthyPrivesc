@@ -9,7 +9,8 @@ for expanded transport and evidence notes.
 - Written ROE covers the target, account/context, local enumeration, and
   evidence handling.
 - The target identifier, approved transport, drop path, and cleanup owner are
-  known.
+  known. How the kit reaches the host is documented in
+  [Delivery](delivery.md).
 - The first run will be enumerate-only and memory-only unless evidence policy
   requires otherwise.
 - Any `--auto-exploit` use has separate approval, maintenance awareness, and a

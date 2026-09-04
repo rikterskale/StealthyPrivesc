@@ -252,5 +252,6 @@ Phase 5.
   coverage, and do not claim native equivalence.
 
 For shorter onboarding, see [First-User Journey](first-user-journey.md). For
+getting a kit onto a host, see [Delivery](runbook/delivery.md). For full
 deployment recipes and incident-safe stop conditions, see the
 [Operator Runbook](operator-runbook.md).

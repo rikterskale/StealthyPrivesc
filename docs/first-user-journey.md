@@ -6,7 +6,8 @@ useful scan, and know what to do next without guessing.
 
 For installation details, use [Installation](installation.md). For command
 choices and evidence handling, use the [User Guide](user-guide.md). For remote
-deployment, use the [Operator Runbook](operator-runbook.md).
+deployment, start with [Delivery](runbook/delivery.md) and the
+[Operator Runbook](operator-runbook.md).
 
 ## Goals
 
@@ -26,7 +27,8 @@ send findings over the network.
 
 - [Installation](installation.md) — install a release or build from source
 - [User Guide](user-guide.md) — follow the guided operator workflow
-- [Operator Runbook](operator-runbook.md) — deploy to a remote Linux or Windows host
+- [Delivery](runbook/delivery.md) — stage a bundle and copy it to a remote host
+- [Operator Runbook](operator-runbook.md) — full transport recipes and target run steps
 - `stealthy guide` — print the in-product first-run guide
 - `scripts/` — approved script fallbacks when the binary cannot run
 
@@ -222,8 +224,8 @@ The first-user journey is complete when the operator has:
 - Stored any sealed-report key separately
 - Recorded the run ID, artifact hash, command, and cleanup decision
 
-For remote targets, continue with the deployment and cleanup checklists in the
-[Operator Runbook](operator-runbook.md).
+For remote targets, continue with [Delivery](runbook/delivery.md) and the
+deployment and cleanup checklists in the [Operator Runbook](operator-runbook.md).
 
 ## CI contract
 

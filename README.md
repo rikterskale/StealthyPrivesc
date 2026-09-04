@@ -263,6 +263,7 @@ See [`docs/build.md`](docs/build.md).
 
 ## Operator docs
 
+- [`docs/runbook/delivery.md`](docs/runbook/delivery.md) — get the kit onto a Linux or Windows host
 - [`docs/operator-runbook.md`](docs/operator-runbook.md) — comprehensive copy-paste deploy & run steps (Linux + Windows)
 - [`docs/architecture.md`](docs/architecture.md) — module layout and data flow
 - [`docs/architecture-diagram.md`](docs/architecture-diagram.md) — end-to-end visual architecture

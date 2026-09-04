@@ -2,7 +2,8 @@
 
 This is the guided, low-friction workflow for a first-time operator. It
 assumes the binary is already installed or built. If it is not, start with the
-[Installation Guide](installation.md). For remote deployment, use the
+[Installation Guide](installation.md). For putting the kit on a remote host,
+start with [Delivery](runbook/delivery.md). For full transport recipes, use the
 [Operator Runbook](operator-runbook.md).
 
 The workflow has one deliberate pause: confirm written authorization before
@@ -302,5 +303,6 @@ Before closing the host, confirm:
 | Binary blocked | Record via `*.endpoint_controls` / script fallbacks; prefer staged `run.sh` / `run.ps1` (Linux: `python → bash → sh → perl`; Windows: `powershell → jscript → msbuild`). Direct `enum.*` scripts are for troubleshooting. `--allow-techniques endpoint-bypass` = alternate-path + approved-fixture validation (non-interference). AMSI/ETW/AV-EDR interference uses evasion IDs with `--confirm-evasion` when ROE permits. |
 | Plugin error | Preserve the error/coverage record and rerun only the affected plugin if approved. |
 
-For transport, cross-compilation, and script-only deployment, continue with the
-[Operator Runbook](operator-runbook.md).
+For putting the kit on a remote Linux or Windows host, start with
+[Delivery](runbook/delivery.md). For transport variants, cross-compilation, and
+script-only recipes, continue with the [Operator Runbook](operator-runbook.md).

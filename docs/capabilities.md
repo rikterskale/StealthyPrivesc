@@ -19,7 +19,8 @@ First-user journey contract: [`docs/first-user-journey.md`](first-user-journey.m
 
 Report contract: [`docs/report-schema.md`](report-schema.md)
 
-Operator deploy/runbook: [`docs/operator-runbook.md`](operator-runbook.md)
+Operator deploy/runbook: [`docs/runbook/delivery.md`](runbook/delivery.md),
+[`docs/operator-runbook.md`](operator-runbook.md)
 
 ## Initial MVP capabilities
 

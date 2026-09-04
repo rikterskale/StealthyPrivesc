@@ -320,9 +320,12 @@ closeout action.
 stealthy stage --os linux --arch x86_64 --target-hostname target-a --out ./drop --binary ./target/release/stealthy
 stealthy verify --path ./drop/cache-update --expect-sha256 HEX
 stealthy one-liners --os linux --transport ssh
+stealthy one-liners --os windows --transport winrm
 ```
 
 Operator-workstation delivery helpers (no host enumeration; no auth gate).
+The operator catalog for getting a staged bundle onto a host is
+[Get the kit onto a host](runbook/delivery.md).
 `stage` also emits `scripts/run.sh` or `scripts/run.ps1` and a
 `stealthy-run.conf` dispatcher manifest describing the approved fallback path.
 When `--binary` is omitted, `stage` creates an explicit `bundle_mode=script-only`
@@ -350,6 +353,10 @@ the same way. Script tiers are reduced coverage: only auth and `--json` /
 applied. The dispatcher does not itself approve AppLocker, WDAC, SmartScreen,
 AppArmor, SELinux, or `noexec`; if the selected interpreter is not already
 allowed, that tier is skipped and the next approved host is tried.
+
+`one-liners` transports: Linux `ssh` / `scp` / `http` / `smb`; Windows `ssh` /
+`scp` / `winrm` / `smb` / `http`. Snippets are placeholders — stage a bundle
+first, then replace host and drop path from the engagement worksheet.
 
 ## `report`
 

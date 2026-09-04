@@ -11,6 +11,7 @@ variant.
 | --- | --- | --- |
 | Confirm scope, identity, and stop conditions | [Pre-flight](preflight.md) | [Runbook sections 0–0.3](../operator-runbook.md#0-pre-flight-do-this-every-time) |
 | Build, verify, and package an artifact | [Build and package](build-and-package.md) | [Runbook section 1](../operator-runbook.md#1-build-matrix-operator-workstation) |
+| Get the kit onto a Linux or Windows host | [Delivery](delivery.md) | [Runbook sections 1.7, 2, and 4](../operator-runbook.md#17-stage-a-drop-bundle-preferred-unit-of-copy) |
 | Deploy and run on Linux or Windows | [Target operations](targets.md) | [Runbook sections 2–5](../operator-runbook.md#2-deploy-to-a-linux-target) |
 | Export, review, clean up, or recover | [Evidence and recovery](evidence-and-recovery.md) | [Runbook sections 6.7–11](../operator-runbook.md#67-automation-and-ci-contract) |
 
@@ -19,9 +20,10 @@ variant.
 1. Complete [Pre-flight](preflight.md) and confirm the ROE.
 2. Use [Build and package](build-and-package.md) to select one reviewed
    artifact and record its provenance and hash.
-3. Follow [Target operations](targets.md) for the smallest approved deployment
-   and enumerate-only baseline.
-4. Use [Evidence and recovery](evidence-and-recovery.md) to validate output,
+3. Use [Delivery](delivery.md) to stage a drop bundle and copy it over the
+   approved transport. Do not run the GitHub installers on the target.
+4. Follow [Target operations](targets.md) for the enumerate-only baseline.
+5. Use [Evidence and recovery](evidence-and-recovery.md) to validate output,
    handle keys, close the host, or recover from interruption.
 
 The authorization flag is an acknowledgment, not written permission. If a
