@@ -1498,29 +1498,82 @@ fn dispatcher_falls_back_when_primary_exits_126() {
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "stderr={stderr}\nstdout={}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    assert!(stderr.contains("primary launch blocked"));
-    assert!(
-        stderr.contains("trying approved python fallback")
-            || stderr.contains("trying approved bash fallback")
-            || stderr.contains("trying approved sh fallback")
-            || stderr.contains("trying approved perl fallback"),
-        "stderr={stderr}"
-    );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
+    assert!(
+        !stderr.contains("primary launch blocked"),
+        "quiet dispatch should not advertise the block: {stderr}"
+    );
+    assert!(
+        !stderr.contains("trying approved") && !stderr.contains("trying next host"),
+        "quiet dispatch should not spray host banners: {stderr}"
+    );
     assert!(
         stdout.contains("\"coverage_mode\"") || stdout.contains("schema_version"),
+        "stdout={stdout}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+    assert_eq!(
+        report
+            .get("primary_launch")
+            .and_then(|value| value.as_str()),
+        Some("blocked"),
         "stdout={stdout}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn dispatcher_chains_past_blocked_first_fallback() {
+fn dispatcher_verbose_banners_when_requested() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 126\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.path().join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .arg("--authorized")
+        .arg("--json")
+        .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
+        .env("STEALTHY_DISPATCHER_VERBOSE", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stderr={stderr}\nstdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(stderr.contains("primary launch blocked"), "stderr={stderr}");
+    assert!(stderr.contains("trying approved"), "stderr={stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_stops_after_blocked_fallback() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
@@ -1549,7 +1602,6 @@ fn dispatcher_chains_past_blocked_first_fallback() {
         .unwrap();
     assert!(stage.status.success());
 
-    // Force python tier to look available but blocked so the chain continues.
     std::fs::write(
         out.join("scripts/enum.py"),
         "#!/usr/bin/env python3\nimport sys\nsys.exit(126)\n",
@@ -1587,27 +1639,85 @@ fn dispatcher_chains_past_blocked_first_fallback() {
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "stderr={stderr}\nstdout={}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    assert!(
-        stderr.contains("trying approved python fallback"),
-        "stderr={stderr}"
-    );
-    assert!(
-        stderr.contains("python fallback blocked") && stderr.contains("trying next host"),
-        "stderr={stderr}"
-    );
-    assert!(
-        stderr.contains("trying approved bash fallback"),
-        "stderr={stderr}"
-    );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(126),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("StealthyPrivesc Linux shell enum") && !stdout.contains("LEGAL"),
+        "blocked python must not continue into bash: stdout={stdout}"
+    );
+    assert!(
+        !stderr.contains("trying next host") && !stderr.contains("trying approved bash"),
+        "stderr={stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_skips_unavailable_fallback_host() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("drop");
+    let bin = dir.path().join("fakebin");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 126\n").unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let ledger = dir.path().join("ledger");
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            ledger.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(stage.status.success());
+    let _ = std::fs::remove_file(out.join("scripts/enum.py"));
+
+    let conf = out.join("scripts/stealthy-run.conf");
+    let mut manifest = std::fs::read_to_string(&conf).unwrap();
+    manifest = manifest
+        .lines()
+        .map(|line| {
+            if line.starts_with("linux_fallbacks=") {
+                "linux_fallbacks=python,bash".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !manifest.ends_with('\n') {
+        manifest.push('\n');
+    }
+    std::fs::write(&conf, manifest).unwrap();
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .arg("--authorized")
+        .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
     assert!(
         stdout.contains("StealthyPrivesc Linux shell enum") || stdout.contains("LEGAL"),
-        "stdout={stdout}"
+        "missing python should continue to bash: stdout={stdout}"
     );
 }
 
@@ -1652,12 +1762,18 @@ fn dispatcher_falls_back_on_signal_death() {
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
     assert!(
-        output.status.success(),
-        "stderr={stderr}\nstdout={}",
-        String::from_utf8_lossy(&output.stdout)
+        !stderr.contains("primary launch blocked"),
+        "quiet dispatch should not advertise the block: {stderr}"
     );
-    assert!(stderr.contains("primary launch blocked"), "stderr={stderr}");
+    assert!(
+        stdout.contains("\"coverage_mode\"")
+            || stdout.contains("schema_version")
+            || stdout.contains("primary_launch"),
+        "stdout={stdout}"
+    );
 }
 
 #[cfg(unix)]
@@ -1720,12 +1836,8 @@ fn dispatcher_script_first_true_skips_primary() {
     assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
     assert!(!marker.exists(), "primary should not have run");
     assert!(
-        stderr.contains("skipping primary (script-first=true)"),
-        "stderr={stderr}"
-    );
-    assert!(
-        stderr.contains("script-first; trying approved"),
-        "stderr={stderr}"
+        !stderr.contains("skipping primary") && !stderr.contains("trying approved"),
+        "quiet script-first should not banner: {stderr}"
     );
     assert!(stdout.contains("skipped-script-first"), "stdout={stdout}");
 }
@@ -1757,8 +1869,8 @@ fn dispatcher_script_first_auto_skips_when_sensor_runs() {
     assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
     assert!(!marker.exists(), "primary should not have run under auto");
     assert!(
-        stderr.contains("skipping primary (comm="),
-        "stderr={stderr}"
+        !stderr.contains("skipping primary"),
+        "quiet auto script-first should not banner: {stderr}"
     );
     assert!(stdout.contains("skipped-sensor"), "stdout={stdout}");
 }

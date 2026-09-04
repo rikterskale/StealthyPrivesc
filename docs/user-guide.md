@@ -300,7 +300,7 @@ Before closing the host, confirm:
 | No plugins matched | Run `--authorized list-plugins`; use exact OS-specific IDs. |
 | Output path error | Add `--output-path` with `--output file`; verify the parent directory is approved and writable. |
 | Sealed report will not open | Use the exact key from that run; if it was never captured, the file is unrecoverable. |
-| Binary blocked | Record via `*.endpoint_controls` / script fallbacks; prefer staged `run.sh` / `run.ps1` (Linux: `python → bash → sh → perl`; Windows: `python → pwsh → powershell → git → jscript → msbuild`). Direct `enum.*` scripts are for troubleshooting. `--allow-techniques endpoint-bypass` = alternate-path + approved-fixture validation (non-interference). AMSI/ETW/AV-EDR interference uses evasion IDs with `--confirm-evasion` when ROE permits. |
+| Binary blocked | Record via `*.endpoint_controls` / script fallbacks; prefer staged `run.sh` / `run.ps1` (Linux: `python → bash → sh → perl`; Windows: `python → pwsh → powershell → git → jscript → msbuild`). A blocked launch stops the walk; missing interpreters are skipped. Direct `enum.*` scripts are for troubleshooting. `--allow-techniques endpoint-bypass` = alternate-path + approved-fixture validation (non-interference). AMSI/ETW/AV-EDR interference uses evasion IDs with `--confirm-evasion` when ROE permits. |
 | Plugin error | Preserve the error/coverage record and rerun only the affected plugin if approved. |
 
 For putting the kit on a remote Linux or Windows host, start with

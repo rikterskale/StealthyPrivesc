@@ -23,7 +23,9 @@ primary_binary=stealthy
 # is observed. true: always start on approved script hosts. false: try the
 # primary first. STEALTHY_SCRIPT_FIRST overrides this at dispatch time.
 script_first=auto
-# Ordered hosts tried after a skipped or blocked primary. Script tiers are
+# Ordered hosts tried after a skipped or blocked primary. Missing hosts are
+# skipped; a launched host that is blocked stops the walk. Script tiers are
 # fixed enumerate-only reduced coverage (only auth + --json are forwarded).
+# STEALTHY_DISPATCHER_VERBOSE=1 restores dispatcher banners.
 linux_fallbacks=python,bash,sh,perl
 windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild

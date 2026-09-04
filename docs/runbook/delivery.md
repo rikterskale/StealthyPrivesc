@@ -134,6 +134,11 @@ PE/ELF. Override with `script_first=false` in the manifest or
 skip a Windows PE; Microsoft Defender for Endpoint (`MsSense`) and third-party
 sensors do.
 
+After a launched host is blocked, the dispatcher stops. It does not retry the
+primary hash or walk the remaining fallback list. Missing interpreters are
+still skipped. Set `STEALTHY_DISPATCHER_VERBOSE=1` only when debugging the
+dispatch path.
+
 ## Linux method catalog
 
 Copy the **staged directory** (`drop-linux/.`) unless the method is

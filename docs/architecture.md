@@ -90,8 +90,10 @@ when a live endpoint sensor is observed (Linux also skips on a `noexec` drop
 mount). `script_first=true` always starts on script hosts;
 `script_first=false` or `STEALTHY_SCRIPT_FIRST=false` restores try-primary-first.
 When the primary is skipped or blocked (missing, not executable, exit 126/127,
-signal death, or vanished after launch), the dispatcher walks the list and
-continues to the next host if a tier is itself blocked. Script tiers are fixed
+signal death, or vanished after launch), the dispatcher walks the list only
+to find an available interpreter. A launched fallback that is itself blocked
+stops the walk; the primary is never retried. Dispatcher banners are silent
+unless `STEALTHY_DISPATCHER_VERBOSE=1`. Script tiers are fixed
 enumerate-only reduced coverage: only authorization and `--json` / `-Json` are
 forwarded from the binary CLI (`--profile`, `--plugins`, and similar flags are
 not applied). Weaker tiers declare honest reduced `capability_delta`. Stronger

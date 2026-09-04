@@ -6,6 +6,9 @@
 # Fallback hosts are fixed enumerate-only reduced coverage. Only auth
 # (via STEALTHY_AUTHORIZED) and --json / -Json are forwarded; binary flags
 # such as --profile / --plugins are not applied to script hosts.
+# Missing interpreters are skipped. A launched host that is blocked
+# (126/127/signal) stops the walk; the primary is never retried.
+# Dispatcher banners are silent unless STEALTHY_DISPATCHER_VERBOSE=1.
 [CmdletBinding(PositionalBinding = $false)]
 param(
   [string]$Manifest = $(if ($env:STEALTHY_MANIFEST) { $env:STEALTHY_MANIFEST } else { Join-Path $PSScriptRoot 'stealthy-run.conf' }),
@@ -96,6 +99,15 @@ function Restore-DispatcherEnvironment {
     }
   }
 }
+function Test-DispatcherVerbose {
+  $raw = [string]$env:STEALTHY_DISPATCHER_VERBOSE
+  return $raw -in @('1', 'true', 'TRUE', 'yes', 'YES')
+}
+function Write-DispatcherLog([string]$Message) {
+  if (Test-DispatcherVerbose) {
+    [Console]::Error.WriteLine("dispatcher: $Message")
+  }
+}
 try {
 $env:STEALTHY_AUTHORIZED = '1'
 
@@ -184,7 +196,7 @@ if ($bundleMode -eq 'script-only') {
   }
 }
 if ($skipPrimary -and $bundleMode -ne 'script-only') {
-  [Console]::Error.WriteLine("dispatcher: skipping primary ($skipReason); using approved script hosts")
+  Write-DispatcherLog "skipping primary ($skipReason); using approved script hosts"
   $primary = $null
 }
 
@@ -192,11 +204,11 @@ if (-not $skipPrimary -and -not $useInPlace -and $primarySrc -and (Test-Path -Li
   try {
     Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
     if (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
-      [Console]::Error.WriteLine("dispatcher: primary copy vanished after write (possible AV quarantine): $primary")
+      Write-DispatcherLog "primary copy vanished after write (possible AV quarantine): $primary"
       $primary = $null
     }
   } catch {
-    [Console]::Error.WriteLine("dispatcher: primary copy failed (possible AV block): $($_.Exception.Message)")
+    Write-DispatcherLog "primary copy failed (possible AV block): $($_.Exception.Message)"
     $primary = $null
   }
 }
@@ -285,10 +297,21 @@ function Resolve-GitBash {
 
 function Write-FallbackBanner([string]$Label) {
   switch ($dispatchReason) {
-    'script-only' { [Console]::Error.WriteLine("dispatcher: script-only bundle; trying approved $Label fallback") }
-    'script-first' { [Console]::Error.WriteLine("dispatcher: script-first; trying approved $Label fallback") }
-    default { [Console]::Error.WriteLine("dispatcher: primary executable blocked; trying approved $Label fallback") }
+    'script-only' { Write-DispatcherLog "script-only bundle; trying approved $Label fallback" }
+    'script-first' { Write-DispatcherLog "script-first; trying approved $Label fallback" }
+    default { Write-DispatcherLog "primary executable blocked; trying approved $Label fallback" }
   }
+}
+
+function Complete-FallbackLaunch([int]$Status) {
+  if ($Status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
+  if (Test-BlockStatus $Status) {
+    Write-DispatcherLog "fallback blocked (exit $Status); stopping"
+    Restore-DispatcherEnvironment
+    exit 126
+  }
+  Restore-DispatcherEnvironment
+  exit $Status
 }
 
 function Invoke-ApprovedFallback {
@@ -303,12 +326,12 @@ function Invoke-ApprovedFallback {
       'python' {
         $script = Resolve-FallbackPath 'enum.py'
         if (-not $script) {
-          [Console]::Error.WriteLine('dispatcher: skipping python fallback (enum.py missing)')
+          Write-DispatcherLog 'skipping python fallback (enum.py missing)'
           break
         }
         $python = Resolve-PythonCommand
         if (-not $python) {
-          [Console]::Error.WriteLine('dispatcher: skipping python fallback (python.exe/py.exe unavailable)')
+          Write-DispatcherLog 'skipping python fallback (python.exe/py.exe unavailable)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'python-fallback'
@@ -320,26 +343,20 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: python fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "python fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: python fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       'pwsh' {
         $script = Resolve-FallbackPath 'enum.ps1'
         if (-not $script) {
-          [Console]::Error.WriteLine('dispatcher: skipping pwsh fallback (enum.ps1 missing)')
+          Write-DispatcherLog 'skipping pwsh fallback (enum.ps1 missing)'
           break
         }
         $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
         if (-not $pwsh) {
-          [Console]::Error.WriteLine('dispatcher: skipping pwsh fallback (pwsh.exe unavailable)')
+          Write-DispatcherLog 'skipping pwsh fallback (pwsh.exe unavailable)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'pwsh-fallback'
@@ -352,26 +369,20 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: pwsh fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "pwsh fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: pwsh fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       'git' {
         $script = Resolve-FallbackPath 'enum-git.sh'
         if (-not $script) {
-          [Console]::Error.WriteLine('dispatcher: skipping git fallback (enum-git.sh missing)')
+          Write-DispatcherLog 'skipping git fallback (enum-git.sh missing)'
           break
         }
         $gitBash = Resolve-GitBash
         if (-not $gitBash) {
-          [Console]::Error.WriteLine('dispatcher: skipping git fallback (Git bash unavailable)')
+          Write-DispatcherLog 'skipping git fallback (Git bash unavailable)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'git-fallback'
@@ -383,21 +394,15 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: git fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "git fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: git fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       'powershell' {
         $script = Resolve-FallbackPath 'enum.ps1'
         if (-not $script) {
-          [Console]::Error.WriteLine('dispatcher: skipping powershell fallback (enum.ps1 missing)')
+          Write-DispatcherLog 'skipping powershell fallback (enum.ps1 missing)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
@@ -409,26 +414,20 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: powershell fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "powershell fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: powershell fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       'jscript' {
         $script = Resolve-FallbackPath 'enum.js'
         if (-not $script) {
-          [Console]::Error.WriteLine('dispatcher: skipping jscript fallback (enum.js missing)')
+          Write-DispatcherLog 'skipping jscript fallback (enum.js missing)'
           break
         }
         $cscript = Get-Command cscript.exe -ErrorAction SilentlyContinue
         if (-not $cscript) {
-          [Console]::Error.WriteLine('dispatcher: skipping jscript fallback (cscript.exe unavailable)')
+          Write-DispatcherLog 'skipping jscript fallback (cscript.exe unavailable)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'jscript-fallback'
@@ -440,31 +439,25 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: jscript fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "jscript fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: jscript fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       'msbuild' {
         $project = Resolve-FallbackPath 'EnumTasks.csproj'
         if (-not $project) {
-          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (EnumTasks.csproj missing)')
+          Write-DispatcherLog 'skipping msbuild fallback (EnumTasks.csproj missing)'
           break
         }
         $msbuild = Get-Command msbuild.exe -ErrorAction SilentlyContinue
         if (-not $msbuild) {
-          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (msbuild.exe unavailable)')
+          Write-DispatcherLog 'skipping msbuild fallback (msbuild.exe unavailable)'
           break
         }
         $msbuildPath = [string]$msbuild.Source
         if ($msbuildPath -notmatch '(?i)\\Program Files') {
-          [Console]::Error.WriteLine('dispatcher: skipping msbuild fallback (msbuild.exe is not under Program Files)')
+          Write-DispatcherLog 'skipping msbuild fallback (msbuild.exe is not under Program Files)'
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'
@@ -478,19 +471,13 @@ function Invoke-ApprovedFallback {
           $status = $LASTEXITCODE
           if ($null -eq $status) { $status = 0 }
         } catch {
-          [Console]::Error.WriteLine("dispatcher: msbuild fallback launch failed: $($_.Exception.Message)")
+          Write-DispatcherLog "msbuild fallback launch failed: $($_.Exception.Message)"
           $status = 126
         }
-        if ($status -eq 0) { Restore-DispatcherEnvironment; exit 0 }
-        if (Test-BlockStatus $status) {
-          [Console]::Error.WriteLine("dispatcher: msbuild fallback blocked (exit $status); trying next host")
-          break
-        }
-        Restore-DispatcherEnvironment
-        exit $status
+        Complete-FallbackLaunch $status
       }
       default {
-        [Console]::Error.WriteLine("dispatcher: ignoring unknown fallback '$fallback'")
+        Write-DispatcherLog "ignoring unknown fallback '$fallback'"
       }
     }
   }
@@ -506,17 +493,17 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
     $status = $LASTEXITCODE
     if ($null -eq $status) { $status = 0 }
     if (Test-BlockStatus $status) {
-      [Console]::Error.WriteLine("dispatcher: primary launch blocked (exit $status)")
+      Write-DispatcherLog "primary launch blocked (exit $status)"
       $primaryBlocked = $true
     } elseif (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
-      [Console]::Error.WriteLine('dispatcher: primary vanished after launch (possible quarantine)')
+      Write-DispatcherLog 'primary vanished after launch (possible quarantine)'
       $primaryBlocked = $true
     } else {
       Restore-DispatcherEnvironment
       exit $status
     }
   } catch {
-    [Console]::Error.WriteLine("dispatcher: primary launch failed: $($_.Exception.Message)")
+    Write-DispatcherLog "primary launch failed: $($_.Exception.Message)"
     $primaryBlocked = $true
   }
 } else {

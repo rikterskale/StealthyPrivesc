@@ -438,7 +438,10 @@ class UatRunner:
         self.require(value.get("coverage_mode") == "script", "fallback did not identify script coverage")
         self.require(bool(value.get("capability_delta")), "fallback omitted capability delta")
         if self.platform != "windows":
-            self.require("primary launch blocked" in completed.stderr, "blocked primary was not reported")
+            self.require(
+                value.get("primary_launch") == "blocked",
+                "blocked primary was not recorded in script JSON",
+            )
         return f"exit 0; execution_path={value.get('execution_path')}; coverage_mode=script; capability delta present"
 
     def stage_failure(self, root: Path, out: Path) -> subprocess.CompletedProcess[str]:

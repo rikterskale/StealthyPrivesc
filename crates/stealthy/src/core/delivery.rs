@@ -268,7 +268,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
              script_first=auto skips the PE when a live endpoint sensor is observed.\n\
              Set script_first=false (or STEALTHY_SCRIPT_FIRST=false) to try the PE first.\n\
-             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: python,pwsh,powershell,git,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
+             If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks until one host launches; a block stops the walk)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n  STEALTHY_DISPATCHER_VERBOSE=1 restores dispatcher banners.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             crate::core::opsec::BRAND,
@@ -284,7 +284,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              Empty drop_dir runs the ELF in place (no copy into .run-cache).\n\
              script_first=auto skips the ELF when a live sensor or noexec mount is observed.\n\
              Set script_first=false (or STEALTHY_SCRIPT_FIRST=false) to try the ELF first.\n\
-             If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
+             If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks until one host launches; a block stops the walk)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n  STEALTHY_DISPATCHER_VERBOSE=1 restores dispatcher banners.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             crate::core::opsec::BRAND,
             opts.os, opts.arch, opts.name, bundle_mode, hash, verification

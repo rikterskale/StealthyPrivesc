@@ -346,9 +346,11 @@ The manifest is not authorization evidence: the dispatcher requires a fresh
 `--authorized` flag or `STEALTHY_AUTHORIZED=1` at execution time. It binds to
 the current host. `script_first=auto` skips the primary when a live endpoint
 sensor (or Linux `noexec` mount) is observed; otherwise it tries the primary
-and walks only the manifest-approved fallback list after a launch failure
+and walks the manifest-approved fallback list after a launch failure
 (Windows default: `python,pwsh,powershell,git,jscript,msbuild`; Linux default:
-`python,bash,sh,perl`). `STEALTHY_SCRIPT_FIRST` overrides the manifest key.
+`python,bash,sh,perl`) until one host is launched. A blocked launch stops
+the walk. `STEALTHY_SCRIPT_FIRST` overrides the manifest key.
+`STEALTHY_DISPATCHER_VERBOSE=1` restores dispatcher banners.
 Windows bundles also declare the `windows-evasion` feature. It is not part of
 dispatcher fallback selection; the evasion module runs only when an operator
 opts into an evasion family and all three gates pass (`status=ready`).
@@ -357,16 +359,16 @@ On Windows, prefer staging outside `%TEMP%` — Defender often quarantines fresh
 copied unsigned PEs there. Org Authenticode signing (external to this tool)
 reduces SmartScreen/reputation friction; stage the signed binary with
 `--binary`. If the PE is missing or blocked (including signal death / vanished
-after launch), `run.ps1` walks `python → pwsh → powershell → git → jscript → msbuild` and continues
-when a tier is itself blocked. Linux `run.sh` walks `python → bash → sh → perl`
-the same way. Empty `drop_dir` (the staged default) runs the ELF or PE in
-place on both platforms unless `script_first` skips the primary; an explicit
-`drop_dir` still copies scripts, and copies the primary only when it will be
-launched. Script tiers are reduced coverage: only auth and `--json` /
-`-Json` are forwarded; binary flags such as `--profile` / `--plugins` are not
-applied. The dispatcher does not itself approve AppLocker, WDAC, SmartScreen,
-AppArmor, SELinux, or `noexec`; if the selected interpreter is not already
-allowed, that tier is skipped and the next approved host is tried.
+after launch), `run.ps1` walks `python → pwsh → powershell → git → jscript → msbuild`
+until an available host is launched. A blocked launch (126/127/signal) stops
+the walk; a missing interpreter is skipped. Linux `run.sh` walks
+`python → bash → sh → perl` the same way. Empty `drop_dir` (the staged default)
+runs the ELF or PE in place on both platforms unless `script_first` skips the
+primary; an explicit `drop_dir` still copies scripts, and copies the primary
+only when it will be launched. Script tiers are reduced coverage: only auth
+and `--json` / `-Json` are forwarded; binary flags such as `--profile` /
+`--plugins` are not applied. The dispatcher does not itself approve AppLocker,
+WDAC, SmartScreen, AppArmor, SELinux, or `noexec`.
 
 `one-liners` transports: Linux `ssh` / `scp` / `http` / `smb`; Windows `ssh` /
 `scp` / `winrm` / `smb` / `http`. Snippets are placeholders — stage a bundle

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- After a launched host is blocked (exit 126/127/signal), the dispatcher
+  stops instead of walking remaining fallbacks. Missing interpreters are
+  still skipped. Dispatcher banners are silent unless
+  `STEALTHY_DISPATCHER_VERBOSE=1`. The primary binary is never retried.
 - Staged dispatchers default to `script_first=auto`: skip the PE/ELF when a
   live endpoint sensor (or a Linux `noexec` drop mount) is observed, and start
   on approved script hosts instead. Set `script_first=false` or

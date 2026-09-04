@@ -61,6 +61,11 @@ def main() -> int:
     require(dispatcher, "Get-EndpointSensorReason", "dispatcher", failures)
     require(dispatcher, "skipped-sensor", "dispatcher", failures)
     require(dispatcher, "STEALTHY_SCRIPT_FIRST", "dispatcher", failures)
+    require(dispatcher, "STEALTHY_DISPATCHER_VERBOSE", "dispatcher", failures)
+    require(dispatcher, "Complete-FallbackLaunch", "dispatcher", failures)
+    require(dispatcher, "stopping", "dispatcher", failures)
+    if "trying next host" in dispatcher:
+        failures.append("dispatcher: blocked hosts must stop, not spray the next fallback")
     require(dispatcher, "Resolve-PythonCommand", "dispatcher", failures)
     require(dispatcher, "Resolve-GitBash", "dispatcher", failures)
     require(dispatcher, "pwsh.exe", "dispatcher", failures)

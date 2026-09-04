@@ -6,6 +6,9 @@
 # Fallback hosts are fixed enumerate-only reduced coverage. Only auth
 # (via STEALTHY_AUTHORIZED) and --json / --format json are forwarded;
 # binary flags such as --profile / --plugins are not applied to scripts.
+# Missing interpreters are skipped. A launched host that is blocked
+# (126/127/signal) stops the walk; the primary is never retried.
+# Dispatcher banners are silent unless STEALTHY_DISPATCHER_VERBOSE=1.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -81,6 +84,16 @@ if [[ "$authorized_arg" == false ]]; then
 fi
 export STEALTHY_AUTHORIZED=1
 
+dispatcher_verbose=false
+case "${STEALTHY_DISPATCHER_VERBOSE:-}" in
+  1|true|TRUE|yes|YES) dispatcher_verbose=true ;;
+esac
+dispatcher_log() {
+  if [[ "$dispatcher_verbose" == true ]]; then
+    echo "dispatcher: $*" >&2
+  fi
+}
+
 # True when /proc/self/mounts lists noexec on the longest prefix of $1.
 mount_has_noexec() {
   local target="$1"
@@ -133,9 +146,9 @@ detect_linux_sensor() {
 fallback_banner() {
   local label="$1"
   case "${dispatch_reason:-blocked}" in
-    script-only) echo "dispatcher: script-only bundle; trying approved $label fallback" >&2 ;;
-    script-first) echo "dispatcher: script-first; trying approved $label fallback" >&2 ;;
-    *) echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2 ;;
+    script-only) dispatcher_log "script-only bundle; trying approved $label fallback" ;;
+    script-first) dispatcher_log "script-first; trying approved $label fallback" ;;
+    *) dispatcher_log "primary executable blocked; trying approved $label fallback" ;;
   esac
 }
 
@@ -190,7 +203,7 @@ elif [[ "$script_first" == "auto" ]]; then
   fi
 fi
 if [[ "$skip_primary" == true && "$bundle_mode" != "script-only" ]]; then
-  echo "dispatcher: skipping primary ($skip_reason); using approved script hosts" >&2
+  dispatcher_log "skipping primary ($skip_reason); using approved script hosts"
   primary=""
 fi
 
@@ -200,10 +213,10 @@ if [[ "$skip_primary" != true && "$use_in_place" != true && -n "$primary_src" &&
   copy_status=$?
   set -e
   if [[ "$copy_status" -ne 0 ]]; then
-    echo "dispatcher: primary copy failed (possible AV block): $primary" >&2
+    dispatcher_log "primary copy failed (possible AV block): $primary"
     primary=""
   elif [[ ! -f "$primary" ]]; then
-    echo "dispatcher: primary copy vanished after write (possible AV quarantine): $primary" >&2
+    dispatcher_log "primary copy vanished after write (possible AV quarantine): $primary"
     primary=""
   fi
 fi
@@ -282,9 +295,8 @@ resolve_fallback_path() {
   return 1
 }
 
-# Returns 0 if the fallback should be treated as blocked (try next host).
-# Non-block script failures are terminal for that host attempt only when
-# status is not a block code — caller decides whether to continue.
+# Launch one approved fallback. A block status stops the dispatcher
+# (no further hosts). Missing interpreters are skipped by the caller.
 try_fallback() {
   local label="$1"
   local interpreter="$2"
@@ -316,8 +328,8 @@ try_fallback() {
     exit 0
   fi
   if is_block_status "$status"; then
-    echo "dispatcher: $label fallback blocked (exit $status); trying next host" >&2
-    return 0
+    dispatcher_log "$label fallback blocked (exit $status); stopping"
+    exit 126
   fi
   # Auth or fail-on style outcomes from the script itself.
   exit "$status"
@@ -330,10 +342,10 @@ if [[ -x "$primary" ]]; then
   status=$?
   set -e
   if is_block_status "$status"; then
-    echo "dispatcher: primary launch blocked (exit $status)" >&2
+    dispatcher_log "primary launch blocked (exit $status)"
     primary_blocked=true
   elif [[ ! -e "$primary" ]]; then
-    echo "dispatcher: primary vanished after launch (possible quarantine)" >&2
+    dispatcher_log "primary vanished after launch (possible quarantine)"
     primary_blocked=true
   else
     exit "$status"
@@ -352,54 +364,54 @@ for fallback in "${fallbacks[@]}"; do
   case "$fallback" in
     python)
       if ! command -v python3 >/dev/null 2>&1; then
-        echo "dispatcher: skipping python fallback (python3 unavailable)" >&2
+        dispatcher_log "skipping python fallback (python3 unavailable)"
         continue
       fi
       script="$(resolve_fallback_path enum.py || true)"
       if [[ -z "$script" ]]; then
-        echo "dispatcher: skipping python fallback (enum.py missing)" >&2
+        dispatcher_log "skipping python fallback (enum.py missing)"
         continue
       fi
       try_fallback python python3 "$script"
       ;;
     bash)
       if ! command -v bash >/dev/null 2>&1; then
-        echo "dispatcher: skipping bash fallback (bash unavailable)" >&2
+        dispatcher_log "skipping bash fallback (bash unavailable)"
         continue
       fi
       script="$(resolve_fallback_path enum.sh || true)"
       if [[ -z "$script" ]]; then
-        echo "dispatcher: skipping bash fallback (enum.sh missing)" >&2
+        dispatcher_log "skipping bash fallback (enum.sh missing)"
         continue
       fi
       try_fallback bash bash "$script"
       ;;
     sh)
       if ! command -v sh >/dev/null 2>&1; then
-        echo "dispatcher: skipping sh fallback (sh unavailable)" >&2
+        dispatcher_log "skipping sh fallback (sh unavailable)"
         continue
       fi
       script="$(resolve_fallback_path enum-posix.sh || true)"
       if [[ -z "$script" ]]; then
-        echo "dispatcher: skipping sh fallback (enum-posix.sh missing)" >&2
+        dispatcher_log "skipping sh fallback (enum-posix.sh missing)"
         continue
       fi
       try_fallback sh sh "$script"
       ;;
     perl)
       if ! command -v perl >/dev/null 2>&1; then
-        echo "dispatcher: skipping perl fallback (perl unavailable)" >&2
+        dispatcher_log "skipping perl fallback (perl unavailable)"
         continue
       fi
       script="$(resolve_fallback_path enum.pl || true)"
       if [[ -z "$script" ]]; then
-        echo "dispatcher: skipping perl fallback (enum.pl missing)" >&2
+        dispatcher_log "skipping perl fallback (enum.pl missing)"
         continue
       fi
       try_fallback perl perl "$script"
       ;;
     *)
-      echo "dispatcher: ignoring unknown fallback '$fallback'" >&2
+      dispatcher_log "ignoring unknown fallback '$fallback'"
       ;;
   esac
 done
