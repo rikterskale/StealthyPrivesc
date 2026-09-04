@@ -99,10 +99,15 @@ mod tests {
 
     #[test]
     fn lolbas_annotations_are_allowlisted_and_recommend_only() {
-        let annotation = lolbas_annotation(r#""C:\Windows\System32\certutil.exe" -urlcache"#)
-            .expect("certutil is allowlisted");
-        assert!(annotation.contains("lolbas.binary=certutil.exe"));
-        assert!(annotation.contains("recommend_only=true"));
+        let annotation = lolbas_annotation(r#""C:\Windows\System32\certutil.exe" -urlcache"#);
+        #[cfg(not(feature = "opsec-string-strip"))]
+        {
+            let annotation = annotation.expect("certutil is allowlisted");
+            assert!(annotation.contains("lolbas.binary=certutil.exe"));
+            assert!(annotation.contains("recommend_only=true"));
+        }
+        #[cfg(feature = "opsec-string-strip")]
+        assert!(annotation.is_none());
         assert!(lolbas_annotation(r"C:\Tools\ordinary.exe --check").is_none());
     }
 }
