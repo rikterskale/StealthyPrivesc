@@ -75,6 +75,7 @@ def write_dispatcher_example(stage, platform, binary_name):
         "target_username=\n"
         "drop_dir=\n"
         f"primary_binary={binary_name}\n"
+        "script_first=auto\n"
         f"shipped_features={'windows-evasion' if platform == 'windows' else ''}\n"
         f"{fallback_key}={fallback_value}\n"
     )

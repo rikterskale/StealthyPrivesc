@@ -1062,7 +1062,7 @@ When Defender is on and the kit PE is unsigned or newly written:
 2. Optionally add a **lab** path exclusion for that kit directory (`Add-MpPreference -ExclusionPath …`) when ROE and local policy allow. Automated exclusion helpers are Planned as a separate technique family — do not fold them into `endpoint-bypass`.
 3. Prefer an **org-signed** PE from your normal Authenticode workflow before staging (`Get-AuthenticodeSignature` should be `Valid`). The tool does not create certificates.
 4. Use `stage --name` with a bland basename when ROE wants lower static-string noise.
-5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (python → pwsh → powershell → git → jscript → msbuild). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
+5. If the PE is still quarantined or missing, run the staged dispatcher (`scripts\run.ps1`) so it can walk `windows_fallbacks` (python → pwsh → powershell → git → jscript → msbuild). `script_first=auto` already skips the PE when a live EDR sensor is observed (MDE Sense / third-party; not inbox Defender AV alone). Stronger interference (quarantine restore, service stop) is Planned under separate gated families — see `docs/techniques.md`.
 
 The operator-facing catalog of every method is [Get the kit onto a host](runbook/delivery.md). Prefer copying the **staged bundle** (section 1.7) rather than a lone `stealthy.exe`. Do not run `install.ps1` on the target.
 

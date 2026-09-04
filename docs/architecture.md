@@ -85,9 +85,13 @@ the staged dispatcher walks an ordered, manifest-approved host list:
 
 Empty `drop_dir` (the staged default) runs the primary in place on Linux and
 Windows. An explicit `drop_dir` copies the binary and fallback scripts first.
-When the primary is blocked (missing, not executable, exit 126/127, signal
-death, or vanished after launch), the dispatcher walks the list and continues
-to the next host if a tier is itself blocked. Script tiers are fixed
+`script_first=auto` (staged default) skips the primary — and does not copy it —
+when a live endpoint sensor is observed (Linux also skips on a `noexec` drop
+mount). `script_first=true` always starts on script hosts;
+`script_first=false` or `STEALTHY_SCRIPT_FIRST=false` restores try-primary-first.
+When the primary is skipped or blocked (missing, not executable, exit 126/127,
+signal death, or vanished after launch), the dispatcher walks the list and
+continues to the next host if a tier is itself blocked. Script tiers are fixed
 enumerate-only reduced coverage: only authorization and `--json` / `-Json` are
 forwarded from the binary CLI (`--profile`, `--plugins`, and similar flags are
 not applied). Weaker tiers declare honest reduced `capability_delta`. Stronger

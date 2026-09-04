@@ -1118,6 +1118,7 @@ fn stage_and_verify_local_bundle() {
     assert!(manifest.contains("operator_ack_required=true"));
     assert!(manifest.contains(&format!("target_hostname={}", target_hostname())));
     assert!(manifest.contains("primary_binary=cache-update"));
+    assert!(manifest.contains("script_first=auto"));
     assert!(manifest.contains("linux_fallbacks=python,bash,sh,perl"));
     assert!(out.join("scripts/enum-posix.sh").is_file());
     assert!(out.join("scripts/enum.pl").is_file());
@@ -1335,6 +1336,7 @@ fn linux_dispatcher_runs_primary_in_place_when_drop_dir_empty() {
         .arg(out.join("scripts/run.sh"))
         .args(["--authorized"])
         .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
         .output()
         .unwrap();
     assert!(
@@ -1398,6 +1400,7 @@ fn linux_dispatcher_copies_when_drop_dir_is_set() {
         .arg(out.join("scripts/run.sh"))
         .args(["--authorized"])
         .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
         .output()
         .unwrap();
     assert!(
@@ -1443,6 +1446,7 @@ fn stage_windows_manifest_lists_script_hosts() {
         String::from_utf8_lossy(&output.stderr)
     );
     let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
+    assert!(manifest.contains("script_first=auto"));
     assert!(manifest.contains("windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild"));
     assert!(out.join("scripts/enum.py").is_file());
     assert!(out.join("scripts/enum-git.sh").is_file());
@@ -1490,6 +1494,7 @@ fn dispatcher_falls_back_when_primary_exits_126() {
         .arg("--authorized")
         .arg("--json")
         .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1578,6 +1583,7 @@ fn dispatcher_chains_past_blocked_first_fallback() {
         .arg(out.join("scripts/run.sh"))
         .arg("--authorized")
         .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1642,6 +1648,7 @@ fn dispatcher_falls_back_on_signal_death() {
         .arg("--authorized")
         .arg("--json")
         .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "false")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1651,6 +1658,158 @@ fn dispatcher_falls_back_on_signal_death() {
         String::from_utf8_lossy(&output.stdout)
     );
     assert!(stderr.contains("primary launch blocked"), "stderr={stderr}");
+}
+
+#[cfg(unix)]
+fn stage_linux_marker_primary(
+    dir: &std::path::Path,
+    marker: &std::path::Path,
+) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let out = dir.join("drop");
+    let bin = dir.join("fakebin");
+    std::fs::write(
+        &bin,
+        format!("#!/bin/sh\necho ran > '{}'\nexit 0\n", marker.display()),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+    perms.set_mode(0o750);
+    std::fs::set_permissions(&bin, perms).unwrap();
+    let stage = stealthy()
+        .args([
+            "stage",
+            "--os",
+            "linux",
+            "--target-hostname",
+            target_hostname(),
+            "--out",
+            out.to_str().unwrap(),
+            "--binary",
+            bin.to_str().unwrap(),
+            "--ledger-dir",
+            dir.join("ledger").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        stage.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&stage.stderr)
+    );
+    out
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_script_first_true_skips_primary() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("primary-ran");
+    let out = stage_linux_marker_primary(dir.path(), &marker);
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized", "--json"])
+        .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "true")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
+    assert!(!marker.exists(), "primary should not have run");
+    assert!(
+        stderr.contains("skipping primary (script-first=true)"),
+        "stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("script-first; trying approved"),
+        "stderr={stderr}"
+    );
+    assert!(stdout.contains("skipped-script-first"), "stdout={stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_script_first_auto_skips_when_sensor_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("primary-ran");
+    let out = stage_linux_marker_primary(dir.path(), &marker);
+
+    let mut child = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import ctypes,time; ctypes.CDLL('libc.so.6').prctl(15, b'falcon-sensor', 0, 0, 0); time.sleep(30)")
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized", "--json"])
+        .env("STEALTHY_AUTHORIZED", "1")
+        .output();
+    let _ = child.kill();
+    let _ = child.wait();
+    let output = output.unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stderr={stderr}\nstdout={stdout}");
+    assert!(!marker.exists(), "primary should not have run under auto");
+    assert!(
+        stderr.contains("skipping primary (comm="),
+        "stderr={stderr}"
+    );
+    assert!(stdout.contains("skipped-sensor"), "stdout={stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn dispatcher_script_first_skips_primary_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("primary-ran");
+    let out = stage_linux_marker_primary(dir.path(), &marker);
+    let copy_dir = out.join("exec-copy");
+    let conf = out.join("scripts/stealthy-run.conf");
+    let mut manifest = std::fs::read_to_string(&conf).unwrap();
+    manifest = manifest
+        .lines()
+        .map(|line| {
+            if line.starts_with("drop_dir=") {
+                format!("drop_dir={}", copy_dir.display())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !manifest.ends_with('\n') {
+        manifest.push('\n');
+    }
+    std::fs::write(&conf, manifest).unwrap();
+
+    let output = std::process::Command::new("bash")
+        .arg(out.join("scripts/run.sh"))
+        .args(["--authorized", "--json"])
+        .env("STEALTHY_AUTHORIZED", "1")
+        .env("STEALTHY_SCRIPT_FIRST", "true")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stderr={stderr}\nstdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(!marker.exists());
+    assert!(
+        !copy_dir.join("cache-update").exists(),
+        "script-first must not copy the ELF"
+    );
+    assert!(
+        copy_dir.join("enum.py").is_file() || copy_dir.join("enum.sh").is_file(),
+        "scripts should still copy"
+    );
 }
 
 #[cfg(unix)]

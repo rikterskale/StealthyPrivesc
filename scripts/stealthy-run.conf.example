@@ -19,7 +19,11 @@ target_username=
 # the dispatcher should copy the binary and scripts to a separate directory.
 drop_dir=
 primary_binary=stealthy
-# Ordered hosts tried after a blocked primary. Script tiers are fixed
-# enumerate-only reduced coverage (only auth + --json are forwarded).
+# auto: skip the primary when a live endpoint sensor (or Linux noexec mount)
+# is observed. true: always start on approved script hosts. false: try the
+# primary first. STEALTHY_SCRIPT_FIRST overrides this at dispatch time.
+script_first=auto
+# Ordered hosts tried after a skipped or blocked primary. Script tiers are
+# fixed enumerate-only reduced coverage (only auth + --json are forwarded).
 linux_fallbacks=python,bash,sh,perl
 windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild

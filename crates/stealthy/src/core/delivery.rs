@@ -210,6 +210,7 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
          target_username={target_username}\n\
          drop_dir=\n\
          primary_binary={primary_binary}\n\
+         script_first=auto\n\
          shipped_features={shipped_features}\n\
          {os_key}_fallbacks={fallback_order}\n",
         os_key = if opts.os == "windows" {
@@ -265,6 +266,8 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              binary_sha256={}\n\n\
              {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n\n\
+             script_first=auto skips the PE when a live endpoint sensor is observed.\n\
+             Set script_first=false (or STEALTHY_SCRIPT_FIRST=false) to try the PE first.\n\
              If the PE is missing or quarantined by AV:\n  Prefer a non-TEMP drop path and a lab path exclusion / org-signed PE.\n  & ./scripts/run.ps1 --authorized --profile balanced enum\n  (dispatcher walks windows_fallbacks: python,pwsh,powershell,git,jscript,msbuild)\n  Script tiers are reduced coverage; only auth and --json/-Json are forwarded.\n\n\
              Lab tip: avoid %TEMP% for the kit; Public\\Documents\\<name> is quieter.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
@@ -279,6 +282,8 @@ pub fn stage(opts: StageOptions<'_>) -> Result<PathBuf> {
              {}\n\
              Enumerate (requires a fresh operator acknowledgment):\n  bash ./scripts/run.sh --authorized --profile balanced enum\n\n\
              Empty drop_dir runs the ELF in place (no copy into .run-cache).\n\
+             script_first=auto skips the ELF when a live sensor or noexec mount is observed.\n\
+             Set script_first=false (or STEALTHY_SCRIPT_FIRST=false) to try the ELF first.\n\
              If the ELF is missing or blocked:\n  bash ./scripts/run.sh --authorized --profile balanced enum\n  (dispatcher walks linux_fallbacks: python,bash,sh,perl)\n  Script tiers are reduced coverage; only auth and --json are forwarded.\n\n\
              Cleanup:\n  stealthy cleanup --latest --secure-delete\n",
             crate::core::opsec::BRAND,
@@ -584,6 +589,7 @@ mod tests {
         let manifest = std::fs::read_to_string(out.join("scripts/stealthy-run.conf")).unwrap();
         assert!(manifest.contains("bundle_mode=native-with-fallbacks"));
         assert!(manifest.contains("primary_binary=stealthy"));
+        assert!(manifest.contains("script_first=auto"));
         assert!(!out.join("scripts/__pycache__").exists());
         let dispatcher = std::fs::read(out.join("scripts/run.sh")).unwrap();
         assert!(!dispatcher.windows(2).any(|pair| pair == b"\r\n"));

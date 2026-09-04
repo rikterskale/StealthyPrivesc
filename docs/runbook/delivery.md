@@ -126,6 +126,14 @@ the primary **in place** (no copy into `.run-cache` or a second scan path).
 Set `drop_dir` to an explicit directory only when the dispatcher should copy
 the binary and fallback scripts there.
 
+`script_first=auto` (also the staged default) skips that primary when a live
+endpoint sensor is present — Linux also skips when the drop mount is `noexec`.
+The dispatcher then starts on approved script hosts and does not copy the
+PE/ELF. Override with `script_first=false` in the manifest or
+`STEALTHY_SCRIPT_FIRST=false`. Inbox Microsoft Defender AV by itself does not
+skip a Windows PE; Microsoft Defender for Endpoint (`MsSense`) and third-party
+sensors do.
+
 ## Linux method catalog
 
 Copy the **staged directory** (`drop-linux/.`) unless the method is

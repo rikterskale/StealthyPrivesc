@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Staged dispatchers default to `script_first=auto`: skip the PE/ELF when a
+  live endpoint sensor (or a Linux `noexec` drop mount) is observed, and start
+  on approved script hosts instead. Set `script_first=false` or
+  `STEALTHY_SCRIPT_FIRST=false` to try the primary first. Inbox Defender AV
+  alone does not skip a Windows PE.
 - Windows live-controls Authenticode collection uses WinVerifyTrust, version
   resources, and Zone.Identifier in-process instead of spawning
   `powershell.exe` for signature inspection. AppLocker effective tests and

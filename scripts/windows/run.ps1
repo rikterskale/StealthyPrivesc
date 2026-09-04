@@ -102,6 +102,58 @@ $env:STEALTHY_AUTHORIZED = '1'
 $primaryName = if ($bundleMode -eq 'script-only') { $null } elseif ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
 $primarySrc = if ($primaryName) { Join-Path $bundleDir $primaryName } else { $null }
 
+function Get-ScriptFirstMode {
+  $raw = if ($env:STEALTHY_SCRIPT_FIRST) {
+    $env:STEALTHY_SCRIPT_FIRST
+  } elseif ($cfg.ContainsKey('script_first') -and $cfg.script_first) {
+    $cfg.script_first
+  } else {
+    'auto'
+  }
+  $raw = ([string]$raw).Trim().ToLowerInvariant()
+  if ($raw -notin @('auto', 'true', 'false')) {
+    throw "dispatcher: unsupported script_first value"
+  }
+  return $raw
+}
+
+function Get-EndpointSensorReason {
+  $names = @{
+    'csfalconservice' = 'falcon'
+    'csfalconcontainer' = 'falcon'
+    'sentinelagent' = 'sentinelone'
+    'sentinelhelperservice' = 'sentinelone'
+    'sentinelstaticengine' = 'sentinelone'
+    'cylancesvc' = 'cylance'
+    'cbagentd' = 'carbonblack'
+    'cbdefense' = 'carbonblack'
+    'repmgr' = 'trellix'
+    'mfetp' = 'trellix'
+    'elastic-agent' = 'elastic'
+    'elastic-endpoint' = 'elastic'
+    'mssense' = 'mde'
+    'sensecm' = 'mde'
+    'taniumclient' = 'tanium'
+    'cyserver' = 'cortex'
+    'traps' = 'cortex'
+    'sophoshealth' = 'sophos'
+    'savservice' = 'sophos'
+    'osqueryd' = 'osquery'
+    'wdavdaemon' = 'mdatp'
+    'falcon-sensor' = 'falcon'
+    'sentinelone-agent' = 'sentinelone'
+  }
+  try {
+    foreach ($proc in [System.Diagnostics.Process]::GetProcesses()) {
+      $n = $proc.ProcessName.ToLowerInvariant()
+      if ($names.ContainsKey($n)) { return $names[$n] }
+    }
+  } catch {
+    return $null
+  }
+  return $null
+}
+
 # Empty drop_dir (staged default) -> run PE in place to avoid a second AV scan event.
 $useInPlace = -not $cfg.ContainsKey('drop_dir') -or [string]::IsNullOrWhiteSpace($cfg.drop_dir)
 if ($useInPlace) {
@@ -111,17 +163,41 @@ if ($useInPlace) {
   $dropDir = $cfg.drop_dir
   New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
   $primary = if ($primaryName) { Join-Path $dropDir $primaryName } else { $null }
-  if ($primarySrc -and (Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
-    try {
-      Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
-      if (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
-        [Console]::Error.WriteLine("dispatcher: primary copy vanished after write (possible AV quarantine): $primary")
-        $primary = $null
-      }
-    } catch {
-      [Console]::Error.WriteLine("dispatcher: primary copy failed (possible AV block): $($_.Exception.Message)")
+}
+
+$scriptFirst = Get-ScriptFirstMode
+$skipPrimary = $false
+$skipReason = $null
+$dispatchReason = 'blocked'
+if ($bundleMode -eq 'script-only') {
+  $skipPrimary = $true
+  $dispatchReason = 'script-only'
+} elseif ($scriptFirst -eq 'true') {
+  $skipPrimary = $true
+  $skipReason = 'script-first=true'
+  $dispatchReason = 'script-first'
+} elseif ($scriptFirst -eq 'auto') {
+  $skipReason = Get-EndpointSensorReason
+  if ($skipReason) {
+    $skipPrimary = $true
+    $dispatchReason = 'script-first'
+  }
+}
+if ($skipPrimary -and $bundleMode -ne 'script-only') {
+  [Console]::Error.WriteLine("dispatcher: skipping primary ($skipReason); using approved script hosts")
+  $primary = $null
+}
+
+if (-not $skipPrimary -and -not $useInPlace -and $primarySrc -and (Test-Path -LiteralPath $primarySrc -PathType Leaf) -and ($primarySrc -ne $primary)) {
+  try {
+    Copy-Item -LiteralPath $primarySrc -Destination $primary -Force
+    if (-not (Test-Path -LiteralPath $primary -PathType Leaf)) {
+      [Console]::Error.WriteLine("dispatcher: primary copy vanished after write (possible AV quarantine): $primary")
       $primary = $null
     }
+  } catch {
+    [Console]::Error.WriteLine("dispatcher: primary copy failed (possible AV block): $($_.Exception.Message)")
+    $primary = $null
   }
 }
 
@@ -147,7 +223,15 @@ foreach ($file in @('enum.ps1', 'enum.py', 'enum-git.sh', 'enum.js', 'EnumTasks.
 $argsToRun = if ($Arguments) { @($Arguments) } else { @('--profile', 'balanced', 'enum') }
 $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
 $env:STEALTHY_EXECUTION_PATH = 'binary'
-$env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'ok' }
+$env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') {
+  'not_applicable'
+} elseif ($skipPrimary -and $scriptFirst -eq 'true') {
+  'skipped-script-first'
+} elseif ($skipPrimary) {
+  'skipped-sensor'
+} else {
+  'ok'
+}
 $isJson = ($argsToRun -contains '--json') -or ($argsToRun -contains '--format=json') -or (($argsToRun -contains '--format') -and ($argsToRun -contains 'json'))
 $approvedFallbacks = if ($cfg.windows_fallbacks) {
   @($cfg.windows_fallbacks.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -200,15 +284,19 @@ function Resolve-GitBash {
 }
 
 function Write-FallbackBanner([string]$Label) {
-  if ($bundleMode -eq 'script-only') {
-    [Console]::Error.WriteLine("dispatcher: script-only bundle; trying approved $Label fallback")
-  } else {
-    [Console]::Error.WriteLine("dispatcher: primary executable blocked; trying approved $Label fallback")
+  switch ($dispatchReason) {
+    'script-only' { [Console]::Error.WriteLine("dispatcher: script-only bundle; trying approved $Label fallback") }
+    'script-first' { [Console]::Error.WriteLine("dispatcher: script-first; trying approved $Label fallback") }
+    default { [Console]::Error.WriteLine("dispatcher: primary executable blocked; trying approved $Label fallback") }
   }
 }
 
 function Invoke-ApprovedFallback {
-  $env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'blocked' }
+  if ($bundleMode -eq 'script-only') {
+    $env:STEALTHY_PRIMARY_LAUNCH = 'not_applicable'
+  } elseif ($env:STEALTHY_PRIMARY_LAUNCH -notin @('skipped-sensor', 'skipped-script-first')) {
+    $env:STEALTHY_PRIMARY_LAUNCH = 'blocked'
+  }
   $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
   foreach ($fallback in $approvedFallbacks) {
     switch ($fallback) {
@@ -313,7 +401,7 @@ function Invoke-ApprovedFallback {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'powershell-fallback'
-        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved powershell fallback' } else { 'dispatcher: primary executable blocked; trying approved powershell fallback' }))
+        Write-FallbackBanner 'powershell'
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Authorized')
         if ($isJson) { $psArgs += '-Json' }
         try {
@@ -344,7 +432,7 @@ function Invoke-ApprovedFallback {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'jscript-fallback'
-        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved jscript fallback' } else { 'dispatcher: primary executable blocked; trying approved jscript fallback' }))
+        Write-FallbackBanner 'jscript'
         $jsArgs = @('//nologo', $script, '--authorized')
         if ($isJson) { $jsArgs += '--json' }
         try {
@@ -380,7 +468,7 @@ function Invoke-ApprovedFallback {
           break
         }
         $env:STEALTHY_EXECUTION_PATH = 'msbuild-fallback'
-        [Console]::Error.WriteLine($(if ($bundleMode -eq 'script-only') { 'dispatcher: script-only bundle; trying approved msbuild fallback' } else { 'dispatcher: primary executable blocked; trying approved msbuild fallback' }))
+        Write-FallbackBanner 'msbuild'
         try {
           if ($isJson) {
             & msbuild.exe $project /nologo /v:minimal /p:StealthyJson=true

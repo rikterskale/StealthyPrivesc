@@ -421,7 +421,16 @@ class UatRunner:
                 )
             )
             command = ["bash", str(out / "scripts/run.sh"), "--authorized", "--json"]
-            completed = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                env={**os.environ, "STEALTHY_AUTHORIZED": "1", "STEALTHY_SCRIPT_FIRST": "false"},
+            )
             digest = hashlib.sha256((str(completed.returncode) + "\0" + completed.stdout + "\0" + completed.stderr).encode()).hexdigest()
             self.current_evidence.append(CommandEvidence(command, completed.returncode, completed.stdout, completed.stderr, digest))
         self.expect(completed)

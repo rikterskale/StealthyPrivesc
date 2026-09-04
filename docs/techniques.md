@@ -40,8 +40,8 @@ approved-fixture validation).
 
 | Constraint | Approved path (today) |
 | --- | --- |
-| Linux ELF blocked / `noexec` / AppArmor | staged `run.sh` (`python → bash → sh → perl`) or direct `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl` |
-| Windows PE blocked (AppLocker/WDAC/SmartScreen/AV) | Dispatcher `run.ps1` (`python → pwsh → powershell → git → jscript → msbuild`), or `enum.py` / `enum.ps1` / `enum-git.sh` / `enum.js` / `EnumTasks.csproj` |
+| Linux ELF blocked / `noexec` / AppArmor | staged `run.sh` (`script_first=auto` skips the ELF when a sensor or `noexec` mount is present, then `python → bash → sh → perl`) or direct `enum.py` / `enum.sh` / `enum-posix.sh` / `enum.pl` |
+| Windows PE blocked (AppLocker/WDAC/SmartScreen/AV) | Dispatcher `run.ps1` (`script_first=auto` skips the PE when a live EDR sensor is present, then `python → pwsh → powershell → git → jscript → msbuild`), or `enum.py` / `enum.ps1` / `enum-git.sh` / `enum.js` / `EnumTasks.csproj` |
 | Defender/AV quarantines the staged PE | Prefer non-`TEMP` drop path + lab exclusion/signing; use dispatcher fallback. Use `av-edr-service` with `--confirm-evasion` for read-only product observation and the operator playbook when ROE permits |
 | PowerShell constrained but Python allowed | `enum.py` (`py -3` / `python.exe`) |
 | PowerShell constrained but Git for Windows allowed | `enum-git.sh` via Git bash |
