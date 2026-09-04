@@ -33,6 +33,7 @@ coverage as a limitation even when the process exits successfully.
 | --- | --- | --- |
 | First-time authorized operator | Confirm the tool is safe to start, run one useful baseline, and understand the result without guessing at flags. | `stealthy guide`, then `stealthy doctor` |
 | Red-team or penetration-test operator | Run a reproducible, scope-limited enumeration and prioritize findings for approved follow-up. | `stealthy --authorized list-plugins`, then `stealthy --authorized enum` |
+| Triage or remediation lead | Convert observed findings into explicit defer, validate, out-of-scope, or separately approved reversible-probe decisions. | `stealthy --authorized --checkpoint PATH enum --triage --triage-out decisions.json` |
 | CI or fleet-assessment engineer | Produce stable JSON or SARIF, inspect coverage, and enforce a severity threshold through exit status. | `stealthy --authorized --quiet --no-color --format json --output memory enum` |
 | Evidence custodian or reviewer | Retain a sealed report, keep its key separate, and render the evidence offline. | `stealthy report REPORT.seal --key-file REPORT.key` |
 | Deployment operator | Package and verify a target-specific kit, then use the native binary or an approved reduced-coverage fallback. | `stealthy stage`, `stealthy verify`, and the generated `OPERATOR.txt` |
@@ -142,7 +143,37 @@ Use an ID copied from Step 5 when a different question is in scope. The shell
 redirection is an intentional plaintext evidence write; handle the file under
 the engagement evidence policy.
 
-### 8. Retain sealed evidence when policy requires it
+### 8. Triage findings when a decision record is required
+
+Skip this step when the baseline report alone satisfies the engagement record.
+To create a checkpoint and a decisions template without enabling any probe:
+
+```bash
+"$STEALTHY" --authorized --checkpoint ./triage-checkpoint.json \
+  enum --triage --triage-out ./decisions.json
+```
+
+Observable result: the scan completes, `triage-checkpoint.json` contains the
+run report, and `decisions.json` contains schema version `"1"`, the same run
+ID, and eligible findings initially marked `defer`. In an interactive terminal,
+the command also accepts `probe`, `validate`, `defer`, `out_of_scope`, and
+`skip` decisions. In a non-interactive process it does not block waiting for
+input.
+
+Review and edit the decisions file under the ROE. Apply it only with its
+matching checkpoint:
+
+```bash
+"$STEALTHY" --authorized --checkpoint ./triage-checkpoint.json \
+  enum --approve-file ./decisions.json
+```
+
+Observable result: the command rejects unknown finding IDs or a mismatched run
+ID. `defer`, `validate`, and `out_of_scope` remain decisions rather than probe
+authorization. Only a `probe` decision for a known finding can authorize that
+finding's supported reversible probe.
+
+### 9. Retain sealed evidence when policy requires it
 
 Skip this step when the approved output policy is memory-only. Otherwise use
 separate approved paths for the report and key:
@@ -166,7 +197,7 @@ Confirm offline access before handoff:
 Observable result: exit `0` and valid report JSON. A key from another run, a
 modified sealed file, or a lost key cannot be recovered by the tool.
 
-### 9. Close out deliberately
+### 10. Close out deliberately
 
 For a memory-only run, record that no tool-managed artifact requires cleanup.
 If the workflow created a stage, checkpoint, or recorded output, inspect the
@@ -221,6 +252,9 @@ PowerShell paths with the same `--output file`, `--output-path`, and
 | The native binary is blocked after staging | The generated dispatcher reports the failed primary launch and tries only manifest-approved script hosts. Script output identifies `coverage_mode: "script"` and lists `capability_delta`. | Record the control and reduced coverage. Use the approved fallback; do not claim native equivalence. On Windows, prefer a reviewed non-`%TEMP%` path or organization-signed binary. |
 | A stage destination is unsafe | `stage` exits nonzero when `--out` exists and is non-empty or is not a directory. | Choose a new empty approved directory. Do not delete or overwrite an ambiguous path merely to make staging pass. |
 | A run is interrupted | A checkpointed run stops before all plugins complete. | Preserve the checkpoint and run `stealthy --authorized resume --checkpoint PATH`; completed `ok` plugins are skipped. Reject a corrupt or unrelated checkpoint. |
+| A triage decision references the wrong run or finding | The apply command exits nonzero and reports the mismatched run or unknown finding ID. | Keep the original checkpoint and decision file, correct the decision source, and rerun with the checkpoint that produced those finding IDs. Do not translate IDs by hand between runs. |
+| Interactive triage receives an empty or unrecognized answer | The candidate is recorded as `defer`; `skip` omits it from the decision list. | Review the resulting decision file. Rerun triage if the recorded action does not reflect the operator's intent. |
+| An evasion family is requested without the extra confirmation | The command exits nonzero instead of running the gated family. | Confirm that the ROE explicitly covers the named family, review its emitted/operator documentation, and rerun only with both `--allow-techniques ID` and `--confirm-evasion`. Otherwise leave it disabled. |
 
 ## Journey map
 
@@ -237,8 +271,19 @@ Phase 5.
 | J6 — Plugin discovery | Run `"$STEALTHY" --authorized list-plugins`. | CLI prints plugins compiled for the current OS. | Exit code is `0`; output contains at least one correctly namespaced plugin ID. |
 | J7 — Visible baseline | Run `"$STEALTHY" --authorized enum`. | CLI emits the human enumerate-only report. | Exit code is `0`; output contains identity, `enumerate-only`, findings summary, and coverage; a clean working directory gains no `.cache-run`. |
 | J8 — Focused JSON | Run the Step 7 JSON command with one ID from J6. | CLI runs only the selected plugin and emits JSON to stdout. | Exit code is `0`; JSON schema is `"2"`; `authorized_use_ack == true`; `mode == "enumerate-only"`; `plugins_run` and `coverage` contain the selected ID. |
-| J9 — Sealed evidence | Run with `--output file`, report path, and separate key path. | CLI writes the sealed report and protected key without printing the key. | Exit code is `0`; both files exist; stderr does not contain the key; `report --key-file` decodes valid JSON. |
-| J10 — Closeout | Run `artifacts --latest` and, when a removable ledger exists, `cleanup --latest --secure-delete`. | CLI lists recorded artifacts and removes only ledger-recorded removable paths. | Listing exits `0`; cleanup exits `0`; each targeted artifact is absent or explicitly reported already missing. |
+| J9 — Triage | Run with a checkpoint, `--triage`, and `--triage-out`; then apply a matching all-defer decisions file. | CLI writes a schema-1 decision record and applies it without enabling probes. | Both commands exit `0`; checkpoint and decision files exist; run IDs match; all template actions are `defer`; the applied report records the decisions. |
+| J10 — Sealed evidence | Run with `--output file`, report path, and separate key path. | CLI writes the sealed report and protected key without printing the key. | Exit code is `0`; both files exist; stderr does not contain the key; `report --key-file` decodes valid JSON. |
+| J11 — Closeout | Run `artifacts --latest` and, when a removable ledger exists, `cleanup --latest --secure-delete`. | CLI lists recorded artifacts and removes only ledger-recorded removable paths. | Listing exits `0`; cleanup exits `0`; each targeted artifact is absent or explicitly reported already missing. |
+| E1 — Missing authorization | Run `enum` without the flag or environment acknowledgment. | CLI refuses host enumeration and prints recovery guidance. | Exit code is `2`; stderr contains `Authorization required`; no report or ledger is created. |
+| E2 — Invalid plugin | Run authorized enumeration with an unknown plugin ID. | CLI rejects the ID and points to plugin discovery. | Exit code is `1`; stderr names the unknown ID and contains `list-plugins`. |
+| E3 — Blocking readiness | Run `doctor --json` in an environment where a blocking prerequisite is false. | CLI emits diagnostic JSON and fails readiness. | Exit code is `3`; JSON parses; `healthy == false`; `blocking == true`; at least one check detail has status `block`. |
+| E4 — Severity policy | Run a fixture/report-producing scan with `--fail-on` at or below its maximum finding severity. | CLI emits the report and signals the policy threshold. | Exit code is `4`, and the emitted report remains parseable. |
+| E5 — Missing key destination | Request encrypted file output without a key destination. | CLI refuses to create unrecoverable encrypted output. | Exit code is `1`; stderr mentions `--key-output-path` or `STEALTHY_KEY_OUTPUT_PATH`; no sealed report exists. |
+| E6 — Wrong report key | Decode a sealed report using a different valid-length key. | Authentication fails without returning plaintext. | Exit code is nonzero and stdout does not contain report JSON. |
+| E7 — Unsafe stage destination | Stage into an existing non-empty directory. | CLI refuses to overwrite the directory. | Exit code is nonzero and the pre-existing file remains byte-for-byte unchanged. |
+| E8 — Corrupt checkpoint | Resume from malformed or integrity-invalid checkpoint content. | CLI refuses to resume or run plugins. | Exit code is nonzero and no completed-plugin output is emitted as a new report. |
+| E9 — Invalid triage decision | Apply a decision containing an unknown finding ID or mismatched run ID. | CLI refuses the approval file before executing a probe. | Exit code is nonzero; stderr identifies the mismatch/unknown ID; no probe artifact is created. |
+| E10 — Missing evasion confirmation | Allow an evasion family without `--confirm-evasion`. | CLI enforces the second gate. | Exit code is nonzero; stderr mentions `--confirm-evasion`; no evasion action is reported as executed. |
 
 ## Verified boundaries
 

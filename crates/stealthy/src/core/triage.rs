@@ -51,25 +51,34 @@ pub fn write_triage_template(path: &Path, run_id: &str, findings: &[Finding]) ->
 
 /// Prompt on a TTY for each candidate; non-TTY returns empty decisions.
 pub fn prompt_tty(run_id: &str, findings: &[Finding]) -> Result<TriageFile> {
-    let mut file = TriageFile::empty(run_id);
     if !io::stdin().is_terminal() {
-        return Ok(file);
+        return Ok(TriageFile::empty(run_id));
     }
     let stdin = io::stdin();
     let mut stdout = io::stdout();
+    prompt_with_io(run_id, findings, &mut stdin.lock(), &mut stdout)
+}
+
+fn prompt_with_io<R: BufRead, W: Write>(
+    run_id: &str,
+    findings: &[Finding],
+    input: &mut R,
+    output: &mut W,
+) -> Result<TriageFile> {
+    let mut file = TriageFile::empty(run_id);
     for finding in findings.iter().filter(|f| {
         f.severity.rank() >= crate::core::types::Severity::Medium.rank() && f.kind.is_positive()
     }) {
         writeln!(
-            stdout,
+            output,
             "\n[{}] {} — {}\n  action? [y=probe, v=validate, n=defer, d=out_of_scope, s=skip]",
             finding.severity.as_str(),
             finding.finding_id,
             finding.title
         )?;
-        stdout.flush()?;
+        output.flush()?;
         let mut line = String::new();
-        stdin.lock().read_line(&mut line)?;
+        input.read_line(&mut line)?;
         let action = match line.trim().to_ascii_lowercase().as_str() {
             "y" | "probe" => "probe",
             "v" | "validate" => "validate",
@@ -118,7 +127,11 @@ pub fn validate_probe_ids(
 
 #[cfg(test)]
 mod tests {
-    use super::{load_approve_file, probe_ids, validate_probe_ids, write_triage_template};
+    use std::io::{self, BufRead, Cursor, Read, Write};
+
+    use super::{
+        load_approve_file, probe_ids, prompt_with_io, validate_probe_ids, write_triage_template,
+    };
     use crate::core::types::{Finding, FindingKind, Severity, TriageDecision};
 
     #[test]
@@ -162,5 +175,122 @@ mod tests {
         assert_eq!(loaded.run_id, "run-1");
         assert_eq!(loaded.decisions.len(), 1);
         assert!(probe_ids(&loaded.decisions).is_empty());
+    }
+
+    fn candidate(id: &str) -> Finding {
+        Finding {
+            finding_id: id.into(),
+            title: format!("candidate {id}"),
+            plugin: "linux.sudo".into(),
+            kind: FindingKind::Misconfiguration,
+            severity: Severity::High,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn interactive_triage_maps_every_choice_and_alias() {
+        let findings: Vec<Finding> = (0..10)
+            .map(|index| candidate(&format!("f{index}")))
+            .collect();
+        let mut input = Cursor::new(
+            b"y\nprobe\nv\nvalidate\nd\nout_of_scope\ns\nskip\nn\nunrecognized\n".to_vec(),
+        );
+        let mut output = Vec::new();
+
+        let file = prompt_with_io("run-interactive", &findings, &mut input, &mut output).unwrap();
+
+        assert_eq!(file.schema_version, "1");
+        assert_eq!(file.run_id, "run-interactive");
+        assert_eq!(
+            file.decisions
+                .iter()
+                .map(|decision| (decision.finding_id.as_str(), decision.action.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("f0", "probe"),
+                ("f1", "probe"),
+                ("f2", "validate"),
+                ("f3", "validate"),
+                ("f4", "out_of_scope"),
+                ("f5", "out_of_scope"),
+                ("f8", "defer"),
+                ("f9", "defer"),
+            ]
+        );
+        let prompts = String::from_utf8(output).unwrap();
+        assert_eq!(prompts.matches("action?").count(), findings.len());
+    }
+
+    #[test]
+    fn interactive_triage_filters_non_candidates_and_accepts_case_and_whitespace() {
+        let mut low = candidate("low");
+        low.severity = Severity::Low;
+        let mut non_positive = candidate("recommendation");
+        non_positive.kind = FindingKind::Recommendation;
+        let findings = vec![low, non_positive, candidate("eligible")];
+        let mut input = Cursor::new(b"  PROBE  \n".to_vec());
+        let mut output = Vec::new();
+
+        let file = prompt_with_io("run-filter", &findings, &mut input, &mut output).unwrap();
+
+        assert_eq!(file.decisions.len(), 1);
+        assert_eq!(file.decisions[0].finding_id, "eligible");
+        assert_eq!(file.decisions[0].action, "probe");
+        let prompts = String::from_utf8(output).unwrap();
+        assert!(prompts.contains("eligible"));
+        assert!(!prompts.contains("candidate low"));
+        assert!(!prompts.contains("candidate recommendation"));
+    }
+
+    #[test]
+    fn interactive_triage_treats_eof_as_defer() {
+        let mut input = Cursor::new(Vec::<u8>::new());
+        let mut output = Vec::new();
+
+        let file = prompt_with_io("run-eof", &[candidate("eof")], &mut input, &mut output).unwrap();
+
+        assert_eq!(file.decisions.len(), 1);
+        assert_eq!(file.decisions[0].action, "defer");
+    }
+
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("fixture read failure"))
+        }
+    }
+
+    impl BufRead for FailingReader {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Err(io::Error::other("fixture read failure"))
+        }
+
+        fn consume(&mut self, _amount: usize) {}
+    }
+
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("fixture write failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn interactive_triage_propagates_input_and_output_errors() {
+        let findings = [candidate("error")];
+        let mut input = FailingReader;
+        let mut output = Vec::new();
+        assert!(prompt_with_io("run-read-error", &findings, &mut input, &mut output).is_err());
+
+        let mut input = Cursor::new(b"y\n".to_vec());
+        let mut output = FailingWriter;
+        assert!(prompt_with_io("run-write-error", &findings, &mut input, &mut output).is_err());
     }
 }

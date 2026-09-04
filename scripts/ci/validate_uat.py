@@ -157,23 +157,28 @@ class UatRunner:
         self.case("UAT-J06", "platform plugin discovery", lambda: self.check_plugins(root))
         self.case("UAT-J07", "visible memory-only baseline", lambda: self.check_baseline(root))
         self.case("UAT-J08", "focused JSON report", lambda: self.check_json(root))
-        self.case("UAT-J09", "sealed evidence round trip", lambda: self.check_sealed(root))
-        self.case("UAT-J10", "artifact listing and cleanup", lambda: self.check_closeout(root))
+        self.case("UAT-J09", "decision-controlled triage", lambda: self.check_triage(root))
+        self.case("UAT-J10", "sealed evidence round trip", lambda: self.check_sealed(root))
+        self.case("UAT-J11", "artifact listing and cleanup", lambda: self.check_closeout(root))
+
+        self.case("UAT-E01", "missing authorization fails closed", lambda: self.check_auth_gate(root))
+        self.case("UAT-E02", "unknown plugin is actionable", lambda: self.check_unknown_plugin(root))
+        self.case("UAT-E03", "doctor reports a blocking working directory", lambda: self.check_blocked_doctor(root))
+        self.case("UAT-E04", "severity threshold uses exit code 4", lambda: self.check_fail_on(root))
+        self.case("UAT-E05", "encrypted output requires a protected key sink", lambda: self.check_missing_key(root))
+        self.case("UAT-E06", "wrong report key fails closed", lambda: self.check_wrong_key(root))
+        self.case("UAT-E07", "non-empty stage destination is preserved", lambda: self.check_nonempty_stage(root))
+        self.case("UAT-E08", "corrupt checkpoint is rejected", lambda: self.check_corrupt_checkpoint(root))
+        self.case("UAT-E09", "invalid triage decisions fail closed", lambda: self.check_invalid_triage(root))
+        self.case("UAT-E10", "evasion requires the second confirmation gate", lambda: self.check_evasion_gate(root))
 
         self.case("UAT-A01", "missing binary fails before host action", lambda: self.check_missing_binary(root))
-        self.case("UAT-A02", "doctor reports a blocking working directory", lambda: self.check_blocked_doctor(root))
-        self.case("UAT-A03", "unknown plugin is actionable", lambda: self.check_unknown_plugin(root))
         self.case("UAT-A04", "quiet human output is intentionally blank", lambda: self.check_quiet(root))
         self.case("UAT-A05", "empty findings preserve coverage limits", lambda: self.check_empty_findings(root))
-        self.case("UAT-A06", "severity threshold uses exit code 4", lambda: self.check_fail_on(root))
-        self.case("UAT-A07", "encrypted output requires a protected key sink", lambda: self.check_missing_key(root))
-        self.case("UAT-A08", "wrong report key fails closed", lambda: self.check_wrong_key(root))
         self.case("UAT-A09", "tampered sealed report fails closed", lambda: self.check_tampered_report(root))
         self.case("UAT-A10", "approved script fallback reports reduced coverage", lambda: self.check_fallback(root))
-        self.case("UAT-A11", "non-empty stage destination is preserved", lambda: self.check_nonempty_stage(root))
         self.case("UAT-A12", "non-directory stage destination is preserved", lambda: self.check_file_stage(root))
         self.case("UAT-A13", "checkpoint resume preserves completed coverage", lambda: self.check_resume(root))
-        self.case("UAT-A14", "corrupt checkpoint is rejected", lambda: self.check_corrupt_checkpoint(root))
 
         self.case("UAT-B01", "empty plugin selection is rejected", lambda: self.check_empty_plugin(root))
         self.case("UAT-B02", "unknown technique family is rejected", lambda: self.check_unknown_technique(root))
@@ -214,10 +219,15 @@ class UatRunner:
         return "guide/disclaimer exit 0; safe-scan and authorized-use markers present"
 
     def check_auth_gate(self, root: Path) -> str:
-        output = self.expect(self.run("enum", cwd=root), 2)
+        gate_root = root / "authorization-gate"
+        gate_root.mkdir(exist_ok=True)
+        output = self.expect(self.run("enum", cwd=gate_root), 2)
         self.require("Authorization required" in output.stderr, "authorization recovery text missing")
-        self.require(not (root / ".cache-run").exists(), "unauthorized run created a ledger")
-        self.require(not any(path.name.endswith((".seal", ".key")) for path in root.iterdir()), "unauthorized run created evidence")
+        self.require(not (gate_root / ".cache-run").exists(), "unauthorized run created a ledger")
+        self.require(
+            not any(path.name.endswith((".seal", ".key")) for path in gate_root.iterdir()),
+            "unauthorized run created evidence",
+        )
         return "exit 2; Authorization required; no report, key, or ledger created"
 
     def check_plugins(self, root: Path) -> str:
@@ -255,6 +265,52 @@ class UatRunner:
         coverage = value.get("coverage", [])
         self.require(any(item.get("id") == self.plugin for item in coverage), "coverage lacks selected plugin")
         return f"exit 0; schema=2; native enumerate-only report for {self.plugin}; coverage captured"
+
+    def check_triage(self, root: Path) -> str:
+        checkpoint = root / "triage-checkpoint.json"
+        decisions = root / "triage-decisions.json"
+        first = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "--checkpoint", str(checkpoint),
+                "--delay-ms", "0", "enum", "--plugins", self.plugin, "--triage",
+                "--triage-out", str(decisions), cwd=root,
+            )
+        )
+        first_report = self.parsed(first)
+        self.require(checkpoint.is_file() and decisions.is_file(), "triage files were not created")
+        checkpoint_report = json.loads(checkpoint.read_text(encoding="utf-8"))
+        decision_file = json.loads(decisions.read_text(encoding="utf-8"))
+        self.require(decision_file.get("schema_version") == "1", "decision schema is not 1")
+        self.require(
+            decision_file.get("run_id") == checkpoint_report.get("run_id") == first_report.get("run_id"),
+            "triage run IDs do not match",
+        )
+        decision_rows = decision_file.get("decisions")
+        self.require(isinstance(decision_rows, list), "triage decisions are not a list")
+        self.require(
+            all(row.get("action") == "defer" for row in decision_rows),
+            "triage template enabled a non-defer action",
+        )
+        applied = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "--checkpoint", str(checkpoint),
+                "--delay-ms", "0", "enum", "--plugins", self.plugin,
+                "--approve-file", str(decisions), cwd=root,
+            )
+        )
+        applied_report = self.parsed(applied)
+        self.require(
+            applied_report.get("triage_decisions") == decision_rows,
+            "applied report did not preserve the triage decisions",
+        )
+        self.require(
+            not any(item.get("kind") == "exploit_attempt" for item in applied_report.get("findings", [])),
+            "all-defer triage unexpectedly enabled a probe",
+        )
+        return (
+            f"triage and apply exited 0; schema=1; matching run ID; "
+            f"{len(decision_rows)} all-defer decision(s); no probe result"
+        )
 
     def sealed_pair(self, root: Path, name: str) -> tuple[Path, Path]:
         report = root / f"{name}.seal"
@@ -495,6 +551,67 @@ class UatRunner:
         output = self.expect(self.run("--authorized", "resume", "--checkpoint", str(checkpoint), cwd=root), 1)
         self.require("error:" in output.stderr, "corrupt checkpoint lacks error")
         return "exit 1; corrupt JSON rejected before plugin execution"
+
+    def check_invalid_triage(self, root: Path) -> str:
+        checkpoint = root / "invalid-triage-checkpoint.json"
+        baseline = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "--checkpoint", str(checkpoint),
+                "--delay-ms", "0", "enum", "--plugins", self.plugin, cwd=root,
+            )
+        )
+        report = self.parsed(baseline)
+        run_id = report.get("run_id")
+        self.require(isinstance(run_id, str) and bool(run_id), "baseline run ID is missing")
+
+        wrong_run = root / "wrong-run-decisions.json"
+        wrong_run.write_text(
+            json.dumps({"schema_version": "1", "run_id": "different-run", "decisions": []}),
+            encoding="utf-8",
+        )
+        mismatch = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "--checkpoint", str(checkpoint),
+                "enum", "--plugins", self.plugin, "--approve-file", str(wrong_run), cwd=root,
+            ),
+            1,
+        )
+        self.require("does not match current run_id" in mismatch.stderr, "run-ID mismatch was not identified")
+        self.require(not mismatch.stdout.strip(), "run-ID mismatch emitted a report")
+
+        unknown = root / "unknown-finding-decisions.json"
+        unknown.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1",
+                    "run_id": run_id,
+                    "decisions": [{"finding_id": "unknown-finding-id", "action": "probe"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        rejected = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "--checkpoint", str(checkpoint),
+                "enum", "--plugins", self.plugin, "--approve-file", str(unknown), cwd=root,
+            ),
+            1,
+        )
+        self.require("unknown probe finding_id" in rejected.stderr, "unknown finding ID was not identified")
+        self.require(not rejected.stdout.strip(), "unknown finding decision emitted a report")
+        return "mismatched run ID and unknown probe finding ID both exited 1 before report/probe output"
+
+    def check_evasion_gate(self, root: Path) -> str:
+        output = self.expect(
+            self.run(
+                "--authorized", "--quiet", "--format", "json", "enum", "--plugins", self.plugin,
+                "--allow-techniques", "amsi-bypass", cwd=root,
+            ),
+            1,
+        )
+        self.require("--confirm-evasion" in output.stderr, "second-gate guidance is missing")
+        self.require(not output.stdout.strip(), "unconfirmed evasion emitted a report")
+        return "exit 1; --confirm-evasion requirement present; no report or executed action emitted"
 
     def check_empty_plugin(self, root: Path) -> str:
         output = self.expect(self.run("--authorized", "--quiet", "enum", "--plugins", "", cwd=root), 1)
