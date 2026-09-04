@@ -692,7 +692,7 @@ jobs:
           & $bin stage --os windows --target-hostname $env:COMPUTERNAME --out $stage --binary $bin --ledger-dir $ledger
           $stagedExe = Join-Path $stage 'stealthy.exe'
           $manifest = Get-Content -Raw (Join-Path $stage 'scripts\stealthy-run.conf')
-          if ($manifest -notmatch 'windows_fallbacks=powershell,jscript,msbuild') {
+          if ($manifest -notmatch 'windows_fallbacks=python,pwsh,powershell,git,jscript,msbuild') {
             throw 'staged manifest missing ordered windows_fallbacks default'
           }
           if (Test-Path -LiteralPath $stagedExe -PathType Leaf) {
