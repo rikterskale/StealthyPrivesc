@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod attack_path;
+pub mod authenticode;
 pub mod catalog;
 pub mod command;
 pub mod control_tests;

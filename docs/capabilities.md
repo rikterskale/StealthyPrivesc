@@ -137,11 +137,11 @@ read-only and writes each result into the structured `ControlAssessment` JSON.
 | # | Capability | Status | Collector/report location |
 | ---: | --- | --- | --- |
 | 1 | AppLocker/WDAC policy-file parsing and publisher/product/version rule evaluation | Implemented | Windows effective-policy snapshots, parsed `policies[].rules`, and artifact `policy_rule` |
-| 2 | Static DLL/MSI/.NET/plugin fixture analysis and policy classification | Implemented | Artifact `static_analysis`, `kind`, `signature_status`, and `policy_rule` |
+| 2 | Static DLL/MSI/.NET/plugin fixture analysis and policy classification | Implemented | Artifact `static_analysis`, `kind`, `signature_status` (Win32 Authenticode on Windows), and `policy_rule` |
 | 3 | ACL snapshot parsing and user-writable vs administrator-controlled classification | Implemented | Artifact `access_control` and `path_class` |
 | 4 | Exported Windows/Linux event-log collection and correlation | Implemented | `audit_sources[]` recent counts, denial counts, artifact matches, last event, and snapshot hash |
 | 5 | Managed-installer policy/provenance evidence | Implemented | Managed-installer/ISG policy rules, Defender preference evidence, artifact origin and signer metadata |
-| 6 | Driver/module signature and HVCI/lockdown compatibility metadata | Implemented | Windows driver inventory; Linux `modinfo`, `modprobe --dry-run`, lockdown, and artifact signature evidence |
+| 6 | Driver/module signature and HVCI/lockdown compatibility metadata | Implemented | Windows driver Authenticode via WinVerifyTrust plus HVCI inventory; Linux `modinfo`, `modprobe --dry-run`, lockdown, and artifact signature evidence |
 | 7 | RPM/DEB metadata, repository-signature, fapolicyd-rule, and custom-trust collection | Implemented | Package-manager policy, package trust evidence, fapolicyd rules/trust entries, and effective trust check |
 | 8 | IMA xattr and fs-verity metadata/digest collection | Implemented | Artifact `integrity_status` and IMA/fs-verity evidence |
 | 9 | SELinux/AppArmor profile and denial-log collection/correlation | Implemented | MAC policy/context notes plus live audit-source denial correlation |

@@ -262,7 +262,11 @@ format/signer/.NET/MSI/plugin indicators, native ACL classification, recent
 Windows/Linux audit data, managed-installer and EDR state, package and trust
 metadata, IMA/fs-verity evidence, MAC profiles and denials, mount and
 SUID/capability metadata, kernel driver/module state, namespace/container
-identity, and a deterministic live telemetry score.
+identity, and a deterministic live telemetry score. On Windows, artifact and
+driver Authenticode status comes from WinVerifyTrust / CryptQueryObject /
+version resources in-process (no `powershell.exe` child for signatures).
+AppLocker `Test-AppLockerPolicy` and HVCI `Get-ComputerInfo` still use
+read-only PowerShell.
 
 ### Live capability tracking
 

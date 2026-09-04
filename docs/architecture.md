@@ -31,6 +31,7 @@ For the end-to-end visual flow, see the [Architecture Diagram](architecture-diag
 | `core::plugin` | Plugin trait, selection, cancellation, noise budgets, and finding-scoped probe checks |
 | `core::store` | ChaCha20-Poly1305 sealed findings at rest + sealed export + zeroizing key |
 | `core::evasion` | Low-and-slow delays and OPSEC operator notes |
+| `core::authenticode` | In-process Win32 Authenticode, version resources, and MOTW inspection |
 | `core::controls` | Live policy/EDR inventory; gated during enum to `*.app_control` |
 | `core::output` | memory / file / remote emission and protected report-key files |
 | `core::engine` | Authorization-aware orchestration, selection, checkpoints, and triage |

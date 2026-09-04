@@ -1276,7 +1276,7 @@ pub fn inspect_artifact(path: &Path, platform: &str) -> ArtifactAssessment {
                 origin,
                 timestamp,
                 chain_status,
-            ) = authenticode(path);
+            ) = crate::core::authenticode::inspect(path).into_tuple();
             artifact.signature_status = status;
             artifact.signer = signer;
             artifact.publisher = publisher;
@@ -1336,19 +1336,13 @@ pub fn inspect_kernel_artifact(path: &Path, platform: &str) -> String {
     if platform == "windows" {
         #[cfg(windows)]
         {
-            let path_text = path.to_string_lossy().into_owned();
-            let signature = powershell_readonly_with_arg(
-                "$s=Get-AuthenticodeSignature -LiteralPath $args[0]; [ordered]@{Status=$s.Status.ToString();Signer=[string]$s.SignerCertificate.Subject;Publisher=[string]$s.SignerCertificate.Issuer}|ConvertTo-Json -Compress",
-                path,
-            )
-            .map(|text| format!("driver_signature={text}"))
-            .unwrap_or_else(|| "driver_signature=unavailable".into());
+            let info = crate::core::authenticode::inspect(path);
+            let signature = format!("driver_signature={}", info.driver_signature_json());
             let hvci = powershell_readonly(
                 "Get-ComputerInfo -Property DeviceGuard* -ErrorAction SilentlyContinue | ConvertTo-Json -Compress",
             )
             .map(|text| format!("hvci={}", compact_text(&text, 4096)))
             .unwrap_or_else(|| "hvci=unavailable".into());
-            let _ = path_text;
             return format!("{signature}; {hvci}; load=not_attempted");
         }
         #[cfg(not(windows))]
@@ -2365,64 +2359,6 @@ fn event_channel_available(channel: &str) -> bool {
     command_text("wevtutil.exe", &["gl", channel]).is_some()
 }
 
-#[cfg(windows)]
-fn authenticode(
-    path: &Path,
-) -> (
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-) {
-    let script = r#"$p=$args[0]; $s=Get-AuthenticodeSignature -LiteralPath $p; $i=Get-Item -LiteralPath $p; $v=$i.VersionInfo; $z=Get-Item -LiteralPath $p -Stream Zone.Identifier -ErrorAction SilentlyContinue; $chain='not_available'; if($null -ne $s.SignerCertificate){$chain=$s.SignerCertificate.Verify().ToString()}; [ordered]@{status=$s.Status.ToString(); signer=([string]$s.SignerCertificate.Subject); publisher=([string]$v.CompanyName); product=([string]$v.ProductName); file_version=([string]$v.FileVersion); original_filename=([string]$v.OriginalFilename); origin=if($null -ne $z){'downloaded-zone-identifier'}else{'local-or-unknown'}; timestamp=([string]$s.TimeStamperCertificate.Subject); chain=$chain} | ConvertTo-Json -Compress"#;
-    let output = crate::core::command::trusted_command("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-            path.to_string_lossy().as_ref(),
-        ])
-        .output();
-    let Some(output) = output.ok().filter(|o| o.status.success()) else {
-        return (
-            "not_collected".into(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "unknown".into(),
-            String::new(),
-            "unknown".into(),
-        );
-    };
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
-    let get = |key: &str| {
-        value
-            .get(key)
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    };
-    (
-        get("status").to_ascii_lowercase(),
-        get("signer"),
-        get("publisher"),
-        get("product"),
-        get("file_version"),
-        get("original_filename"),
-        get("origin"),
-        get("timestamp"),
-        get("chain"),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2617,5 +2553,12 @@ mod tests {
             vec!["static_read=unavailable"]
         );
         assert_eq!(super::file_kind(&missing), "file");
+    }
+
+    #[test]
+    fn authenticode_collection_does_not_spawn_helper() {
+        let src = include_str!("controls.rs");
+        assert!(!src.contains(concat!("Get-Authenticode", "Signature")));
+        assert!(src.contains("crate::core::authenticode::inspect"));
     }
 }

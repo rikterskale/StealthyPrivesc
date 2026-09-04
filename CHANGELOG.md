@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Windows live-controls Authenticode collection uses WinVerifyTrust, version
+  resources, and Zone.Identifier in-process instead of spawning
+  `powershell.exe` for signature inspection. AppLocker effective tests and
+  HVCI inventory still use read-only PowerShell.
 - `opsec-string-strip` omits product brand, GTFOBins/LOLBAS URLs, the GitHub
   repository URL, and third-party vendor catalog text from the binary.
 - Windows dispatcher default walk is now `python → pwsh → powershell → git →
