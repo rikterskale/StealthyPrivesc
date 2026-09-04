@@ -15,7 +15,7 @@ suite exits.
 - Build: `cargo build --locked --workspace --release` — exit `0`
 - Automated command: `python3 scripts/ci/validate_uat.py ./target/release/stealthy --repo-root . --report /tmp/stealthy-phase5-uat-linux.json` — exit `0`
 - Captured evidence: 34 automated cases, 41 subprocess records, SHA-256
-  `93645b98953c5fba5da2777d789390a8a045cb24b470a4d290b5439cb64cb529`
+  `70d7fb887cb40b607689d89e50bfc295b6104f67775b9915e45b640d88807a82`
 - Human precondition: the repository owner explicitly authorized the work in
   the task. That acknowledgment does not replace engagement ROE on a target.
 

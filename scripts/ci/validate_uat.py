@@ -227,7 +227,11 @@ class UatRunner:
         return f"exit 0; selected platform plugin {self.plugin}"
 
     def check_baseline(self, root: Path) -> str:
-        output = self.expect(self.run("--authorized", "--no-color", "--delay-ms", "0", "enum", cwd=root))
+        output = self.expect(
+            self.run(
+                "--authorized", "--no-color", "--delay-ms", "0", "enum", cwd=root, timeout=300
+            )
+        )
         for marker in ("StealthyPrivesc", "mode=enumerate-only", "Summary", "Coverage"):
             self.require(marker in output.stdout, f"human report lacks {marker!r}")
         self.require("[memory]" in output.stderr, "run lacks the memory-only disposition")
@@ -391,7 +395,17 @@ class UatRunner:
                     "--target-hostname", self.host, "--name", "stealthy.exe", "--out", str(out), cwd=root,
                 )
             )
-            command = ["powershell.exe", "-NoProfile", "-File", str(out / "scripts/run.ps1"), "--authorized", "--format=json", "enum"]
+            command = [
+                "powershell.exe",
+                "-NoProfile",
+                "-File",
+                str(out / "scripts/run.ps1"),
+                "-Manifest",
+                str(out / "scripts/stealthy-run.conf"),
+                "--authorized",
+                "--format=json",
+                "enum",
+            ]
             completed = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             digest = hashlib.sha256((str(completed.returncode) + "\0" + completed.stdout + "\0" + completed.stderr).encode()).hexdigest()
             self.current_evidence.append(CommandEvidence(command, completed.returncode, completed.stdout, completed.stderr, digest))
