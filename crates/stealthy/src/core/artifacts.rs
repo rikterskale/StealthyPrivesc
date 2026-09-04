@@ -331,20 +331,7 @@ fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> 
     }
     #[cfg(windows)]
     {
-        let whoami = crate::core::command::trusted_command("whoami.exe")
-            .args(["/user", "/fo", "csv", "/nh"])
-            .output()
-            .context("resolve current Windows SID for private file")?;
-        if !whoami.status.success() {
-            bail!("whoami.exe could not resolve the current Windows SID");
-        }
-        let text = String::from_utf8_lossy(&whoami.stdout);
-        let sid = text
-            .split(',')
-            .nth(1)
-            .map(|value| value.trim().trim_matches('"'))
-            .filter(|value| value.starts_with("S-1-"))
-            .ok_or_else(|| anyhow::anyhow!("could not parse current Windows SID"))?;
+        let sid = current_windows_sid()?;
         let grant = format!("*{sid}:(F)");
         let status = crate::core::command::trusted_command("icacls.exe")
             .arg(_path)
@@ -358,6 +345,63 @@ fn restrict_file_permissions(_file: &std::fs::File, _path: &Path) -> Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn current_windows_sid() -> Result<String> {
+    use std::ffi::c_void;
+    use std::ptr;
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE};
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token: HANDLE = ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            bail!("OpenProcessToken failed while resolving the current Windows SID");
+        }
+        let result = (|| {
+            let mut byte_len = 0u32;
+            GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut byte_len);
+            if byte_len < std::mem::size_of::<TOKEN_USER>() as u32 {
+                bail!("GetTokenInformation returned an invalid TokenUser size");
+            }
+            let words = byte_len as usize / std::mem::size_of::<usize>() + 1;
+            let mut buffer = vec![0usize; words];
+            if GetTokenInformation(
+                token,
+                TokenUser,
+                buffer.as_mut_ptr().cast::<c_void>(),
+                byte_len,
+                &mut byte_len,
+            ) == 0
+            {
+                bail!("GetTokenInformation failed while resolving the current Windows SID");
+            }
+            let token_user = &*(buffer.as_ptr().cast::<TOKEN_USER>());
+            let mut string_sid = ptr::null_mut();
+            if ConvertSidToStringSidW(token_user.User.Sid, &mut string_sid) == 0 {
+                bail!("ConvertSidToStringSidW failed for the current Windows token");
+            }
+            let mut len = 0usize;
+            while len < 256 && *string_sid.add(len) != 0 {
+                len += 1;
+            }
+            let sid = if len == 256 {
+                Err(anyhow::anyhow!(
+                    "current Windows SID string exceeded its bound"
+                ))
+            } else {
+                String::from_utf16(std::slice::from_raw_parts(string_sid, len))
+                    .context("current Windows SID was not valid UTF-16")
+            };
+            LocalFree(string_sid.cast());
+            sid
+        })();
+        CloseHandle(token);
+        result
+    }
 }
 
 fn restrict_dir_permissions(_dir: &Path) -> Result<()> {

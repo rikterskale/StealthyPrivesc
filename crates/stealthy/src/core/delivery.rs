@@ -39,13 +39,24 @@ pub fn verify_ssh(ssh_target: &str, remote_path: &str, expect_sha256: &str) -> R
         ])
         .output()
         .context("spawn ssh for remote verify")?;
-    if !output.status.success() {
-        bail!(
-            "remote hash failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    verify_ssh_response(
+        output.status.success(),
+        &output.stdout,
+        &output.stderr,
+        expect_sha256,
+    )
+}
+
+fn verify_ssh_response(
+    success: bool,
+    stdout: &[u8],
+    stderr: &[u8],
+    expect_sha256: &str,
+) -> Result<()> {
+    if !success {
+        bail!("remote hash failed: {}", String::from_utf8_lossy(stderr));
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(stdout);
     let got = stdout
         .split_whitespace()
         .next()
@@ -418,7 +429,7 @@ bash /tmp/cache-update/scripts/run.sh --authorized --profile quiet enum
 mod tests {
     use super::{
         one_liners, sha256_file, shell_quote, stage, validate_bundle_name, validate_manifest_value,
-        validate_ssh_target, verify_local, StageOptions,
+        validate_ssh_target, verify_local, verify_ssh, verify_ssh_response, StageOptions,
     };
 
     #[test]
@@ -441,6 +452,31 @@ mod tests {
             assert!(validate_ssh_target(target).is_err(), "accepted {target:?}");
         }
         assert!(validate_ssh_target("operator@example.test").is_ok());
+    }
+
+    #[test]
+    fn verify_ssh_rejects_invalid_targets_before_process_launch() {
+        let error = verify_ssh("-oProxyCommand=bad", "/approved/artifact", "00").unwrap_err();
+        assert!(error.to_string().contains("options are not accepted"));
+    }
+
+    #[test]
+    fn verify_ssh_response_covers_success_failure_and_mismatch() {
+        let expected = "a".repeat(64);
+        let output = format!("{expected}  /approved/artifact\n");
+        assert!(verify_ssh_response(true, output.as_bytes(), b"", &expected).is_ok());
+        assert!(
+            verify_ssh_response(true, b"bad  /approved/artifact\n", b"", &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("remote hash mismatch")
+        );
+        assert!(
+            verify_ssh_response(false, b"", b"connection refused", &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("connection refused")
+        );
     }
 
     #[test]

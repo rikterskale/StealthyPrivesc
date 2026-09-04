@@ -123,7 +123,7 @@ function Invoke-EvasionTechnique {
                     }
                 }
             } catch {
-                # Ignore service enumeration failures; playbook still applies.
+                Write-Verbose "Service observation unavailable: $($_.Exception.Message)"
             }
             try {
                 $providers = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction SilentlyContinue |
@@ -139,7 +139,7 @@ function Invoke-EvasionTechnique {
                     }
                 }
             } catch {
-                # SecurityCenter2 may be unavailable under constrained hosts.
+                Write-Verbose "SecurityCenter2 observation unavailable: $($_.Exception.Message)"
             }
 
             $status = if ($observedProducts.Count -gt 0) { 'observed' } else { 'ready' }

@@ -860,6 +860,19 @@ jobs:
             }
           }
 
+      - name: Lint PowerShell agents
+        if: matrix.shell == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force
+          $findings = @(Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Warning,Error)
+          if ($findings.Count -gt 0) {
+            $findings | Format-Table -AutoSize | Out-String | Write-Error
+            exit 1
+          }
+
       - name: Validate Windows authorization contract
         shell: pwsh
         run: python scripts/ci/validate_windows_contract.py

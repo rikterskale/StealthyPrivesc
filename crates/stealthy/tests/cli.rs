@@ -844,7 +844,9 @@ fn evasion_families_require_confirmation_and_emit_opted_in_findings() {
         !av_edr.is_empty(),
         "missing av-edr-service findings: {findings:?}"
     );
-    assert!(av_edr.iter().all(|finding| finding["plugin"] == "windows.evasion"));
+    assert!(av_edr
+        .iter()
+        .all(|finding| finding["plugin"] == "windows.evasion"));
     assert!(av_edr
         .iter()
         .all(|finding| finding["leaves_artifacts"] == false));
@@ -861,7 +863,10 @@ fn evasion_families_require_confirmation_and_emit_opted_in_findings() {
         .as_str()
         .or_else(|| playbook["what_next"].as_str())
         .unwrap_or_default();
-    assert!(what_next.contains("Re-confirm ROE"), "what_next={what_next}");
+    assert!(
+        what_next.contains("Re-confirm ROE"),
+        "what_next={what_next}"
+    );
     assert!(
         what_next.contains("Hard stop conditions"),
         "what_next={what_next}"
@@ -1023,6 +1028,27 @@ fn linux_direct_fallbacks_require_authorization() {
         assert_eq!(output.status.code(), Some(2), "{interpreter} {script}");
         assert!(String::from_utf8_lossy(&output.stderr).contains("Authorization required"));
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn python_fallback_human_mode_prints_banner_and_completion() {
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("scripts/linux/enum.py");
+    let output = Command::new("python3")
+        .arg(script)
+        .arg("--authorized")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("StealthyPrivesc Linux Python enum"));
+    assert!(stdout.contains("Done. Enumeration only."));
 }
 
 #[test]

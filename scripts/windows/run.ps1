@@ -1,4 +1,4 @@
-# StealthyPrivesc policy-bound dispatcher — authorized assessments only.
+# StealthyPrivesc policy-bound dispatcher - authorized assessments only.
 # The launcher may select an approved script fallback when the primary PE
 # cannot start. Under today's endpoint-bypass contract it does not disable
 # or bypass host controls (see docs/techniques.md for Planned families).
@@ -15,8 +15,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Staged bundle: scripts/run.ps1 + adjacent stealthy-run.conf → bundle is parent.
-# Repo checkout: scripts/windows/run.ps1 → bundle is repo root.
+# Staged bundle: scripts/run.ps1 + adjacent stealthy-run.conf -> bundle is parent.
+# Repo checkout: scripts/windows/run.ps1 -> bundle is repo root.
 if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'stealthy-run.conf')) {
   $bundleDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
   if (-not $PSBoundParameters.ContainsKey('Manifest') -and -not $env:STEALTHY_MANIFEST) {
@@ -102,7 +102,7 @@ $env:STEALTHY_AUTHORIZED = '1'
 $primaryName = if ($bundleMode -eq 'script-only') { $null } elseif ($cfg.primary_binary) { $cfg.primary_binary } else { 'stealthy.exe' }
 $primarySrc = if ($primaryName) { Join-Path $bundleDir $primaryName } else { $null }
 
-# Empty drop_dir (staged default) → run PE in place to avoid a second AV scan event.
+# Empty drop_dir (staged default) -> run PE in place to avoid a second AV scan event.
 $useInPlace = -not $cfg.ContainsKey('drop_dir') -or [string]::IsNullOrWhiteSpace($cfg.drop_dir)
 if ($useInPlace) {
   $dropDir = $bundleDir
@@ -135,7 +135,11 @@ foreach ($file in @('enum.ps1', 'enum.js', 'EnumTasks.csproj')) {
   if ((Test-Path -LiteralPath $source) -and -not $useInPlace -and ($dropDir -ne $scriptSourceDir)) {
     $dest = Join-Path $dropDir $file
     if ($source -ne $dest) {
-      try { Copy-Item -LiteralPath $source -Destination $dest -Force } catch { }
+      try {
+        Copy-Item -LiteralPath $source -Destination $dest -Force
+      } catch {
+        Write-Verbose "Could not copy fallback $file to ${dest}: $($_.Exception.Message)"
+      }
     }
   }
 }
@@ -163,7 +167,7 @@ function Resolve-FallbackPath([string]$Name) {
   return $null
 }
 
-function Invoke-ApprovedFallbacks {
+function Invoke-ApprovedFallback {
   $env:STEALTHY_PRIMARY_LAUNCH = if ($bundleMode -eq 'script-only') { 'not_applicable' } else { 'blocked' }
   $env:STEALTHY_MANIFEST_ROE_REF = if ($env:STEALTHY_ROE_REF) { $env:STEALTHY_ROE_REF } else { $cfg.roe_ref }
   foreach ($fallback in $approvedFallbacks) {
@@ -293,7 +297,7 @@ if ($primary -and (Test-Path -LiteralPath $primary -PathType Leaf)) {
 }
 
 if ($primaryBlocked) {
-  Invoke-ApprovedFallbacks
+  Invoke-ApprovedFallback
 }
 } finally {
   Restore-DispatcherEnvironment

@@ -69,7 +69,9 @@ try {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = New-Object Security.Principal.WindowsPrincipal($identity)
   $isElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-} catch {}
+} catch {
+  Write-Verbose "Could not determine elevation state: $($_.Exception.Message)"
+}
 
 $interesting = @(
   'SeImpersonatePrivilege',
@@ -290,15 +292,15 @@ if ($Json) {
   exit 0
 }
 
-Write-Host '=== StealthyPrivesc Windows PowerShell enum ==='
-Write-Host 'LEGAL: Authorized use only. Reduced, read-only fallback coverage.'
+Write-Output '=== StealthyPrivesc Windows PowerShell enum ==='
+Write-Output 'LEGAL: Authorized use only. Reduced, read-only fallback coverage.'
 foreach ($finding in $findings) {
-  Write-Host ("FINDING [{0}] {1} -- {2}" -f $finding.severity, $finding.title, $finding.detail)
+  Write-Output ("FINDING [{0}] {1} -- {2}" -f $finding.severity, $finding.title, $finding.detail)
 }
-Write-Host ''
-Write-Host 'Coverage:'
+Write-Output ''
+Write-Output 'Coverage:'
 foreach ($item in $coverage) {
   $suffix = if ($item.error) { " ($($item.error))" } else { '' }
-  Write-Host ("  {0}: {1}, findings={2}{3}" -f $item.id, $item.status, $item.findings, $suffix)
+  Write-Output ("  {0}: {1}, findings={2}{3}" -f $item.id, $item.status, $item.findings, $suffix)
 }
-Write-Host 'Done. Enumeration only; native equivalence is not claimed.'
+Write-Output 'Done. Enumeration only; native equivalence is not claimed.'

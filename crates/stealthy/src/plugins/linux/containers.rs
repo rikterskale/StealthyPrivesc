@@ -302,7 +302,18 @@ mod tests {
     fn socket_fixture_scan_covers_types_access_rootless_and_cancellation() {
         let root = tempfile::tempdir().unwrap();
         let socket = root.path().join("runtime.sock");
-        let _listener = UnixListener::bind(&socket).unwrap();
+        let _listener = match UnixListener::bind(&socket) {
+            Ok(listener) => listener,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Unsupported
+                ) =>
+            {
+                return;
+            }
+            Err(error) => panic!("bind Unix socket fixture: {error}"),
+        };
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o777)).unwrap();
         let regular = root.path().join("stale.sock");
         std::fs::write(&regular, b"not a socket").unwrap();
